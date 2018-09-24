@@ -7,15 +7,18 @@
 use api::{DeviceIntPoint, DeviceIntRect, DeviceUintSize, FontRenderMode};
 use api::{ImageFormat, TextureTarget};
 use debug_colors;
-use device::{Device, Texture, TextureFilter, VAO};
+use device::{self, Device, PrimitiveType, ShaderKind, Texture};
+use device::{TextureFilter, TextureSampler, VAO, VertexArrayKind};
 use euclid::{Point2D, Size2D, Transform3D, TypedVector2D, Vector2D};
+use hal;
 use internal_types::RenderTargetInfo;
 use pathfinder_gfx_utils::ShelfBinPacker;
 use profiler::GpuProfileTag;
 use renderer::{self, ImageBufferKind, Renderer, RendererError, RendererStats};
-use renderer::{TextureSampler, VertexArrayKind};
-use shade::{LazilyCompiledShader, ShaderKind};
+use shade::LazilyCompiledShader;
 use tiling::GlyphJob;
+#[cfg(not(feature = "gleam"))]
+use vertex_types::{VectorStencilInstance, VectorCoverInstance};
 
 // The area lookup table in uncompressed grayscale TGA format (TGA image format 3).
 static AREA_LUT_TGA_BYTES: &'static [u8] = include_bytes!("../res/area-lut.tga");
@@ -31,19 +34,26 @@ const GPU_TAG_GLYPH_COVER: GpuProfileTag = GpuProfileTag {
     color: debug_colors::LIGHTSTEELBLUE,
 };
 
-pub struct GpuGlyphRenderer {
+pub struct GpuGlyphRenderer<B: hal::Backend> {
     pub area_lut_texture: Texture,
     pub vector_stencil_vao: VAO,
     pub vector_cover_vao: VAO,
 
     // These are Pathfinder shaders, used for rendering vector graphics.
-    vector_stencil: LazilyCompiledShader,
-    vector_cover: LazilyCompiledShader,
+    vector_stencil: LazilyCompiledShader<B>,
+    vector_cover: LazilyCompiledShader<B>,
 }
 
-impl GpuGlyphRenderer {
-    pub fn new(device: &mut Device, prim_vao: &VAO, precache_shaders: bool)
-               -> Result<GpuGlyphRenderer, RendererError> {
+impl<B: hal::Backend> GpuGlyphRenderer<B> {
+    #[cfg(not(feature = "gleam"))]
+    pub fn new(_device: &mut Device<B>, _prim_vao: &VAO, _precache_shaders: bool)
+               -> Result<GpuGlyphRenderer<B>, RendererError> {
+        unimplemented!();
+    }
+
+    #[cfg(feature = "gleam")]
+    pub fn new(device: &mut Device<B>, prim_vao: &VAO, precache_shaders: bool)
+               -> Result<GpuGlyphRenderer<B>, RendererError> {
         // Make sure the area LUT is uncompressed grayscale TGA, 8bpp.
         debug_assert!(AREA_LUT_TGA_BYTES[2] == 3);
         debug_assert!(AREA_LUT_TGA_BYTES[16] == 8);
@@ -64,8 +74,8 @@ impl GpuGlyphRenderer {
                             Some(area_lut_pixels));
 
         let vector_stencil_vao =
-            device.create_vao_with_new_instances(&renderer::desc::VECTOR_STENCIL, prim_vao);
-        let vector_cover_vao = device.create_vao_with_new_instances(&renderer::desc::VECTOR_COVER,
+            device.create_vao_with_new_instances(&device::desc::VECTOR_STENCIL, prim_vao);
+        let vector_cover_vao = device.create_vao_with_new_instances(&device::desc::VECTOR_COVER,
                                                                     prim_vao);
 
         // Load Pathfinder vector graphics shaders.
@@ -94,7 +104,7 @@ impl GpuGlyphRenderer {
     }
 }
 
-impl Renderer {
+impl<B: hal::Backend> Renderer<B> {
     /// Renders glyphs using the vector graphics shaders (Pathfinder).
     pub fn stencil_glyphs(&mut self,
                           glyphs: &[GlyphJob],
@@ -263,6 +273,26 @@ struct VectorStencilInstanceAttrs {
     path_id: u16,
 }
 
+#[cfg(not(feature = "gleam"))]
+impl PrimitiveType for VectorStencilInstanceAttrs {
+    type Primitive = VectorStencilInstance;
+    fn to_primitive_type(&self) -> VectorStencilInstance {
+        VectorStencilInstance {
+            aFromPosition: [self.from_position.x, self.from_position.y],
+            aCtrlPosition: [self.ctrl_position.x, self.ctrl_position.y],
+            aToPosition: [self.to_position.x, self.to_position.y],
+            aFromNormal: [self.from_normal.x, self.from_normal.y],
+            aCtrlNormal: [self.ctrl_normal.x, self.ctrl_normal.y],
+            aToNormal: [self.to_normal.x, self.to_normal.y],
+            aPathID: self.path_id as _,
+            aPad: 0,
+        }
+    }
+}
+
+#[cfg(feature = "gleam")]
+impl PrimitiveType for VectorStencilInstanceAttrs { }
+
 pub struct StenciledGlyphPage {
     texture: Texture,
     glyphs: Vec<VectorCoverInstanceAttrs>,
@@ -275,6 +305,27 @@ struct VectorCoverInstanceAttrs {
     stencil_origin: DeviceIntPoint,
     subpixel: u16,
 }
+
+#[cfg(not(feature = "gleam"))]
+impl PrimitiveType for VectorCoverInstanceAttrs {
+    type Primitive = VectorCoverInstance;
+    fn to_primitive_type(&self) -> VectorCoverInstance {
+        VectorCoverInstance {
+            aTargetRect: [
+                self.target_rect.origin.x,
+                self.target_rect.origin.y,
+                self.target_rect.size.width,
+                self.target_rect.size.height,
+            ],
+            aStencilOrigin: [self.stencil_origin.x, self.stencil_origin.y],
+            aSubpixel: self.subpixel as _,
+            aPad: 0,
+        }
+    }
+}
+
+#[cfg(feature = "gleam")]
+impl PrimitiveType for VectorCoverInstanceAttrs { }
 
 impl VectorCoverInstanceAttrs {
     fn stencil_rect(&self) -> DeviceIntRect {
