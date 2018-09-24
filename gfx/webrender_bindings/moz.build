@@ -7,10 +7,15 @@
 with Files('**'):
     BUG_COMPONENT = ('Core', 'Graphics: WebRender')
 
+#CXXFLAGS += CONFIG['MOZ_GTK3_CFLAGS']
+OS_LIBS += [
+    '-framework Metal',
+]
+
 EXPORTS.mozilla.webrender += [
     'RenderBufferTextureHost.h',
     'RenderCompositor.h',
-    'RenderCompositorOGL.h',
+    'RenderCompositorSZEGED.h',
     'RendererOGL.h',
     'RenderSharedSurfaceTextureHost.h',
     'RenderTextureHost.h',
@@ -27,7 +32,7 @@ UNIFIED_SOURCES += [
     'Moz2DImageRenderer.cpp',
     'RenderBufferTextureHost.cpp',
     'RenderCompositor.cpp',
-    'RenderCompositorOGL.cpp',
+    'RenderCompositorSZEGED.cpp',
     'RendererOGL.cpp',
     'RenderSharedSurfaceTextureHost.cpp',
     'RenderTextureHost.cpp',

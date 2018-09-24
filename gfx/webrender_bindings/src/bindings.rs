@@ -922,6 +922,7 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
                                 window_height: u32,
                                 support_low_priority_transactions: bool,
                                 gl_context: *mut c_void,
+                                nsview: *mut c_void,
                                 thread_pool: *mut WrThreadPool,
                                 size_of_op: VoidPtrToSizeFn,
                                 out_handle: &mut *mut DocumentHandle,
@@ -992,7 +993,12 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
     let notifier = Box::new(CppNotifier {
         window_id: window_id,
     });
-    let (renderer, sender) = match Renderer::new(gl, notifier, opts) {
+    let (renderer, sender) = match Renderer::new(
+        nsview,
+        window_width,
+        window_height,
+        notifier,
+        opts) {
         Ok((renderer, sender)) => (renderer, sender),
         Err(e) => {
             warn!(" Failed to create a Renderer: {:?}", e);
@@ -1194,6 +1200,7 @@ pub extern "C" fn wr_transaction_set_window_parameters(
     window_size: &DeviceUintSize,
     doc_rect: &DeviceUintRect,
 ) {
+    println!("wr_transaction_set_window_parameters size={:?}", window_size);
     txn.set_window_parameters(
         *window_size,
         *doc_rect,

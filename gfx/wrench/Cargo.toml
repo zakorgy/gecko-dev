@@ -12,8 +12,8 @@ byteorder = "1.0"
 env_logger = { version = "0.5", optional = true }
 euclid = "0.19"
 cfg-if = "0.1.2"
-gfx-hal = { git = "https://github.com/gfx-rs/gfx.git" }
-gfx-backend-empty = { git = "https://github.com/gfx-rs/gfx.git" }
+gfx-hal = { git = "https://github.com/gfx-rs/gfx.git", rev = "683e989e18ff1190f9ef034b3cfaa4225d09711c" }
+gfx-backend-empty = { git = "https://github.com/gfx-rs/gfx.git", rev = "683e989e18ff1190f9ef034b3cfaa4225d09711c" }
 gleam = { version = "0.6", optional = true }
 glutin = { version = "0.18", optional = true }
 app_units = "0.7"
@@ -49,15 +49,17 @@ vulkan = [ "gfx-backend-vulkan", "gfx" ]
 
 [target.'cfg(target_os = "windows")'.dependencies]
 dwrote = "0.5.1"
-gfx-backend-dx12 = { git = "https://github.com/gfx-rs/gfx.git", optional = true }
+gfx-backend-dx12 = { git = "https://github.com/gfx-rs/gfx.git", rev = "683e989e18ff1190f9ef034b3cfaa4225d09711c", optional = true }
 mozangle = {version = "0.1.5", features = ["egl"]}
 
 [target.'cfg(target_os = "macos")'.dependencies.gfx-backend-metal]
 git = "https://github.com/gfx-rs/gfx.git"
+rev = "683e989e18ff1190f9ef034b3cfaa4225d09711c"
 optional = true
 
 [target.'cfg(all(any(unix, windows), not(target_os = "macos")))'.dependencies.gfx-backend-vulkan]
 git = "https://github.com/gfx-rs/gfx.git"
+rev = "683e989e18ff1190f9ef034b3cfaa4225d09711c"
 optional = true
 
 [target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]

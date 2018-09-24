@@ -50,7 +50,7 @@ pub const INVALID_TEXTURE_ID: TextureId = 0;
 pub const INVALID_PROGRAM_ID: ProgramId = ProgramId(0);
 pub const DEFAULT_READ_FBO: FBOId = FBOId(0);
 pub const DEFAULT_DRAW_FBO: FBOId = FBOId(1);
-pub const MAX_FRAME_COUNT: usize = 2;
+pub const MAX_FRAME_COUNT: usize = 1;
 
 const COLOR_RANGE: hal::image::SubresourceRange = hal::image::SubresourceRange {
     aspects: hal::format::Aspects::COLOR,
@@ -248,6 +248,12 @@ impl ShaderKind {
 }
 
 pub struct ProgramCache;
+
+impl ProgramCache {
+    pub fn new() -> Rc<Self> {
+        Rc::new(ProgramCache {})
+    }
+}
 
 const ALPHA: BlendState = BlendState::On {
     color: BlendOp::Add {
@@ -1633,40 +1639,41 @@ impl<B: hal::Backend> DescriptorPools<B> {
             }
         ];
 
+        let count = 400;
         let cache_clip_range = vec![
             hal::pso::DescriptorRangeDesc {
                 ty: hal::pso::DescriptorType::SampledImage,
-                count: 400,
+                count: count * 10,
             },
             DescriptorRangeDesc {
                 ty: hal::pso::DescriptorType::Sampler,
-                count: 400,
+                count: count * 10,
             },
             DescriptorRangeDesc {
                 ty: hal::pso::DescriptorType::UniformBuffer,
-                count: 40,
+                count: count,
             }
         ];
 
         let default_range = vec![
             hal::pso::DescriptorRangeDesc {
                 ty: hal::pso::DescriptorType::SampledImage,
-                count: 400,
+                count: count * 10,
             },
             DescriptorRangeDesc {
                 ty: hal::pso::DescriptorType::Sampler,
-                count: 400,
+                count: count * 10,
             },
             DescriptorRangeDesc {
                 ty: hal::pso::DescriptorType::UniformBuffer,
-                count: 40,
+                count: count,
             }
         ];
 
         DescriptorPools {
             debug_pool: DescPool::new(device, 5, debug_range, debug_layout),
-            cache_clip_pool: DescPool::new(device, 40, cache_clip_range, cache_clip_layout),
-            default_pool: DescPool::new(device, 40, default_range, default_layout),
+            cache_clip_pool: DescPool::new(device, count, cache_clip_range, cache_clip_layout),
+            default_pool: DescPool::new(device, count, default_range, default_layout),
         }
     }
 
@@ -1965,6 +1972,7 @@ impl<B: hal::Backend> Device<B> {
     }
 
     pub(crate) fn recreate_swapchain(&mut self, window_size: Option<(u32, u32)>) -> DeviceUintSize {
+        println!("recreate_swapchain");
         self.device.wait_idle().unwrap();
 
         for (_id, program) in self.programs.drain() {
@@ -2401,6 +2409,7 @@ impl<B: hal::Backend> Device<B> {
     fn draw(
         &mut self,
     ) {
+        println!("draw");
         let submit = {
             let (fb, format) = if self.bound_draw_fbo != DEFAULT_DRAW_FBO {
                 (&self.fbos[&self.bound_draw_fbo].fbo, self.fbos[&self.bound_draw_fbo].format)
@@ -3075,17 +3084,19 @@ impl<B: hal::Backend> Device<B> {
     pub fn free_image(&mut self, texture: &mut Texture) {
         // Note: this is a very rare case, but if it becomes a problem
         // we need to handle this in renderer.rs
-        if texture.still_in_flight(self.frame_id) {
+        if texture.still_in_flight(self.frame_id) && !self.upload_queue.is_empty() {
+            println!("free_image");
             self.wait_for_resources();
-            let fence = self.device.create_fence(false);
+            /*let fence = self.device.create_fence(false);
             self.device.reset_fence(&fence);
             {
+                println!("self.upload_queue.len={:?}", self.upload_queue.len());
                 let submission = Submission::new()
                     .submit(self.upload_queue.drain(..));
                 self.queue_group.queues[0].submit(submission, Some(&fence));
             }
             self.device.wait_for_fence(&fence, !0);
-            self.device.destroy_fence(fence);
+            self.device.destroy_fence(fence);*/
             self.reset_command_pools();
         }
         if let Some(depth_rb) = texture.depth_rb.take() {
@@ -3164,6 +3175,7 @@ impl<B: hal::Backend> Device<B> {
         format: ReadPixelsFormat,
         output: &mut [u8],
     ) {
+        println!("read_pixels_into");
         self.wait_for_resources();
 
         let bytes_per_pixel = match format {
@@ -3765,7 +3777,7 @@ impl<B: hal::Backend> Device<B> {
         self.next_id = (self.next_id + 1) % MAX_FRAME_COUNT;
         self.reset_state();
         if self.frame_fence[self.next_id].is_submitted {
-            self.device.wait_for_fence(&self.frame_fence[self.next_id].inner, !0);
+            self.device.wait_for_fence(&self.frame_fence[self.next_id].inner, 1000);
             self.device.reset_fence(&self.frame_fence[self.next_id].inner);
             self.frame_fence[self.next_id].is_submitted = false;
         }
@@ -3784,7 +3796,7 @@ impl<B: hal::Backend> Device<B> {
     fn wait_for_resources(&mut self) {
         for fence in &mut self.frame_fence {
             if fence.is_submitted {
-                self.device.wait_for_fence(&fence.inner, !0);
+                self.device.wait_for_fence(&fence.inner, 1000);
                 self.device.reset_fence(&fence.inner);
                 fence.is_submitted = false;
             }

@@ -15,8 +15,10 @@
 #include "mozilla/widget/CompositorWidget.h"
 #include "mozilla/layers/SynchronousTask.h"
 
-#define WRDL_LOG(...)
-//#define WRDL_LOG(...) printf_stderr("WRDL(%p): " __VA_ARGS__)
+#include "nsView.h"
+
+//#define WRDL_LOG(...)
+#define WRDL_LOG(...) printf_stderr("WRDL(%p): " __VA_ARGS__)
 //#define WRDL_LOG(...) if (XRE_IsContentProcess()) printf_stderr("WRDL(%p): " __VA_ARGS__)
 
 namespace mozilla {
@@ -71,13 +73,23 @@ public:
 
     bool supportLowPriorityTransactions = true; // TODO only for main windows.
     wr::Renderer* wrRenderer = nullptr;
+    nsIWidget* compWidget = compositor->GetWidget()->RealWidget();
+    //widget::CompositorWidget* compWidget = compositor->GetWidget();
+    MOZ_ASSERT(compWidget);
+    //nsView* nsview = nsView::GetViewFor(compWidget);
+    //MOZ_ASSERT(nsview);
     if (!wr_window_new(aWindowId, mSize.width, mSize.height, supportLowPriorityTransactions,
                        compositor->gl(),
+                       compWidget->GetNativeData(NS_NATIVE_WINDOW),
+                       //compWidget->GetNativeData(NS_NATIVE_WIDGET),
+                       //nsview,
                        aRenderThread.ThreadPool().Raw(),
                        &WebRenderMallocSizeOf,
                        mDocHandle, &wrRenderer,
                        mMaxTextureSize)) {
+
       // wr_window_new puts a message into gfxCriticalNote if it returns false
+      WRDL_LOG("#####wr_window_new failed\n");
       return;
     }
     MOZ_ASSERT(wrRenderer);
