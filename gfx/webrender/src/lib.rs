@@ -48,11 +48,14 @@ extern crate cfg_if;
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
-#[cfg(any(feature = "serde"))]
+#[cfg_attr(feature = "gleam", allow(unused_imports))]
 #[macro_use]
 extern crate serde;
 #[macro_use]
 extern crate thread_profiler;
+pub extern crate gfx_hal as hal;
+#[cfg(not(feature = "gleam"))]
+extern crate rand;
 
 mod batch;
 mod border;
@@ -103,6 +106,8 @@ mod texture_allocator;
 mod texture_cache;
 mod tiling;
 mod util;
+#[cfg(not(feature = "gleam"))]
+mod vertex_types;
 
 mod shader_source {
     include!(concat!(env!("OUT_DIR"), "/shaders.rs"));
@@ -150,6 +155,7 @@ extern crate bincode;
 extern crate byteorder;
 extern crate euclid;
 extern crate fxhash;
+#[cfg(feature = "gleam")]
 extern crate gleam;
 extern crate num_traits;
 #[cfg(feature = "pathfinder")]
@@ -162,7 +168,7 @@ extern crate pathfinder_partitioner;
 extern crate pathfinder_path_utils;
 extern crate plane_split;
 extern crate rayon;
-#[cfg(feature = "ron")]
+#[cfg(any(not(feature = "gleam"), feature = "capture", feature = "replay"))]
 extern crate ron;
 #[cfg(feature = "debugger")]
 extern crate serde_json;
@@ -181,7 +187,7 @@ pub extern crate webrender_api;
 
 #[doc(hidden)]
 pub use device::{build_shader_strings, ReadPixelsFormat, UploadMethod, VertexUsageHint};
-pub use device::{ProgramBinary, ProgramCache, ProgramCacheObserver, ProgramSources};
+pub use device::{ProgramBinary, ProgramCache, ProgramCacheObserver, ProgramSources, DeviceInit};
 pub use frame_builder::ChasePrimitive;
 pub use renderer::{AsyncPropertySampler, CpuProfile, DebugFlags, OutputImageHandler, RendererKind};
 pub use renderer::{ExternalImage, ExternalImageHandler, ExternalImageSource, GpuProfile};
