@@ -174,7 +174,7 @@ impl WrProgramBinaryDiskCache {
         }
     }
 
-    pub fn try_load_from_disk(&mut self, program_cache: &Rc<ProgramCache>) {
+    pub fn try_load_from_disk(&mut self, _program_cache: &Rc<ProgramCache>) {
         if !self.is_enabled {
             return;
         }
@@ -192,11 +192,12 @@ impl WrProgramBinaryDiskCache {
                     info!("loading shader file");
 
                     match deserialize_program_binary(&path) {
-                        Ok(program) => {
-                            program_cache.load_program_binary(program);
-                        }
-                        Err(err) => {
-                            error!("Failed to desriralize program binary error: {}", err);
+                        //Ok(program) => {
+                        //    program_cache.load_program_binary(program);
+                        //}
+                        //Err(err) => {
+                        _ => {
+                            error!("Failed to desriralize program binary error");
                         }
                     };
 
@@ -249,8 +250,8 @@ pub struct WrProgramCache {
 impl WrProgramCache {
     pub fn new(prof_path: &nsAString, workers: &Arc<ThreadPool>) -> Self {
         let disk_cache = Rc::new(RefCell::new(WrProgramBinaryDiskCache::new(prof_path, workers)));
-        let program_cache_observer = Box::new(WrProgramCacheObserver::new(Rc::clone(&disk_cache)));
-        let program_cache = ProgramCache::new(Some(program_cache_observer));
+        //let program_cache_observer = Box::new(WrProgramCacheObserver::new(Rc::clone(&disk_cache)));
+        let program_cache = ProgramCache::new(/*Some(program_cache_observer)*/);
 
         WrProgramCache {
             program_cache,

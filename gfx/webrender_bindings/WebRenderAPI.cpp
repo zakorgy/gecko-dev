@@ -71,8 +71,11 @@ public:
 
     bool supportLowPriorityTransactions = true; // TODO only for main windows.
     wr::Renderer* wrRenderer = nullptr;
+    widget::GtkCompositorWidget* compWidget = compositor->GetWidget()->AsX11();
+    MOZ_ASSERT(compWidget);
     if (!wr_window_new(aWindowId, mSize.width, mSize.height, supportLowPriorityTransactions,
                        compositor->gl(),
+                       compWidget->XDisplay(), compWidget->XWindow(),
                        aRenderThread.ThreadPool().Raw(),
                        &WebRenderMallocSizeOf,
                        mDocHandle, &wrRenderer,

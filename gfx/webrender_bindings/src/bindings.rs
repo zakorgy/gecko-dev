@@ -3,7 +3,7 @@ use std::{mem, slice, ptr, env};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::os::raw::{c_void, c_char, c_float};
+use std::os::raw::{c_void, c_char, c_float, c_ulong};
 use gleam::gl;
 
 use webrender::api::*;
@@ -902,6 +902,8 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
                                 window_height: u32,
                                 support_low_priority_transactions: bool,
                                 gl_context: *mut c_void,
+                                display: *mut c_void,
+                                window: c_ulong,
                                 thread_pool: *mut WrThreadPool,
                                 size_of_op: VoidPtrToSizeFn,
                                 out_handle: &mut *mut DocumentHandle,
@@ -972,7 +974,13 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
     let notifier = Box::new(CppNotifier {
         window_id: window_id,
     });
-    let (renderer, sender) = match Renderer::new(gl, notifier, opts) {
+    let (renderer, sender) = match Renderer::new(
+        display,
+        window,
+        window_width,
+        window_height,
+        notifier,
+        opts) {
         Ok((renderer, sender)) => (renderer, sender),
         Err(e) => {
             warn!(" Failed to create a Renderer: {:?}", e);

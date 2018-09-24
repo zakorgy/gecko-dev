@@ -50,7 +50,7 @@ pub const INVALID_TEXTURE_ID: TextureId = 0;
 pub const INVALID_PROGRAM_ID: ProgramId = ProgramId(0);
 pub const DEFAULT_READ_FBO: FBOId = FBOId(0);
 pub const DEFAULT_DRAW_FBO: FBOId = FBOId(1);
-pub const MAX_FRAME_COUNT: usize = 2;
+pub const MAX_FRAME_COUNT: usize = 3;
 
 const COLOR_RANGE: hal::image::SubresourceRange = hal::image::SubresourceRange {
     aspects: hal::format::Aspects::COLOR,
@@ -237,6 +237,12 @@ impl ShaderKind {
 }
 
 pub struct ProgramCache;
+
+impl ProgramCache {
+    pub fn new() -> Rc<Self> {
+        Rc::new(ProgramCache {})
+    }
+}
 
 const ALPHA: BlendState = BlendState::On {
     color: BlendOp::Add {
@@ -1614,40 +1620,41 @@ impl<B: hal::Backend> DescriptorPools<B> {
             }
         ];
 
+        let count = 400;
         let cache_clip_range = vec![
             hal::pso::DescriptorRangeDesc {
                 ty: hal::pso::DescriptorType::SampledImage,
-                count: 400,
+                count: count * 10,
             },
             DescriptorRangeDesc {
                 ty: hal::pso::DescriptorType::Sampler,
-                count: 400,
+                count: count * 10,
             },
             DescriptorRangeDesc {
                 ty: hal::pso::DescriptorType::UniformBuffer,
-                count: 40,
+                count: count,
             }
         ];
 
         let default_range = vec![
             hal::pso::DescriptorRangeDesc {
                 ty: hal::pso::DescriptorType::SampledImage,
-                count: 400,
+                count: count * 10,
             },
             DescriptorRangeDesc {
                 ty: hal::pso::DescriptorType::Sampler,
-                count: 400,
+                count: count * 10,
             },
             DescriptorRangeDesc {
                 ty: hal::pso::DescriptorType::UniformBuffer,
-                count: 40,
+                count: count,
             }
         ];
 
         DescriptorPools {
             debug_pool: DescPool::new(device, 5, debug_range, debug_layout),
-            cache_clip_pool: DescPool::new(device, 40, cache_clip_range, cache_clip_layout),
-            default_pool: DescPool::new(device, 40, default_range, default_layout),
+            cache_clip_pool: DescPool::new(device, count, cache_clip_range, cache_clip_layout),
+            default_pool: DescPool::new(device, count, default_range, default_layout),
         }
     }
 
