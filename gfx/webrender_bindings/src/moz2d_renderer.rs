@@ -23,8 +23,8 @@ use foreign_types::ForeignType;
 use std::ffi::CString;
 
 macro_rules! dlog {
-    ($($e:expr),*) => { {$(let _ = $e;)*} }
-    //($($t:tt)*) => { println!($($t)*) }
+    //($($e:expr),*) => { {$(let _ = $e;)*} }
+    ($($t:tt)*) => { println!($($t)*) }
 }
 
 pub struct Moz2dBlobImageHandler {
