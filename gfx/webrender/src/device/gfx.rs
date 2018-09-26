@@ -3855,16 +3855,33 @@ impl<'a, B: hal::Backend> TextureUploader<'a, B> {
         let data= if stride.is_some() {
             let row_length = (stride.unwrap()) as usize;
 
-            for j in 0..height {
-                for i in 0..width {
-                    let offset = i * data_stride + j * data_stride * width;
-                    let src = &data[j * row_length + i * data_stride ..];
-                    assert!(offset + 3 < new_data.len()); // optimization
-                    // convert from BGRA
-                    new_data[offset + 0] = src[0];
-                    new_data[offset + 1] = src[1];
-                    new_data[offset + 2] = src[2];
-                    new_data[offset + 3] = src[3];
+            if data_stride == 4 {
+                for j in 0..height {
+                    for i in 0..width {
+                        let offset = i * data_stride + j * data_stride * width;
+                        let src = &data[j * row_length + i * data_stride ..];
+                        assert!(
+                            offset + 3 < new_data.len(),
+                            "offset={:?}, data len={:?}, data stride={:?}",
+                            offset, new_data.len(), data_stride,
+                        ); // optimization
+                        // convert from BGRA
+                        new_data[offset + 0] = src[0];
+                        new_data[offset + 1] = src[1];
+                        new_data[offset + 2] = src[2];
+                        new_data[offset + 3] = src[3];
+                    }
+                }
+            } else {
+                for j in 0..height {
+                    for i in 0..width {
+                        let offset = i * data_stride + j * data_stride * width;
+                        let src = &data[j * row_length + i * data_stride ..];
+                        for i in 0..data_stride {
+                            new_data[offset + i] = src[i];
+                        }
+
+                    }
                 }
             }
 
@@ -3872,7 +3889,9 @@ impl<'a, B: hal::Backend> TextureUploader<'a, B> {
         } else {
             data
         };
-        assert_eq!(data.len(), width * height * data_stride);
+        assert_eq!(data.len(), width * height * data_stride,
+                   "data len = {}, width = {}, height = {}, data stride = {}",
+                   data.len(), width, height, data_stride);
         self.device.upload_queue
             .push(
                 self.device.images
