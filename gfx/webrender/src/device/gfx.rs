@@ -784,11 +784,13 @@ impl<B: hal::Backend> BufferPool<B> {
 }
 
 pub struct InstanceBufferHandler<B: hal::Backend> {
-    buffer: Buffer<B>,
-    data_stride: usize,
+    pub buffer_pool: SmallVec<[Buffer<B>; 1]>,
+    pub data_stride: usize,
     non_coherent_atom_size: usize,
-    pub offset: usize,
-    pub size: usize,
+    pitch_alignment_mask: usize,
+    pub offset: SmallVec<[usize; 1]>,
+    pub size: SmallVec<[usize; 1]>,
+    buffer_index: usize,
 }
 
 impl<B: hal::Backend> InstanceBufferHandler<B> {
@@ -800,51 +802,108 @@ impl<B: hal::Backend> InstanceBufferHandler<B> {
         non_coherent_atom_size: usize,
         pitch_alignment_mask: usize,
     ) -> Self {
-        let buffer = Buffer::new(
+        let mut buffer_pool = SmallVec::new();
+        buffer_pool.push(Buffer::new(
             device,
             memory_types,
             usage,
             pitch_alignment_mask,
             MAX_INSTANCE_COUNT,
             data_stride,
-        );
+        ));
         InstanceBufferHandler {
-            offset: 0,
-            size: 0,
+            offset: SmallVec::from_vec(vec![0]),
+            size: SmallVec::from_vec(vec![0]),
             non_coherent_atom_size,
-            buffer,
+            pitch_alignment_mask,
+            buffer_pool,
             data_stride,
+            buffer_index: 0,
         }
     }
 
-    pub fn add<T: Copy>(&mut self, device: &B::Device, data: &[T]) {
-        let buffer_len = data.len() * self.data_stride;
-        assert!(
-            self.offset * self.data_stride + buffer_len < self.buffer.buffer_size,
-            "offset({:?}) * data_stride({:?}) + buffer_len({:?}) < buffer_size({:?})",
-            self.offset, self.data_stride, buffer_len, self.buffer.buffer_size
-        );
-        self.buffer.update(
-            device,
-            data,
-            self.offset,
-            self.non_coherent_atom_size,
-        );
-        self.size = data.len();
-        self.offset += self.size;
+    pub fn add<T: Copy>(
+        &mut self,
+        device: &B::Device,
+        data: &[T],
+        memory_types: &Vec<hal::MemoryType>,
+    ) {
+        let data_len = data.len();
+        let buffer_len = data_len * self.data_stride;
+        if self.offset() * self.data_stride + buffer_len > self.buffer().buffer_size {
+            let update_len = (self.buffer().buffer_size / self.data_stride - self.offset() + self.data_stride - 1) & !(self.data_stride - 1);
+            assert!(update_len % self.data_stride == 0, "update_len = {} data_stride = {}", update_len, self.data_stride);
+            if update_len > 0 {
+                self.buffer().update(
+                    device,
+                    &data[0 .. update_len],
+                    self.offset(),
+                    self.non_coherent_atom_size,
+                );
+                self.size[self.buffer_index] = update_len;
+                self.offset[self.buffer_index] += update_len;
+            }
+            let data = &data[update_len ..];
+            self.buffer_index += 1;
+            self.offset.push(0);
+            self.size.push(0);
+            if self.buffer_pool.len() < (self.buffer_index + 1) {
+                self.buffer_pool.push(
+                    Buffer::new(
+                        device,
+                        memory_types,
+                        hal::buffer::Usage::VERTEX,
+                        self.pitch_alignment_mask,
+                        MAX_INSTANCE_COUNT,
+                        self.data_stride,
+                    )
+                )
+            }
+            self.add(device, data, memory_types);
+        } else {
+            assert!(
+                self.offset() * self.data_stride + buffer_len < self.buffer().buffer_size,
+                "offset({:?}) * data_stride({:?}) + buffer_len({:?}) < buffer_size({:?})",
+                self.offset(), self.data_stride, buffer_len, self.buffer().buffer_size
+            );
+            self.buffer().update(
+                device,
+                data,
+                self.offset(),
+                self.non_coherent_atom_size,
+            );
+            self.size[self.buffer_index] = data_len;
+            self.offset[self.buffer_index] += data_len;
+        }
     }
 
     pub fn buffer(&self) -> &Buffer<B> {
-        &self.buffer
+        &self.buffer_pool[self.buffer_index]
+    }
+
+    pub fn size(&self) -> usize {
+        self.size[self.buffer_index]
+    }
+
+    pub fn offset(&self) -> usize {
+        self.offset[self.buffer_index]
+    }
+
+    fn buffer_count(&self) -> usize {
+        self.buffer_index + 1
     }
 
     pub fn reset(&mut self) {
-        self.offset = 0;
-        self.size = 0;
+        self.offset = SmallVec::from_vec(vec![0]);
+        self.size = SmallVec::from_vec(vec![0]);
+        self.buffer_index = 0;
     }
 
     pub fn deinit(self, device: &B::Device) {
-        self.buffer.deinit(device);
+        //self.buffer.deinit(device);
+        for buffer in self.buffer_pool {
+            buffer.deinit(device);
+        }
     }
 }
 
@@ -1222,11 +1281,13 @@ impl<B: hal::Backend> Program<B> {
         device: &B::Device,
         instances: &[T],
         buffer_id: usize,
+        memory_types: &Vec<hal::MemoryType>,
     ) {
         if !instances.is_empty() {
             self.instance_buffer[buffer_id].add(
                 device,
                 instances,
+                memory_types,
             );
         }
     }
@@ -1331,12 +1392,17 @@ impl<B: hal::Backend> Program<B> {
                 }
             );
         } else {
+            let mut buffers = vec![(&vertex_buffer.buffer().buffer, 0)];
+            for i in 0 .. instance_buffer.buffer_count() {
+                buffers.push((&instance_buffer.buffer_pool[i].buffer, (i * MAX_INSTANCE_COUNT) as u64))
+            }
             cmd_buffer.bind_vertex_buffers(
                 0,
-                vec![
+                /*vec![
                     (&vertex_buffer.buffer().buffer, 0),
                     (&instance_buffer.buffer().buffer, 0),
-                ],
+                ],*/
+                buffers,
             );
         }
 
@@ -1366,12 +1432,31 @@ impl<B: hal::Backend> Program<B> {
                     0,
                     0 .. 1,
                 );
-            } else {
-                let offset = instance_buffer.offset as u32;
-                let size = instance_buffer.size as u32;
+            } else if instance_buffer.buffer_count() == 1 {
+                let offset = instance_buffer.offset() as u32;
+                let size = instance_buffer.size() as u32;
                 encoder.draw(
                     0 .. vertex_buffer.buffer_len as _,
                     (offset - size) .. offset,
+                );
+            } else {
+                /*for i in 0 .. instance_buffer.buffer_count() {
+                    let offset = instance_buffer.offset[i];
+                    let size = instance_buffer.size[i];
+                    let range = (i  * MAX_INSTANCE_COUNT + (offset - size)) as u32
+                        .. (i * MAX_INSTANCE_COUNT + offset) as u32;
+                    println!("range {:?}", range);
+                    encoder.draw(
+                        0 .. vertex_buffer.buffer_len as _,
+                        range,
+                    );
+                }*/
+                let offset = ((instance_buffer.buffer_count() - 1) * MAX_INSTANCE_COUNT + instance_buffer.offset()) as u32;
+                let range = 0 .. offset;
+                println!("range {:?}", range);
+                encoder.draw(
+                    0 .. vertex_buffer.buffer_len as _,
+                    range,
                 );
             }
         }
@@ -1620,7 +1705,7 @@ impl<B: hal::Backend> DescriptorPools<B> {
             }
         ];
 
-        let count = 400;
+        let count = 800;
         let cache_clip_range = vec![
             hal::pso::DescriptorRangeDesc {
                 ty: hal::pso::DescriptorType::SampledImage,
@@ -2383,7 +2468,8 @@ impl<B: hal::Backend> Device<B> {
         instances: &[T],
     ) {
         assert_ne!(self.bound_program, INVALID_PROGRAM_ID);
-        self.programs.get_mut(&self.bound_program).expect("Program not found.").bind_instances(&self.device, instances, self.next_id);
+        self.programs.get_mut(&self.bound_program).expect("Program not found.")
+            .bind_instances(&self.device, instances, self.next_id, &self.memory_types);
     }
 
     fn draw(
