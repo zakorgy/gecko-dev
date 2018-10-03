@@ -3,6 +3,7 @@ use device::{Device, PhysicalDevice};
 use internal::Channel;
 use native;
 
+use std::ptr::NonNull;
 use std::sync::Arc;
 use std::thread;
 
@@ -26,12 +27,11 @@ pub type CAMetalLayer = *mut Object;
 pub struct Surface {
     inner: Arc<SurfaceInner>,
     main_thread_id: thread::ThreadId,
-    has_swapchain: bool,
 }
 
 #[derive(Debug)]
 pub struct SurfaceInner {
-    view: *mut Object,
+    view: Option<NonNull<Object>>,
     render_layer: Mutex<CAMetalLayer>,
 }
 
@@ -40,7 +40,13 @@ unsafe impl Sync for SurfaceInner {}
 
 impl Drop for SurfaceInner {
     fn drop(&mut self) {
-        unsafe { msg_send![self.view, release]; }
+        let object = match self.view {
+            Some(view) => view.as_ptr(),
+            None => *self.render_layer.lock(),
+        };
+        unsafe {
+            msg_send![object, release];
+        }
     }
 }
 
@@ -52,7 +58,7 @@ struct FrameNotFound {
 
 
 impl SurfaceInner {
-    pub fn new(view: *mut Object, layer: CAMetalLayer) -> Self {
+    pub fn new(view: Option<NonNull<Object>>, layer: CAMetalLayer) -> Self {
         SurfaceInner {
             view,
             render_layer: Mutex::new(layer),
@@ -63,7 +69,6 @@ impl SurfaceInner {
         Surface {
             inner: Arc::new(self),
             main_thread_id: thread::current().id(),
-            has_swapchain: false,
         }
     }
 
@@ -94,14 +99,18 @@ impl SurfaceInner {
     }
 
     fn dimensions(&self) -> Extent2D {
-        unsafe {
-            // NSView/UIView bounds are measured in DIPs
-            let bounds: CGRect = msg_send![self.view, bounds];
-            //let bounds_pixel: NSRect = msg_send![self.nsview, convertRectToBacking:bounds];
-            Extent2D {
-                width: bounds.size.width as _,
-                height: bounds.size.height as _,
-            }
+        let size = match self.view {
+            Some(view) => unsafe {
+                let bounds: CGRect = msg_send![view.as_ptr(), bounds];
+                bounds.size
+            },
+            None => unsafe {
+                msg_send![*self.render_layer.lock(), drawableSize]
+            },
+        };
+        Extent2D {
+            width: size.width as _,
+            height: size.height as _,
         }
     }
 }
@@ -293,6 +302,7 @@ impl Device {
         &self,
         surface: &mut Surface,
         config: SwapchainConfig,
+        old_swapchain: Option<Swapchain>,
     ) -> (Swapchain, Backbuffer<Backend>) {
         info!("build_swapchain {:?}", config);
 
@@ -313,10 +323,11 @@ impl Device {
             caps.has_version_at_least(11, 0)
         };
         let can_set_display_sync = is_mac && caps.has_version_at_least(10, 13);
-        let device = self.shared.device.lock();
-        let device_raw: &metal::DeviceRef = &*device;
+
+        let cmd_queue = self.shared.queue.lock();
 
         unsafe {
+            let device_raw = self.shared.device.lock().as_ptr();
             msg_send![render_layer, setDevice: device_raw];
             msg_send![render_layer, setPixelFormat: mtl_format];
             msg_send![render_layer, setFramebufferOnly: framebuffer_only];
@@ -340,11 +351,27 @@ impl Device {
                 };
                 trace!("\tframe[{}] = {:?}", index, texture);
 
-                let drawable = if index == 0 && surface.has_swapchain {
+                let drawable = if index == 0 {
                     // when resizing, this trick frees up the currently shown frame
-                    // HACK: the has_swapchain is unfortunate, and might not be
-                    //       correct in all cases.
-                    drawable.present();
+                    match old_swapchain {
+                        Some(ref old) => {
+                            let cmd_buffer = cmd_queue.spawn_temp();
+                            self.shared.service_pipes.simple_blit(
+                                &self.shared.device,
+                                cmd_buffer,
+                                &old.frames[0].texture,
+                                texture,
+                            );
+                            cmd_buffer.present_drawable(drawable);
+                            cmd_buffer.set_label("build_swapchain");
+                            cmd_buffer.commit();
+                            cmd_buffer.wait_until_completed();
+                        }
+                        None => {
+                            // this will look as a black frame
+                            drawable.present();
+                        }
+                    }
                     None
                 } else {
                     Some(drawable.to_owned())
@@ -372,8 +399,6 @@ impl Device {
                 mtl_type: metal::MTLTextureType::D2,
             })
             .collect();
-
-        surface.has_swapchain = true;
 
         let swapchain = Swapchain {
             frames: Arc::new(frames),
@@ -430,7 +455,9 @@ impl hal::Swapchain<Backend> for Swapchain {
                     hal::FrameSync::Semaphore(semaphore) => {
                         self.image_ready_callbacks.push(Arc::clone(&semaphore.image_ready));
                         let mut sw_image = semaphore.image_ready.lock();
-                        assert!(sw_image.is_none());
+                        if let Some(ref swi) = *sw_image {
+                            warn!("frame {} hasn't been waited upon", swi.index);
+                        }
                         *sw_image = Some(SwapchainImage {
                             frames: self.frames.clone(),
                             surface: self.surface.clone(),
