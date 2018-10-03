@@ -67,7 +67,11 @@ pub enum SourceTexture {
 }
 
 pub const ORTHO_NEAR_PLANE: f32 = -100000.0;
+#[cfg(feature = "gleam")]
 pub const ORTHO_FAR_PLANE: f32 = 100000.0;
+#[cfg(not(feature = "gleam"))]
+pub const ORTHO_FAR_PLANE: f32 = 000000.0;
+
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "capture", derive(Serialize))]

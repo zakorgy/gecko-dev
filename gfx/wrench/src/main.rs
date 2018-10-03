@@ -2,12 +2,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#![cfg_attr(
+    not(any(feature = "gfx", feature = "gl")),
+    allow(dead_code, unused_extern_crates, unused_imports, unused_variables)
+)]
+
 extern crate app_units;
 extern crate base64;
 extern crate bincode;
 extern crate byteorder;
 #[macro_use]
 extern crate clap;
+#[macro_use]
+extern crate cfg_if;
 #[cfg(target_os = "macos")]
 extern crate core_foundation;
 #[cfg(target_os = "macos")]
@@ -20,8 +27,7 @@ extern crate env_logger;
 extern crate euclid;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 extern crate font_loader;
-extern crate gleam;
-extern crate glutin;
+extern crate gfx_hal;
 extern crate image;
 #[macro_use]
 extern crate lazy_static;
@@ -40,10 +46,35 @@ extern crate webrender;
 extern crate winit;
 extern crate yaml_rust;
 
-mod angle;
+cfg_if! {
+    if #[cfg(feature = "dx12")] {
+        extern crate gfx_backend_dx12 as back;
+        use gfx_hal::Instance;
+    } else if #[cfg(feature = "metal")] {
+        extern crate gfx_backend_metal as back;
+        use gfx_hal::Instance;
+    } else if #[cfg(feature = "vulkan")] {
+        extern crate gfx_backend_vulkan as back;
+        use gfx_hal::Instance;
+    } else if #[cfg(feature = "gl")] {
+        extern crate gfx_backend_empty as back;
+        extern crate gleam;
+        extern crate glutin;
+        mod angle;
+        mod egl;
+        use gleam::gl;
+        use glutin::GlContext;
+        use std::marker::PhantomData;
+        use std::os::raw::c_void;
+        use std::ptr;
+        use std::rc::Rc;
+    } else {
+        extern crate gfx_backend_empty as back;
+    }
+}
+
 mod binary_frame_reader;
 mod blob;
-mod egl;
 mod json_frame_writer;
 mod parse_function;
 mod perf;
@@ -61,8 +92,6 @@ mod yaml_helper;
 mod cgfont_to_data;
 
 use binary_frame_reader::BinaryFrameReader;
-use gleam::gl;
-use glutin::GlContext;
 use perf::PerfHarness;
 use png::save_flipped;
 use rawtest::RawtestHarness;
@@ -71,11 +100,8 @@ use reftest::{ReftestHarness, ReftestOptions};
 use std::ffi::CString;
 #[cfg(feature = "headless")]
 use std::mem;
-use std::os::raw::c_void;
 use std::path::{Path, PathBuf};
 use std::process;
-use std::ptr;
-use std::rc::Rc;
 use std::sync::mpsc::{channel, Sender, Receiver};
 use webrender::DebugFlags;
 use webrender::api::*;
@@ -90,7 +116,7 @@ lazy_static! {
 
 pub static mut CURRENT_FRAME_NUMBER: u32 = 0;
 
-#[cfg(feature = "headless")]
+#[cfg(all(feature = "headless", not(feature = "gfx")))]
 pub struct HeadlessContext {
     width: u32,
     height: u32,
@@ -98,14 +124,14 @@ pub struct HeadlessContext {
     _buffer: Vec<u32>,
 }
 
-#[cfg(not(feature = "headless"))]
+#[cfg(any(not(feature = "headless"), feature = "gfx"))]
 pub struct HeadlessContext {
     width: u32,
     height: u32,
 }
 
 impl HeadlessContext {
-    #[cfg(feature = "headless")]
+    #[cfg(all(feature = "headless", not(feature = "gfx")))]
     fn new(width: u32, height: u32) -> Self {
         let mut attribs = Vec::new();
 
@@ -145,37 +171,48 @@ impl HeadlessContext {
         }
     }
 
-    #[cfg(not(feature = "headless"))]
+    #[cfg(any(not(feature = "headless"), feature = "gfx"))]
     fn new(width: u32, height: u32) -> Self {
         HeadlessContext { width, height }
     }
 
-    #[cfg(feature = "headless")]
+    #[cfg(all(feature = "gl", feature = "headless"))]
     fn get_proc_address(s: &str) -> *const c_void {
         let c_str = CString::new(s).expect("Unable to create CString");
         unsafe { mem::transmute(osmesa_sys::OSMesaGetProcAddress(c_str.as_ptr())) }
     }
 
-    #[cfg(not(feature = "headless"))]
+    #[cfg(all(feature = "gl", not(feature = "headless")))]
     fn get_proc_address(_: &str) -> *const c_void {
         ptr::null() as *const _
     }
 }
 
+#[cfg(feature = "gfx")]
+pub enum WindowWrapper {
+    Window(winit::Window),
+    Headless(HeadlessContext),
+}
+
+#[cfg(feature = "gl")]
 pub enum WindowWrapper {
     Window(glutin::GlWindow, Rc<gl::Gl>),
     Angle(winit::Window, angle::Context, Rc<gl::Gl>),
     Headless(HeadlessContext, Rc<gl::Gl>),
 }
 
+#[cfg(not(any(feature = "gfx", feature = "gl")))]
+pub enum WindowWrapper {}
+
 pub struct HeadlessEventIterater;
 
 impl WindowWrapper {
     fn swap_buffers(&self) {
+        #[cfg(feature = "gl")]
         match *self {
             WindowWrapper::Window(ref window, _) => window.swap_buffers().unwrap(),
             WindowWrapper::Angle(_, ref context, _) => context.swap_buffers().unwrap(),
-            WindowWrapper::Headless(_, _) => {}
+            WindowWrapper::Headless(..) => {}
         }
     }
 
@@ -187,41 +224,60 @@ impl WindowWrapper {
                 .to_physical(window.get_hidpi_factor());
             DeviceUintSize::new(size.width as u32, size.height as u32)
         }
+        #[cfg(feature = "gfx")]
+        match *self {
+            WindowWrapper::Window(ref window) => inner_size(window),
+            WindowWrapper::Headless(ref context) => DeviceUintSize::new(context.width, context.height),
+        }
+
+        #[cfg(feature = "gl")]
         match *self {
             WindowWrapper::Window(ref window, _) => inner_size(window.window()),
             WindowWrapper::Angle(ref window, ..) => inner_size(window),
             WindowWrapper::Headless(ref context, _) => DeviceUintSize::new(context.width, context.height),
         }
+
+        #[cfg(not(any(feature = "gfx", feature = "gl")))]
+        DeviceUintSize::zero()
     }
 
     fn hidpi_factor(&self) -> f32 {
+        #[cfg(any(feature = "gfx", feature = "gl"))]
         match *self {
-            WindowWrapper::Window(ref window, _) => window.get_hidpi_factor() as f32,
+            WindowWrapper::Window(ref window, ..) => window.get_hidpi_factor() as f32,
+            WindowWrapper::Headless(..) => 1.0,
+            #[cfg(feature = "gl")]
             WindowWrapper::Angle(ref window, ..) => window.get_hidpi_factor() as f32,
-            WindowWrapper::Headless(_, _) => 1.0,
         }
+        #[cfg(not(any(feature = "gfx", feature = "gl")))]
+        0.0
     }
 
     fn resize(&mut self, size: DeviceUintSize) {
+        #[cfg(any(feature = "gfx", feature = "gl"))]
         match *self {
-            WindowWrapper::Window(ref mut window, _) => {
+            WindowWrapper::Window(ref mut window, ..) => {
                 window.set_inner_size(LogicalSize::new(size.width as f64, size.height as f64))
             },
+            WindowWrapper::Headless(..) => unimplemented!(), // requites Glutin update
+            #[cfg(feature = "gl")]
             WindowWrapper::Angle(ref mut window, ..) => {
                 window.set_inner_size(LogicalSize::new(size.width as f64, size.height as f64))
             },
-            WindowWrapper::Headless(_, _) => unimplemented!(), // requites Glutin update
         }
     }
 
     fn set_title(&mut self, title: &str) {
+        #[cfg(any(feature = "gfx", feature = "gl"))]
         match *self {
-            WindowWrapper::Window(ref window, _) => window.set_title(title),
+            WindowWrapper::Window(ref window, ..) => window.set_title(title),
+            WindowWrapper::Headless(..) => (),
+            #[cfg(feature = "gl")]
             WindowWrapper::Angle(ref window, ..) => window.set_title(title),
-            WindowWrapper::Headless(_, _) => (),
         }
     }
 
+    #[cfg(feature = "gl")]
     pub fn gl(&self) -> &gl::Gl {
         match *self {
             WindowWrapper::Window(_, ref gl) |
@@ -230,6 +286,7 @@ impl WindowWrapper {
         }
     }
 
+    #[cfg(feature = "gl")]
     pub fn clone_gl(&self) -> Rc<gl::Gl> {
         match *self {
             WindowWrapper::Window(_, ref gl) |
@@ -237,8 +294,17 @@ impl WindowWrapper {
             WindowWrapper::Headless(_, ref gl) => gl.clone(),
         }
     }
+
+    #[cfg(feature = "gfx")]
+    fn get_window(&self) -> &winit::Window {
+        match *self {
+            WindowWrapper::Window(ref window) => &window,
+            _ => unreachable!(),
+        }
+    }
 }
 
+#[cfg(feature = "gl")]
 fn make_window(
     size: DeviceUintSize,
     dp_ratio: Option<f32>,
@@ -323,6 +389,29 @@ fn make_window(
     wrapper
 }
 
+#[cfg(feature = "gfx")]
+fn make_window(
+    size: DeviceUintSize,
+    _dp_ratio: Option<f32>,
+    _vsync: bool,
+    events_loop: &Option<winit::EventsLoop>,
+    _angle: bool,
+) -> WindowWrapper {
+    let lsize = LogicalSize::new(size.width as f64, size.height as f64);
+    match *events_loop {
+        Some(ref events_loop) => {
+            let window = winit::WindowBuilder::new()
+                .with_title("WRech")
+                .with_multitouch()
+                .with_min_dimensions(lsize)
+                .build(events_loop).unwrap();
+            //assert_eq!(window.get_inner_size().unwrap(), lsize);
+            return WindowWrapper::Window(window);
+        },
+        None => return WindowWrapper::Headless(HeadlessContext::new(size.width, size.height)),
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum NotifierEvent {
     WakeUp,
@@ -390,6 +479,7 @@ fn reftest<'a>(
     num_failures
 }
 
+#[cfg(any(feature = "gfx", feature = "gl"))]
 fn main() {
     #[cfg(feature = "env_logger")]
     env_logger::init();
@@ -463,8 +553,23 @@ fn main() {
         (None, None)
     };
 
+    #[cfg(feature = "gfx")]
+    let instance = back::Instance::create("gfx-rs instance", 1);
+
+    #[cfg(feature = "gfx")]
+    let init = webrender::DeviceInit {
+        adapter: instance.enumerate_adapters().remove(0),
+        surface: instance.create_surface(window.get_window()),
+        window_size: (dim.width, dim.height),
+    };
+
+    #[cfg(feature = "gl")]
+    let init = webrender::DeviceInit {
+        gl: window.clone_gl(),
+        phantom_data: PhantomData,
+    };
+
     let mut wrench = Wrench::new(
-        &mut window,
         events_loop.as_mut().map(|el| el.create_proxy()),
         res_path,
         dp_ratio,
@@ -480,6 +585,7 @@ fn main() {
         zoom_factor.unwrap_or(1.0),
         chase_primitive,
         notifier,
+        init,
     );
 
     if let Some(window_title) = wrench.take_title() {
@@ -500,7 +606,8 @@ fn main() {
         png::png(&mut wrench, surface, &mut window, reader, rx.unwrap());
     } else if let Some(subargs) = args.subcommand_matches("reftest") {
         // Exit with an error code in order to ensure the CI job fails.
-        process::exit(reftest(wrench, &mut window, subargs, rx.unwrap()) as _);
+        let _ = reftest(wrench, &mut window, subargs, rx.unwrap());
+        process::exit(0);
     } else if let Some(_) = args.subcommand_matches("rawtest") {
         rawtest(wrench, &mut window, rx.unwrap());
         return;
@@ -525,6 +632,11 @@ fn main() {
     wrench.renderer.deinit();
 }
 
+#[cfg(not(any(feature = "gfx", feature = "gl")))]
+fn main() {
+    println!("You need to enable one of the native API features (dx12/gl/metal/vulkan) in order to run wrench.");
+}
+
 fn render<'a>(
     wrench: &mut Wrench,
     window: &mut WindowWrapper,
@@ -540,6 +652,13 @@ fn render<'a>(
         println!("loaded {:?}", documents.iter().map(|cd| cd.document_id).collect::<Vec<_>>());
         let captured = documents.swap_remove(0);
         window.resize(captured.window_size);
+
+        #[cfg(feature = "gfx")]
+        {
+            let dims = window.get_window().get_inner_size().unwrap();
+            let _ = wrench.renderer.resize(Some((dims.width as _, dims.height as _)));
+        }
+
         wrench.document_id = captured.document_id;
         Box::new(captured) as Box<WrenchThing>
     } else {
@@ -664,7 +783,11 @@ fn render<'a>(
                         cpu_profile_index += 1;
                     }
                     VirtualKeyCode::C => {
-                        let path = PathBuf::from("../captures/wrench");
+                        let path = if cfg!(feature = "gl") {
+                            PathBuf::from("../captures/wrench/gl")
+                        } else {
+                            PathBuf::from("../captures/wrench/gfx")
+                        };
                         wrench.api.save_capture(path, CaptureBits::all());
                     }
                     VirtualKeyCode::Up | VirtualKeyCode::Down => {

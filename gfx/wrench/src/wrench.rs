@@ -4,6 +4,7 @@
 
 
 use app_units::Au;
+use back;
 use blob;
 use crossbeam::sync::chase_lev;
 #[cfg(windows)]
@@ -22,7 +23,7 @@ use webrender;
 use webrender::api::*;
 use webrender::{DebugFlags, RendererStats};
 use yaml_frame_writer::YamlFrameWriterReceiver;
-use {WindowWrapper, NotifierEvent};
+use NotifierEvent;
 
 // TODO(gw): This descriptor matches what we currently support for fonts
 //           but is quite a mess. We should at least document and
@@ -150,7 +151,7 @@ pub struct Wrench {
     pub device_pixel_ratio: f32,
     page_zoom_factor: ZoomFactor,
 
-    pub renderer: webrender::Renderer,
+    pub renderer: webrender::Renderer<back::Backend>,
     pub api: RenderApi,
     pub document_id: DocumentId,
     pub root_pipeline_id: PipelineId,
@@ -169,7 +170,6 @@ pub struct Wrench {
 
 impl Wrench {
     pub fn new(
-        window: &mut WindowWrapper,
         proxy: Option<EventsLoopProxy>,
         shader_override_path: Option<PathBuf>,
         dp_ratio: f32,
@@ -185,6 +185,7 @@ impl Wrench {
         zoom_factor: f32,
         chase_primitive: webrender::ChasePrimitive,
         notifier: Option<Box<RenderNotifier>>,
+        init: webrender::DeviceInit<back::Backend>,
     ) -> Self {
         println!("Shader override path: {:?}", shader_override_path);
 
@@ -232,7 +233,7 @@ impl Wrench {
             Box::new(Notifier(data))
         });
 
-        let (renderer, sender) = webrender::Renderer::new(window.clone_gl(), notifier, opts).unwrap();
+        let (renderer, sender) = webrender::Renderer::new(init, notifier, opts).unwrap();
         let api = sender.create_api();
         let document_id = api.add_document(size, 0);
 

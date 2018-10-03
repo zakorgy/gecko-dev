@@ -8,6 +8,9 @@ use image::load as load_piston_image;
 use image::png::PNGEncoder;
 use image::{ColorType, ImageFormat};
 use parse_function::parse_function;
+#[cfg(feature = "gfx")]
+use png::{save, SaveSettings};
+#[cfg(feature = "gl")]
 use png::save_flipped;
 use std::cmp;
 use std::fmt::{Display, Error, Formatter};
@@ -466,7 +469,12 @@ impl<'a> ReftestHarness<'a> {
     fn load_image(&mut self, filename: &Path, format: ImageFormat) -> ReftestImage {
         let file = BufReader::new(File::open(filename).unwrap());
         let img_raw = load_piston_image(file, format).unwrap();
+
+        #[cfg(feature = "gl")]
         let img = img_raw.flipv().to_rgba();
+
+        #[cfg(not(feature = "gl"))]
+        let img = img_raw.to_rgba();
         let size = img.dimensions();
         ReftestImage {
             data: img.into_raw(),
@@ -500,13 +508,24 @@ impl<'a> ReftestHarness<'a> {
         );
 
         // taking the bottom left sub-rectangle
+        #[cfg(feature = "gl")]
         let rect = DeviceUintRect::new(DeviceUintPoint::new(0, window_size.height - size.height), size);
+
+        #[cfg(not(feature = "gl"))]
+        let rect = DeviceUintRect::new(DeviceUintPoint::new(0, 0), size);
         let pixels = self.wrench.renderer.read_pixels_rgba8(rect);
         self.window.swap_buffers();
 
         let write_debug_images = false;
         if write_debug_images {
             let debug_path = filename.with_extension("yaml.png");
+            #[cfg(feature = "gfx")]
+            save(debug_path, pixels.clone(), size,
+                 SaveSettings {
+                     flip_vertical: false,
+                     try_crop: true,
+                 });
+            #[cfg(feature = "gl")]
             save_flipped(debug_path, pixels.clone(), size);
         }
 

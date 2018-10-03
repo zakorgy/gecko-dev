@@ -1,0 +1,162 @@
+[
+    (
+        name: "cs_scale",
+        source_name: "cs_scale",
+        features: [
+            "ALPHA_TARGET",// [0]
+            "COLOR_TARGET",// [1]
+        ],
+    ),// [0]
+    (
+        name: "cs_blur",
+        source_name: "cs_blur",
+        features: [
+            "ALPHA_TARGET",// [0]
+            "COLOR_TARGET",// [1]
+        ],
+    ),// [1]
+    (
+        name: "cs_border_segment",
+        source_name: "cs_border_segment",
+        features: [
+            "",// [0]
+        ],
+    ),// [2]
+    (
+        name: "cs_border_solid",
+        source_name: "cs_border_solid",
+        features: [
+            "",// [0]
+        ],
+    ),// [3]
+    (
+        name: "brush_solid",
+        source_name: "brush_solid",
+        features: [
+            "",// [0]
+            "ALPHA_PASS",// [1]
+        ],
+    ),// [4]
+    (
+        name: "brush_image",
+        source_name: "brush_image",
+        features: [
+            "",// [0]
+            "ALPHA_PASS",// [1]
+            "ALPHA_PASS,DUAL_SOURCE_BLENDING",// [2]
+        ],
+    ),// [5]
+    (
+        name: "brush_blend",
+        source_name: "brush_blend",
+        features: [
+            "",// [0]
+            "ALPHA_PASS",// [1]
+        ],
+    ),// [6]
+    (
+        name: "brush_mix_blend",
+        source_name: "brush_mix_blend",
+        features: [
+            "",// [0]
+            "ALPHA_PASS",// [1]
+        ],
+    ),// [7]
+    (
+        name: "brush_yuv_image",
+        source_name: "brush_yuv_image",
+        features: [
+            "YUV_NV12,YUV_REC601",// [0]
+            "YUV_NV12,YUV_REC709",// [1]
+            "YUV_PLANAR,YUV_REC601",// [2]
+            "YUV_PLANAR,YUV_REC709",// [3]
+            "YUV_INTERLEAVED,YUV_REC601",// [4]
+            "YUV_INTERLEAVED,YUV_REC709",// [5]
+            "YUV_NV12,YUV_REC601,ALPHA_PASS",// [6]
+            "YUV_NV12,YUV_REC709,ALPHA_PASS",// [7]
+            "YUV_PLANAR,YUV_REC601,ALPHA_PASS",// [8]
+            "YUV_PLANAR,YUV_REC709,ALPHA_PASS",// [9]
+            "YUV_INTERLEAVED,YUV_REC601,ALPHA_PASS",// [10]
+            "YUV_INTERLEAVED,YUV_REC709,ALPHA_PASS",// [11]
+        ],
+    ),// [8]
+    (
+        name: "brush_radial_gradient",
+        source_name: "brush_radial_gradient",
+        features: [
+            "",// [0]
+            "ALPHA_PASS",// [1]
+            "DITHERING",// [2]
+            "DITHERING,ALPHA_PASS",// [3]
+        ],
+    ),// [9]
+    (
+        name: "brush_linear_gradient",
+        source_name: "brush_linear_gradient",
+        features: [
+            "",// [0]
+            "ALPHA_PASS",// [1]
+            "DITHERING",// [2]
+            "DITHERING,ALPHA_PASS",// [3]
+        ],
+    ),// [10]
+    (
+        name: "cs_clip_rectangle",
+        source_name: "cs_clip_rectangle",
+        features: [
+            "",// [0]
+        ],
+    ),// [11]
+    (
+        name: "cs_clip_box_shadow",
+        source_name: "cs_clip_box_shadow",
+        features: [
+            "",// [0]
+        ],
+    ),// [12]
+    (
+        name: "cs_clip_image",
+        source_name: "cs_clip_image",
+        features: [
+            "",// [0]
+        ],
+    ),// [13]
+    (
+        name: "cs_clip_line",
+        source_name: "cs_clip_line",
+        features: [
+            "",// [0]
+        ],
+    ),// [14]
+    (
+        name: "ps_text_run",
+        source_name: "ps_text_run",
+        features: [
+            "",// [0]
+            "GLYPH_TRANSFORM",// [1]
+            "DUAL_SOURCE_BLENDING",// [2]
+            "DUAL_SOURCE_BLENDING,GLYPH_TRANSFORM",// [3]
+        ],
+    ),// [15]
+    (
+        name: "ps_split_composite",
+        source_name: "ps_split_composite",
+        features: [
+            "",// [0]
+        ],
+    ),// [16]
+    (
+        name: "debug_color",
+        source_name: "debug_color",
+        features: [
+            "",// [0]
+        ],
+    ),// [17]
+    (
+        name: "debug_font",
+        source_name: "debug_font",
+        features: [
+            "",// [0]
+        ],
+    ),// [18]
+]

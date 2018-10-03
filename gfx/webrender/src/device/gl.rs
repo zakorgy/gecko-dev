@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use super::super::shader_source;
 use api::{ColorF, ImageFormat};
 use api::{DeviceIntPoint, DeviceIntRect, DeviceUintRect, DeviceUintSize};
 use api::TextureTarget;
@@ -10,39 +9,34 @@ use api::TextureTarget;
 use api::ImageDescriptor;
 use euclid::Transform3D;
 use gleam::gl;
+use gpu_types;
 use internal_types::{FastHashMap, RenderTargetInfo};
 use log::Level;
 use smallvec::SmallVec;
 use std::cell::RefCell;
-use std::fs::File;
-use std::io::Read;
 use std::marker::PhantomData;
 use std::mem;
-use std::ops::Add;
 use std::path::PathBuf;
 use std::ptr;
 use std::rc::Rc;
 use std::slice;
 use std::sync::Arc;
 use std::thread;
+#[cfg(feature = "debug_renderer")]
+use super::Capabilities;
+use super::desc;
+use super::{ExternalTexture, FBOId, FileWatcherHandler, FrameId, IBOId, RBOId, ReadPixelsFormat};
+use super::{ShaderError, ShaderKind, Texel, Texture, TextureFilter, TextureSampler, TextureSlot, UploadMethod, VBOId};
+use super::{VertexArrayKind, VertexAttribute, VertexAttributeKind, VertexDescriptor, VertexUsageHint};
 
-#[derive(Debug, Copy, Clone, PartialEq, Ord, Eq, PartialOrd)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
-#[cfg_attr(feature = "replay", derive(Deserialize))]
-pub struct FrameId(usize);
+// In some places we need to temporarily bind a texture to any slot.
+const DEFAULT_TEXTURE: TextureSlot = TextureSlot(0);
 
-impl FrameId {
-    pub fn new(value: usize) -> Self {
-        FrameId(value)
-    }
-}
+const MAX_VERTEX_TEXTURE_WIDTH: usize = 1024;
 
-impl Add<usize> for FrameId {
-    type Output = FrameId;
-
-    fn add(self, other: usize) -> FrameId {
-        FrameId(self.0 + other)
-    }
+pub struct DeviceInit<B> {
+    pub gl: Rc<gl::Gl>,
+    pub phantom_data: PhantomData<B>
 }
 
 const GL_FORMAT_RGBA: gl::GLuint = gl::RGBA;
@@ -54,15 +48,6 @@ const GL_FORMAT_BGRA_GLES: gl::GLuint = gl::BGRA_EXT;
 const SHADER_VERSION_GL: &str = "#version 150\n";
 const SHADER_VERSION_GLES: &str = "#version 300 es\n";
 
-const SHADER_KIND_VERTEX: &str = "#define WR_VERTEX_SHADER\n";
-const SHADER_KIND_FRAGMENT: &str = "#define WR_FRAGMENT_SHADER\n";
-const SHADER_IMPORT: &str = "#include ";
-
-pub struct TextureSlot(pub usize);
-
-// In some places we need to temporarily bind a texture to any slot.
-const DEFAULT_TEXTURE: TextureSlot = TextureSlot(0);
-
 #[repr(u32)]
 pub enum DepthFunction {
     #[cfg(feature = "debug_renderer")]
@@ -70,62 +55,17 @@ pub enum DepthFunction {
     LessEqual = gl::LEQUAL,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
-#[cfg_attr(feature = "replay", derive(Deserialize))]
-pub enum TextureFilter {
-    Nearest,
-    Linear,
-    Trilinear,
-}
-
-#[derive(Debug)]
-pub enum VertexAttributeKind {
-    F32,
-    #[cfg(feature = "debug_renderer")]
-    U8Norm,
-    U16Norm,
-    I32,
-    U16,
-}
-
-#[derive(Debug)]
-pub struct VertexAttribute {
-    pub name: &'static str,
-    pub count: u32,
-    pub kind: VertexAttributeKind,
-}
-
-#[derive(Debug)]
-pub struct VertexDescriptor {
-    pub vertex_attributes: &'static [VertexAttribute],
-    pub instance_attributes: &'static [VertexAttribute],
-}
-
 enum FBOTarget {
     Read,
     Draw,
 }
 
-/// Method of uploading texel data from CPU to GPU.
-#[derive(Debug, Clone)]
-pub enum UploadMethod {
-    /// Just call `glTexSubImage` directly with the CPU data pointer
-    Immediate,
-    /// Accumulate the changes in PBO first before transferring to a texture.
-    PixelBuffer(VertexUsageHint),
-}
-
-/// Plain old data that can be used to initialize a texture.
-pub unsafe trait Texel: Copy {}
-unsafe impl Texel for u8 {}
-unsafe impl Texel for f32 {}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum ReadPixelsFormat {
-    Standard(ImageFormat),
-    Rgba8,
-}
+pub trait PrimitiveType { }
+impl PrimitiveType for gpu_types::BorderInstance { }
+impl PrimitiveType for gpu_types::BlurInstance { }
+impl PrimitiveType for gpu_types::ClipMaskInstance { }
+impl PrimitiveType for gpu_types::PrimitiveInstanceData { }
+impl PrimitiveType for gpu_types::ScalingInstance { }
 
 pub fn get_gl_target(target: TextureTarget) -> gl::GLuint {
     match target {
@@ -145,90 +85,6 @@ fn get_shader_version(gl: &gl::Gl) -> &'static str {
         gl::GlType::Gl => SHADER_VERSION_GL,
         gl::GlType::Gles => SHADER_VERSION_GLES,
     }
-}
-
-// Get a shader string by name, from the built in resources or
-// an override path, if supplied.
-fn get_shader_source(shader_name: &str, base_path: &Option<PathBuf>) -> Option<String> {
-    if let Some(ref base) = *base_path {
-        let shader_path = base.join(&format!("{}.glsl", shader_name));
-        if shader_path.exists() {
-            let mut source = String::new();
-            File::open(&shader_path)
-                .unwrap()
-                .read_to_string(&mut source)
-                .unwrap();
-            return Some(source);
-        }
-    }
-
-    shader_source::SHADERS
-        .get(shader_name)
-        .map(|s| s.to_string())
-}
-
-// Parse a shader string for imports. Imports are recursively processed, and
-// prepended to the list of outputs.
-fn parse_shader_source(source: String, base_path: &Option<PathBuf>, output: &mut String) {
-    for line in source.lines() {
-        if line.starts_with(SHADER_IMPORT) {
-            let imports = line[SHADER_IMPORT.len() ..].split(',');
-
-            // For each import, get the source, and recurse.
-            for import in imports {
-                if let Some(include) = get_shader_source(import, base_path) {
-                    parse_shader_source(include, base_path, output);
-                }
-            }
-        } else {
-            output.push_str(line);
-            output.push_str("\n");
-        }
-    }
-}
-
-pub fn build_shader_strings(
-    gl_version_string: &str,
-    features: &str,
-    base_filename: &str,
-    override_path: &Option<PathBuf>,
-) -> (String, String) {
-    // Construct a list of strings to be passed to the shader compiler.
-    let mut vs_source = String::new();
-    let mut fs_source = String::new();
-
-    // GLSL requires that the version number comes first.
-    vs_source.push_str(gl_version_string);
-    fs_source.push_str(gl_version_string);
-
-    // Insert the shader name to make debugging easier.
-    let name_string = format!("// {}\n", base_filename);
-    vs_source.push_str(&name_string);
-    fs_source.push_str(&name_string);
-
-    // Define a constant depending on whether we are compiling VS or FS.
-    vs_source.push_str(SHADER_KIND_VERTEX);
-    fs_source.push_str(SHADER_KIND_FRAGMENT);
-
-    // Add any defines that were passed by the caller.
-    vs_source.push_str(features);
-    fs_source.push_str(features);
-
-    // Parse the main .glsl file, including any imports
-    // and append them to the list of sources.
-    let mut shared_result = String::new();
-    if let Some(shared_source) = get_shader_source(base_filename, override_path) {
-        parse_shader_source(shared_source, override_path, &mut shared_result);
-    }
-
-    vs_source.push_str(&shared_result);
-    fs_source.push_str(&shared_result);
-
-    (vs_source, fs_source)
-}
-
-pub trait FileWatcherHandler: Send {
-    fn file_changed(&self, path: PathBuf);
 }
 
 impl VertexAttributeKind {
@@ -357,6 +213,16 @@ impl VertexDescriptor {
     }
 }
 
+impl VertexUsageHint {
+    fn to_gl(&self) -> gl::GLuint {
+        match *self {
+            VertexUsageHint::Static => gl::STATIC_DRAW,
+            VertexUsageHint::Dynamic => gl::DYNAMIC_DRAW,
+            VertexUsageHint::Stream => gl::STREAM_DRAW,
+        }
+    }
+}
+
 impl VBOId {
     fn bind(&self, gl: &gl::Gl) {
         gl.bind_buffer(gl::ARRAY_BUFFER, self.0);
@@ -409,113 +275,6 @@ impl<V> VBO<V> {
 }
 
 impl<T> Drop for VBO<T> {
-    fn drop(&mut self) {
-        debug_assert!(thread::panicking() || self.id == 0);
-    }
-}
-
-#[cfg_attr(feature = "replay", derive(Clone))]
-pub struct ExternalTexture {
-    id: gl::GLuint,
-    target: gl::GLuint,
-}
-
-impl ExternalTexture {
-    pub fn new(id: u32, target: TextureTarget) -> Self {
-        ExternalTexture {
-            id,
-            target: get_gl_target(target),
-        }
-    }
-
-    #[cfg(feature = "replay")]
-    pub fn internal_id(&self) -> gl::GLuint {
-        self.id
-    }
-}
-
-pub struct Texture {
-    id: gl::GLuint,
-    target: gl::GLuint,
-    layer_count: i32,
-    format: ImageFormat,
-    width: u32,
-    height: u32,
-    filter: TextureFilter,
-    render_target: Option<RenderTargetInfo>,
-    fbo_ids: Vec<FBOId>,
-    depth_rb: Option<RBOId>,
-    last_frame_used: FrameId,
-}
-
-impl Texture {
-    pub fn get_dimensions(&self) -> DeviceUintSize {
-        DeviceUintSize::new(self.width, self.height)
-    }
-
-    pub fn get_render_target_layer_count(&self) -> usize {
-        self.fbo_ids.len()
-    }
-
-    pub fn get_layer_count(&self) -> i32 {
-        self.layer_count
-    }
-
-    pub fn get_format(&self) -> ImageFormat {
-        self.format
-    }
-
-    #[cfg(any(feature = "debug_renderer", feature = "capture"))]
-    pub fn get_filter(&self) -> TextureFilter {
-        self.filter
-    }
-
-    #[cfg(any(feature = "debug_renderer", feature = "capture"))]
-    pub fn get_render_target(&self) -> Option<RenderTargetInfo> {
-        self.render_target.clone()
-    }
-
-    pub fn has_depth(&self) -> bool {
-        self.depth_rb.is_some()
-    }
-
-    pub fn get_rt_info(&self) -> Option<&RenderTargetInfo> {
-        self.render_target.as_ref()
-    }
-
-    pub fn used_in_frame(&self, frame_id: FrameId) -> bool {
-        self.last_frame_used == frame_id
-    }
-
-    /// Returns true if this texture was used within `threshold` frames of
-    /// the current frame.
-    pub fn used_recently(&self, current_frame_id: FrameId, threshold: usize) -> bool {
-        self.last_frame_used + threshold >= current_frame_id
-    }
-
-    /// Returns the number of bytes (generally in GPU memory) that this texture
-    /// consumes.
-    pub fn size_in_bytes(&self) -> usize {
-        assert!(self.layer_count > 0 || self.width + self.height == 0);
-        let bpp = self.format.bytes_per_pixel() as usize;
-        let w = self.width as usize;
-        let h = self.height as usize;
-        let count = self.layer_count as usize;
-        bpp * w * h * count
-    }
-
-    #[cfg(feature = "replay")]
-    pub fn into_external(mut self) -> ExternalTexture {
-        let ext = ExternalTexture {
-            id: self.id,
-            target: self.target,
-        };
-        self.id = 0; // don't complain, moved out
-        ext
-    }
-}
-
-impl Drop for Texture {
     fn drop(&mut self) {
         debug_assert!(thread::panicking() || self.id == 0);
     }
@@ -580,18 +339,6 @@ impl Drop for PBO {
         );
     }
 }
-
-#[derive(PartialEq, Eq, Hash, Debug, Copy, Clone)]
-pub struct FBOId(gl::GLuint);
-
-#[derive(PartialEq, Eq, Hash, Debug, Copy, Clone)]
-pub struct RBOId(gl::GLuint);
-
-#[derive(PartialEq, Eq, Hash, Debug, Copy, Clone)]
-pub struct VBOId(gl::GLuint);
-
-#[derive(PartialEq, Eq, Hash, Debug, Copy, Clone)]
-struct IBOId(gl::GLuint);
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 #[cfg_attr(feature = "serialize_program", derive(Deserialize, Serialize))]
@@ -665,23 +412,6 @@ impl ProgramCache {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
-pub enum VertexUsageHint {
-    Static,
-    Dynamic,
-    Stream,
-}
-
-impl VertexUsageHint {
-    fn to_gl(&self) -> gl::GLuint {
-        match *self {
-            VertexUsageHint::Static => gl::STATIC_DRAW,
-            VertexUsageHint::Dynamic => gl::DYNAMIC_DRAW,
-            VertexUsageHint::Stream => gl::STREAM_DRAW,
-        }
-    }
-}
-
 #[derive(Copy, Clone, Debug)]
 pub struct UniformLocation(gl::GLint);
 
@@ -689,18 +419,7 @@ impl UniformLocation {
     pub const INVALID: Self = UniformLocation(-1);
 }
 
-#[cfg(feature = "debug_renderer")]
-pub struct Capabilities {
-    pub supports_multisampling: bool,
-}
-
-#[derive(Clone, Debug)]
-pub enum ShaderError {
-    Compilation(String, String), // name, error message
-    Link(String, String),        // name, error message
-}
-
-pub struct Device {
+pub struct Device<B> {
     gl: Rc<gl::Gl>,
     // device state
     bound_textures: [gl::GLuint; 16],
@@ -737,16 +456,18 @@ pub struct Device {
 
     // GL extensions
     extensions: Vec<String>,
+    phantom_data: PhantomData<B>,
 }
 
-impl Device {
+impl<B> Device<B> {
     pub fn new(
-        gl: Rc<gl::Gl>,
+        init: DeviceInit<B>,
         resource_override_path: Option<PathBuf>,
         upload_method: UploadMethod,
         _file_changed_handler: Box<FileWatcherHandler>,
         cached_programs: Option<Rc<ProgramCache>>,
-    ) -> Device {
+    ) -> Device<B> {
+        let gl = init.gl;
         let mut max_texture_size = [0];
         unsafe {
             gl.get_integer_v(gl::MAX_TEXTURE_SIZE, &mut max_texture_size);
@@ -804,6 +525,7 @@ impl Device {
             cached_programs,
             frame_id: FrameId(0),
             extensions,
+            phantom_data: PhantomData,
         }
     }
 
@@ -1426,6 +1148,119 @@ impl Device {
         program.id = 0;
     }
 
+    pub(crate) fn create_program_with_kind(
+        &mut self,
+        base_filename: &'static str,
+        shader_kind: &ShaderKind,
+        features: &[&'static str],
+    ) -> Result<Program, ShaderError> {
+        match shader_kind {
+            ShaderKind::Primitive | ShaderKind::Brush | ShaderKind::Text => {
+                self.create_prim_shader(base_filename,
+                                        features,
+                                        VertexArrayKind::Primitive)
+            }
+            ShaderKind::Cache(format) => {
+                self.create_prim_shader(base_filename,
+                                        features,
+                                        *format)
+            }
+            ShaderKind::VectorStencil => {
+                self.create_prim_shader(base_filename,
+                                        features,
+                                        VertexArrayKind::VectorStencil)
+            }
+            ShaderKind::VectorCover => {
+                self.create_prim_shader(base_filename,
+                                        features,
+                                        VertexArrayKind::VectorCover)
+            }
+            ShaderKind::ClipCache => {
+                self.create_clip_shader(base_filename)
+            }
+        }
+    }
+
+    fn create_prim_shader(
+        &mut self,
+        name: &'static str,
+        features: &[&'static str],
+        vertex_format: VertexArrayKind,
+    ) -> Result<Program, ShaderError> {
+        let mut prefix = format!(
+            "#define WR_MAX_VERTEX_TEXTURE_WIDTH {}U\n",
+            MAX_VERTEX_TEXTURE_WIDTH
+        );
+
+        for feature in features {
+            prefix.push_str(&format!("#define WR_FEATURE_{}\n", feature));
+        }
+
+        debug!("PrimShader {}", name);
+
+        let vertex_descriptor = match vertex_format {
+            VertexArrayKind::Primitive => desc::PRIM_INSTANCES,
+            VertexArrayKind::Blur => desc::BLUR,
+            VertexArrayKind::Clip => desc::CLIP,
+            VertexArrayKind::VectorStencil => desc::VECTOR_STENCIL,
+            VertexArrayKind::VectorCover => desc::VECTOR_COVER,
+            VertexArrayKind::Border => desc::BORDER,
+            VertexArrayKind::Scale => desc::SCALE,
+        };
+
+        let program = self.create_program(name, &prefix, &vertex_descriptor);
+
+        if let Ok(ref program) = program {
+            self.bind_shader_samplers(
+                program,
+                &[
+                    ("sColor0", TextureSampler::Color0),
+                    ("sColor1", TextureSampler::Color1),
+                    ("sColor2", TextureSampler::Color2),
+                    ("sDither", TextureSampler::Dither),
+                    ("sCacheA8", TextureSampler::CacheA8),
+                    ("sCacheRGBA8", TextureSampler::CacheRGBA8),
+                    ("sTransformPalette", TextureSampler::TransformPalette),
+                    ("sRenderTasks", TextureSampler::RenderTasks),
+                    ("sResourceCache", TextureSampler::ResourceCache),
+                    ("sSharedCacheA8", TextureSampler::SharedCacheA8),
+                    ("sPrimitiveHeadersF", TextureSampler::PrimitiveHeadersF),
+                    ("sPrimitiveHeadersI", TextureSampler::PrimitiveHeadersI),
+                ],
+            );
+        }
+
+        program
+    }
+
+    fn create_clip_shader(&mut self, name: &'static str) -> Result<Program, ShaderError> {
+        let prefix = format!(
+            "#define WR_MAX_VERTEX_TEXTURE_WIDTH {}U\n",
+            MAX_VERTEX_TEXTURE_WIDTH
+        );
+
+        debug!("ClipShader {}", name);
+
+        let program = self.create_program(name, &prefix, &desc::CLIP);
+
+        if let Ok(ref program) = program {
+            self.bind_shader_samplers(
+                program,
+                &[
+                    ("sColor0", TextureSampler::Color0),
+                    ("sTransformPalette", TextureSampler::TransformPalette),
+                    ("sRenderTasks", TextureSampler::RenderTasks),
+                    ("sResourceCache", TextureSampler::ResourceCache),
+                    ("sSharedCacheA8", TextureSampler::SharedCacheA8),
+                    ("sPrimitiveHeadersF", TextureSampler::PrimitiveHeadersF),
+                    ("sPrimitiveHeadersI", TextureSampler::PrimitiveHeadersI),
+                ],
+            );
+        }
+
+        program
+    }
+
     pub fn create_program(
         &mut self,
         base_filename: &str,
@@ -1436,7 +1271,7 @@ impl Device {
 
         let gl_version_string = get_shader_version(&*self.gl);
 
-        let (vs_source, fs_source) = build_shader_strings(
+        let (vs_source, fs_source) = super::build_shader_strings(
             gl_version_string,
             features,
             base_filename,
@@ -1479,14 +1314,14 @@ impl Device {
         if loaded == false {
             // Compile the vertex shader
             let vs_id =
-                match Device::compile_shader(&*self.gl, base_filename, gl::VERTEX_SHADER, &sources.vs_source) {
+                match Device::<B>::compile_shader(&*self.gl, base_filename, gl::VERTEX_SHADER, &sources.vs_source) {
                     Ok(vs_id) => vs_id,
                     Err(err) => return Err(err),
                 };
 
             // Compiler the fragment shader
             let fs_id =
-                match Device::compile_shader(&*self.gl, base_filename, gl::FRAGMENT_SHADER, &sources.fs_source) {
+                match Device::<B>::compile_shader(&*self.gl, base_filename, gl::FRAGMENT_SHADER, &sources.fs_source) {
                     Ok(fs_id) => fs_id,
                     Err(err) => {
                         self.gl.delete_shader(vs_id);

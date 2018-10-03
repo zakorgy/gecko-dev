@@ -1,0 +1,471 @@
+OpenGL version 4.5 (Core Profile) Mesa 18.0.5, Mesa DRI Intel(R) HD Graphics 630 (Kaby Lake GT2) 
+hidpi factor: 1 (native 1)
+Shader override path: None
+REFTEST reftests/aa/rounded-rects.yaml == reftests/aa/rounded-rects-ref.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/aa/rounded-rects.yaml == reftests/aa/rounded-rects-ref.png | image comparison, max difference: 1, number of differing pixels: 1
+REFTEST reftests/aa/aa-dist-bug.yaml == reftests/aa/aa-dist-bug-ref.yaml
+REFTEST reftests/backface/backface-leaf.yaml == reftests/backface/backface-ref.yaml
+REFTEST reftests/backface/backface-sc.yaml == reftests/backface/backface-ref.yaml
+REFTEST reftests/backface/backface-picture.yaml == reftests/backface/backface-picture-ref.yaml
+REFTEST reftests/blend/multiply.yaml == reftests/blend/multiply-ref.yaml
+REFTEST reftests/blend/multiply-2.yaml == reftests/blend/multiply-2-ref.yaml
+REFTEST reftests/blend/difference.yaml == reftests/blend/difference-ref.yaml
+REFTEST reftests/blend/difference-transparent.yaml == reftests/blend/difference-transparent-ref.yaml
+REFTEST reftests/blend/darken.yaml == reftests/blend/darken-ref.yaml
+REFTEST reftests/blend/lighten.yaml == reftests/blend/lighten-ref.yaml
+REFTEST reftests/blend/repeated-difference.yaml == reftests/blend/repeated-difference-ref.yaml
+REFTEST reftests/blend/canvas.yaml == reftests/blend/canvas-ref.yaml
+REFTEST reftests/blend/isolated.yaml == reftests/blend/isolated-ref.yaml
+REFTEST reftests/blend/isolated-2.yaml == reftests/blend/isolated-2-ref.yaml
+REFTEST reftests/blend/isolated-with-filter.yaml == reftests/blend/isolated-ref.yaml
+REFTEST reftests/blend/isolated-premultiplied.yaml == reftests/blend/blank.yaml
+REFTEST reftests/blend/isolated-premultiplied-2.yaml == reftests/blend/isolated-premultiplied-2-ref.yaml
+REFTEST TEST-UNEXPECTED-FAIL | reftests/blend/isolated-premultiplied-2.yaml == reftests/blend/isolated-premultiplied-2-ref.yaml | image comparison, max difference: 1, number of differing pixels: 10000
+REFTEST reftests/blend/large.yaml == reftests/blend/large-ref.yaml
+REFTEST reftests/blend/transparent-composite-1.yaml == reftests/blend/transparent-composite-1-ref.yaml
+REFTEST reftests/blend/transparent-composite-2.yaml == reftests/blend/transparent-composite-2-ref.yaml
+REFTEST reftests/blend/multi-mix-blend-mode.yaml == reftests/blend/multi-mix-blend-mode-ref.yaml
+REFTEST reftests/border/border-clamp-corner-radius.yaml == reftests/border/border-clamp-corner-radius.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/border/border-clamp-corner-radius.yaml == reftests/border/border-clamp-corner-radius.png | image comparison, max difference: 1, number of differing pixels: 328
+REFTEST reftests/border/border-gradient-simple.yaml == reftests/border/border-gradient-simple-ref.yaml
+REFTEST reftests/border/border-gradient-nine-patch.yaml == reftests/border/border-gradient-nine-patch.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/border/border-gradient-nine-patch.yaml == reftests/border/border-gradient-nine-patch.png | image comparison, max difference: 255, number of differing pixels: 31
+REFTEST reftests/border/border-radial-gradient-simple.yaml == reftests/border/border-radial-gradient-simple-ref.yaml
+REFTEST reftests/border/border-radial-gradient-nine-patch.yaml == reftests/border/border-radial-gradient-nine-patch.png
+REFTEST reftests/border/border-radii.yaml == reftests/border/border-radii.png
+REFTEST reftests/border/border-none.yaml == reftests/border/border-none-ref.yaml
+REFTEST reftests/border/border-invisible.yaml == reftests/border/border-invisible-ref.yaml
+REFTEST reftests/border/border-suite.yaml == reftests/border/border-suite.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/border/border-suite.yaml == reftests/border/border-suite.png | image comparison, max difference: 1, number of differing pixels: 798
+REFTEST reftests/border/border-suite-2.yaml == reftests/border/border-suite-2.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/border/border-suite-2.yaml == reftests/border/border-suite-2.png | image comparison, max difference: 1, number of differing pixels: 455
+REFTEST reftests/border/border-suite-3.yaml == reftests/border/border-suite-3.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/border/border-suite-3.yaml == reftests/border/border-suite-3.png | image comparison, max difference: 1, number of differing pixels: 160
+REFTEST reftests/border/border-double-simple.yaml == reftests/border/border-double-simple-ref.yaml
+REFTEST reftests/border/border-double-simple-2.yaml == reftests/border/border-double-simple-2-ref.yaml
+REFTEST reftests/border/border-groove-simple.yaml == reftests/border/border-groove-simple-ref.yaml
+REFTEST reftests/border/border-ridge-simple.yaml == reftests/border/border-ridge-simple-ref.yaml
+REFTEST reftests/border/degenerate-curve.yaml == reftests/border/degenerate-curve.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/border/degenerate-curve.yaml == reftests/border/degenerate-curve.png | image comparison, max difference: 1, number of differing pixels: 89
+REFTEST reftests/border/border-image.yaml == reftests/border/border-image-ref.png
+REFTEST reftests/border/border-image-crash.yaml == reftests/border/border-image-crash-ref.yaml
+REFTEST reftests/border/border-image-fill.yaml == reftests/border/border-image-fill-ref.png
+REFTEST reftests/border/border-no-bogus-line.yaml == reftests/border/border-no-bogus-line-ref.png
+REFTEST reftests/border/dotted-corner-small-radius.yaml == reftests/border/dotted-corner-small-radius.png
+REFTEST reftests/border/overlapping.yaml == reftests/border/overlapping.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/border/overlapping.yaml == reftests/border/overlapping.png | image comparison, max difference: 1, number of differing pixels: 4
+REFTEST reftests/border/zero-width.yaml == reftests/border/blank.yaml
+REFTEST reftests/border/small-dotted-border.yaml == reftests/border/small-dotted-border.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/border/small-dotted-border.yaml == reftests/border/small-dotted-border.png | image comparison, max difference: 128, number of differing pixels: 196
+REFTEST reftests/border/discontinued-dash.yaml == reftests/border/discontinued-dash.png
+REFTEST reftests/border/border-dashed-dotted-caching.yaml == reftests/border/border-dashed-dotted-caching.png
+REFTEST reftests/border/small-inset-outset.yaml != reftests/border/small-inset-outset-notref.yaml
+REFTEST reftests/border/no-aa.yaml == reftests/border/green-square.yaml
+REFTEST reftests/boxshadow/inset-simple.yaml != reftests/boxshadow/inset-simple-ref.yaml
+REFTEST reftests/boxshadow/inset-spread.yaml != reftests/boxshadow/inset-spread-ref.yaml
+REFTEST reftests/boxshadow/inset-no-blur-radius.yaml == reftests/boxshadow/inset-no-blur-radius-ref.png
+REFTEST reftests/boxshadow/inset-spread-large.yaml == reftests/boxshadow/inset-spread-large-ref.yaml
+REFTEST reftests/boxshadow/inset-alpha.yaml == reftests/boxshadow/inset-alpha.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/boxshadow/inset-alpha.yaml == reftests/boxshadow/inset-alpha.png | image comparison, max difference: 1, number of differing pixels: 724
+REFTEST reftests/boxshadow/boxshadow-spread-only.yaml == reftests/boxshadow/boxshadow-spread-only-ref.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/boxshadow/boxshadow-spread-only.yaml == reftests/boxshadow/boxshadow-spread-only-ref.png | image comparison, max difference: 1, number of differing pixels: 8
+REFTEST reftests/boxshadow/box-shadow-clip.yaml == reftests/boxshadow/box-shadow-clip-ref.yaml
+REFTEST reftests/boxshadow/inset-large-offset.yaml == reftests/boxshadow/inset-large-offset-ref.png
+REFTEST reftests/boxshadow/inset-border-radius.yaml == reftests/boxshadow/inset-border-radius.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/boxshadow/inset-border-radius.yaml == reftests/boxshadow/inset-border-radius.png | image comparison, max difference: 1, number of differing pixels: 225
+REFTEST reftests/boxshadow/inset-offset.yaml == reftests/boxshadow/inset-offset.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/boxshadow/inset-offset.yaml == reftests/boxshadow/inset-offset.png | image comparison, max difference: 1, number of differing pixels: 407
+REFTEST reftests/boxshadow/inset-neg-offset.yaml == reftests/boxshadow/inset-neg-offset.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/boxshadow/inset-neg-offset.yaml == reftests/boxshadow/inset-neg-offset.png | image comparison, max difference: 1, number of differing pixels: 398
+REFTEST reftests/boxshadow/box-shadow-empty.yaml == reftests/boxshadow/blank.yaml
+REFTEST reftests/boxshadow/box-shadow-suite-no-blur.yaml == reftests/boxshadow/box-shadow-suite-no-blur.png
+REFTEST reftests/boxshadow/box-shadow-suite-blur.yaml == reftests/boxshadow/box-shadow-suite-blur.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/boxshadow/box-shadow-suite-blur.yaml == reftests/boxshadow/box-shadow-suite-blur.png | image comparison, max difference: 1, number of differing pixels: 238
+REFTEST reftests/boxshadow/box-shadow-large-blur-radius.yaml == reftests/boxshadow/box-shadow-large-blur-radius-ref.yaml
+REFTEST reftests/boxshadow/rounding.yaml == reftests/boxshadow/rounding-ref.yaml
+REFTEST reftests/boxshadow/box-shadow-border-radii.yaml == reftests/boxshadow/box-shadow-border-radii.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/boxshadow/box-shadow-border-radii.yaml == reftests/boxshadow/box-shadow-border-radii.png | image comparison, max difference: 1, number of differing pixels: 2393
+REFTEST reftests/boxshadow/box-shadow-spread.yaml == reftests/boxshadow/box-shadow-spread.png
+REFTEST reftests/boxshadow/box-shadow-spread-radii.yaml == reftests/boxshadow/box-shadow-spread-radii-ref.yaml
+REFTEST reftests/boxshadow/invalid.yaml == reftests/boxshadow/invalid-ref.yaml
+REFTEST reftests/boxshadow/inset-empty.yaml == reftests/boxshadow/blank.yaml
+REFTEST reftests/boxshadow/inset-subpx.yaml == reftests/boxshadow/inset-subpx.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/boxshadow/inset-subpx.yaml == reftests/boxshadow/inset-subpx.png | image comparison, max difference: 1, number of differing pixels: 2
+REFTEST reftests/boxshadow/inset-downscale.yaml == reftests/boxshadow/inset-downscale.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/boxshadow/inset-downscale.yaml == reftests/boxshadow/inset-downscale.png | image comparison, max difference: 1, number of differing pixels: 6884
+REFTEST reftests/boxshadow/box-shadow-cache.yaml == reftests/boxshadow/box-shadow-cache.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/boxshadow/box-shadow-cache.yaml == reftests/boxshadow/box-shadow-cache.png | image comparison, max difference: 1, number of differing pixels: 7128
+REFTEST reftests/boxshadow/overlap1.yaml == reftests/boxshadow/overlap1.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/boxshadow/overlap1.yaml == reftests/boxshadow/overlap1.png | image comparison, max difference: 1, number of differing pixels: 4582
+REFTEST reftests/boxshadow/overlap2.yaml == reftests/boxshadow/overlap2.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/boxshadow/overlap2.yaml == reftests/boxshadow/overlap2.png | image comparison, max difference: 1, number of differing pixels: 8
+REFTEST reftests/boxshadow/no-stretch.yaml == reftests/boxshadow/no-stretch.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/boxshadow/no-stretch.yaml == reftests/boxshadow/no-stretch.png | image comparison, max difference: 1, number of differing pixels: 64
+REFTEST reftests/boxshadow/box-shadow-stretch-mode-x.yaml == reftests/boxshadow/box-shadow-stretch-mode-x.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/boxshadow/box-shadow-stretch-mode-x.yaml == reftests/boxshadow/box-shadow-stretch-mode-x.png | image comparison, max difference: 1, number of differing pixels: 4868
+REFTEST reftests/boxshadow/box-shadow-stretch-mode-y.yaml == reftests/boxshadow/box-shadow-stretch-mode-y.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/boxshadow/box-shadow-stretch-mode-y.yaml == reftests/boxshadow/box-shadow-stretch-mode-y.png | image comparison, max difference: 1, number of differing pixels: 1596
+REFTEST reftests/boxshadow/inset-mask-region.yaml == reftests/boxshadow/inset-mask-region.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/boxshadow/inset-mask-region.yaml == reftests/boxshadow/inset-mask-region.png | image comparison, max difference: 1, number of differing pixels: 673
+REFTEST reftests/boxshadow/box-shadow-blurred-overlapping-radii.yaml == reftests/boxshadow/box-shadow-blurred-overlapping-radii-ref.yaml
+REFTEST reftests/clip/border-with-rounded-clip.yaml == reftests/clip/border-with-rounded-clip.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/clip/border-with-rounded-clip.yaml == reftests/clip/border-with-rounded-clip.png | image comparison, max difference: 1, number of differing pixels: 28
+REFTEST reftests/clip/clip-mode.yaml == reftests/clip/clip-mode.png
+REFTEST reftests/clip/clip-ellipse.yaml == reftests/clip/clip-ellipse.png
+REFTEST reftests/clip/clip-45-degree-rotation.yaml == reftests/clip/clip-45-degree-rotation-ref.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/clip/clip-45-degree-rotation.yaml == reftests/clip/clip-45-degree-rotation-ref.png | image comparison, max difference: 1, number of differing pixels: 189
+REFTEST reftests/clip/clip-3d-transform.yaml == reftests/clip/clip-3d-transform-ref.yaml
+REFTEST reftests/clip/clip-corner-overlap.yaml == reftests/clip/clip-corner-overlap-ref.yaml
+REFTEST reftests/clip/custom-clip-chains.yaml == reftests/clip/custom-clip-chains-ref.yaml
+REFTEST reftests/clip/custom-clip-chain-node-ancestors.yaml == reftests/clip/custom-clip-chain-node-ancestors-ref.yaml
+REFTEST reftests/clip/fixed-position-clipping.yaml == reftests/clip/fixed-position-clipping-ref.yaml
+REFTEST reftests/clip/segmentation-with-other-coordinate-system-clip.yaml == reftests/clip/segmentation-with-other-coordinate-system-clip-ref.yaml
+REFTEST reftests/clip/segmentation-across-rotation.yaml == reftests/clip/segmentation-across-rotation-ref.yaml
+REFTEST reftests/clip/stacking-context-clip.yaml == reftests/clip/stacking-context-clip-ref.yaml
+REFTEST reftests/clip/snapping.yaml == reftests/clip/snapping-ref.yaml
+REFTEST reftests/filters/filter-grayscale.yaml == reftests/filters/filter-grayscale-ref.yaml
+REFTEST reftests/filters/filter-blur.yaml == reftests/filters/filter-blur.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/filters/filter-blur.yaml == reftests/filters/filter-blur.png | image comparison, max difference: 2, number of differing pixels: 29946
+REFTEST reftests/filters/isolated.yaml == reftests/filters/isolated-ref.yaml
+REFTEST reftests/filters/invisible.yaml == reftests/filters/invisible-ref.yaml
+REFTEST reftests/filters/opacity.yaml == reftests/filters/opacity-ref.yaml
+REFTEST reftests/filters/opacity-combined.yaml == reftests/filters/opacity-combined-ref.yaml
+REFTEST reftests/filters/opacity-overlap.yaml == reftests/filters/opacity-overlap-ref.yaml
+REFTEST reftests/filters/filter-brightness.yaml == reftests/filters/filter-brightness-ref.yaml
+REFTEST reftests/filters/filter-brightness-2.yaml == reftests/filters/filter-brightness-2-ref.yaml
+REFTEST reftests/filters/filter-brightness-3.yaml == reftests/filters/filter-brightness-3-ref.yaml
+REFTEST reftests/filters/filter-brightness-4.yaml == reftests/filters/filter-brightness-4-ref.yaml
+REFTEST reftests/filters/filter-color-matrix.yaml == reftests/filters/filter-color-matrix-ref.yaml
+REFTEST reftests/filters/filter-contrast-gray-alpha-1.yaml == reftests/filters/filter-contrast-gray-alpha-1-ref.yaml
+REFTEST reftests/filters/filter-invert.yaml == reftests/filters/filter-invert-ref.yaml
+REFTEST reftests/filters/filter-invert-2.yaml == reftests/filters/filter-invert-2-ref.yaml
+REFTEST reftests/filters/filter-large-blur-radius.yaml == reftests/filters/filter-large-blur-radius.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/filters/filter-large-blur-radius.yaml == reftests/filters/filter-large-blur-radius.png | image comparison, max difference: 1, number of differing pixels: 7178
+REFTEST reftests/filters/filter-small-blur-radius.yaml == reftests/filters/filter-small-blur-radius.png
+REFTEST reftests/filters/filter-saturate-red-1.yaml == reftests/filters/filter-saturate-red-1-ref.yaml
+REFTEST reftests/filters/filter-saturate-red-2.yaml == reftests/filters/filter-saturate-red-2-ref.yaml
+REFTEST reftests/filters/filter-saturate-red-3.yaml == reftests/filters/filter-saturate-red-3-ref.yaml
+REFTEST reftests/filters/filter-saturate-green-1.yaml == reftests/filters/filter-saturate-green-1-ref.yaml
+REFTEST reftests/filters/filter-saturate-green-2.yaml == reftests/filters/filter-saturate-green-2-ref.yaml
+REFTEST reftests/filters/filter-saturate-green-3.yaml == reftests/filters/filter-saturate-green-3-ref.yaml
+REFTEST reftests/filters/filter-saturate-blue-1.yaml == reftests/filters/filter-saturate-blue-1-ref.yaml
+REFTEST reftests/filters/filter-saturate-blue-2.yaml == reftests/filters/filter-saturate-blue-2-ref.yaml
+REFTEST reftests/filters/filter-saturate-blue-3.yaml == reftests/filters/filter-saturate-blue-3-ref.yaml
+REFTEST reftests/filters/filter-saturate-red-alpha-1.yaml == reftests/filters/filter-saturate-red-alpha-1-ref.yaml
+REFTEST reftests/filters/filter-saturate-green-alpha-1.yaml == reftests/filters/filter-saturate-green-alpha-1-ref.yaml
+REFTEST reftests/filters/filter-saturate-blue-alpha-1.yaml == reftests/filters/filter-saturate-blue-alpha-1-ref.yaml
+REFTEST reftests/filters/filter-hue-rotate-1.yaml == reftests/filters/filter-hue-rotate-1-ref.yaml
+REFTEST reftests/filters/filter-hue-rotate-alpha-1.yaml == reftests/filters/filter-hue-rotate-alpha-1-ref.yaml
+REFTEST reftests/filters/filter-long-chain.yaml == reftests/filters/filter-long-chain.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/filters/filter-long-chain.yaml == reftests/filters/filter-long-chain.png | image comparison, max difference: 1, number of differing pixels: 18
+REFTEST reftests/filters/filter-drop-shadow.yaml == reftests/filters/filter-drop-shadow.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/filters/filter-drop-shadow.yaml == reftests/filters/filter-drop-shadow.png | image comparison, max difference: 1, number of differing pixels: 4139
+REFTEST reftests/filters/filter-drop-shadow-on-viewport-edge.yaml == reftests/filters/filter-drop-shadow-on-viewport-edge.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/filters/filter-drop-shadow-on-viewport-edge.yaml == reftests/filters/filter-drop-shadow-on-viewport-edge.png | image comparison, max difference: 1, number of differing pixels: 2129
+REFTEST reftests/filters/blend-clipped.yaml == reftests/filters/blend-clipped.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/filters/blend-clipped.yaml == reftests/filters/blend-clipped.png | image comparison, max difference: 1, number of differing pixels: 446
+REFTEST reftests/filters/filter-segments.yaml == reftests/filters/filter-segments-ref.yaml
+REFTEST reftests/filters/iframe-dropshadow.yaml == reftests/filters/iframe-dropshadow-ref.yaml
+REFTEST reftests/filters/filter-mix-blend-mode.yaml == reftests/filters/filter-mix-blend-mode-ref.yaml
+REFTEST reftests/filters/filter-blur-huge.yaml != reftests/filters/blank.yaml
+REFTEST reftests/filters/filter-drop-shadow-huge.yaml != reftests/filters/blank.yaml
+REFTEST reftests/gradient/premultiplied-aligned.yaml == reftests/gradient/premultiplied-aligned.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/gradient/premultiplied-aligned.yaml == reftests/gradient/premultiplied-aligned.png | image comparison, max difference: 1, number of differing pixels: 575
+REFTEST reftests/gradient/premultiplied-angle.yaml == reftests/gradient/premultiplied-angle.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/gradient/premultiplied-angle.yaml == reftests/gradient/premultiplied-angle.png | image comparison, max difference: 1, number of differing pixels: 1224
+REFTEST reftests/gradient/premultiplied-radial.yaml == reftests/gradient/premultiplied-radial.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/gradient/premultiplied-radial.yaml == reftests/gradient/premultiplied-radial.png | image comparison, max difference: 1, number of differing pixels: 534
+REFTEST reftests/gradient/premultiplied-aligned-2.yaml == reftests/gradient/premultiplied-aligned-2.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/gradient/premultiplied-aligned-2.yaml == reftests/gradient/premultiplied-aligned-2.png | image comparison, max difference: 1, number of differing pixels: 950
+REFTEST reftests/gradient/premultiplied-angle-2.yaml == reftests/gradient/premultiplied-angle-2.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/gradient/premultiplied-angle-2.yaml == reftests/gradient/premultiplied-angle-2.png | image comparison, max difference: 1, number of differing pixels: 2750
+REFTEST reftests/gradient/premultiplied-radial-2.yaml == reftests/gradient/premultiplied-radial-2.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/gradient/premultiplied-radial-2.yaml == reftests/gradient/premultiplied-radial-2.png | image comparison, max difference: 1, number of differing pixels: 2025
+REFTEST reftests/gradient/linear.yaml == reftests/gradient/linear-ref.png
+REFTEST reftests/gradient/linear-reverse.yaml == reftests/gradient/linear-ref.png
+REFTEST reftests/gradient/linear-stops.yaml == reftests/gradient/linear-stops-ref.png
+REFTEST reftests/gradient/linear-clamp-1a.yaml == reftests/gradient/linear-clamp-1-ref.yaml
+REFTEST reftests/gradient/linear-clamp-1b.yaml == reftests/gradient/linear-clamp-1-ref.yaml
+REFTEST reftests/gradient/linear-clamp-2.yaml == reftests/gradient/linear-clamp-2-ref.yaml
+REFTEST reftests/gradient/linear.yaml == reftests/gradient/linear-ref.yaml
+REFTEST reftests/gradient/linear-reverse.yaml == reftests/gradient/linear-ref.yaml
+REFTEST reftests/gradient/linear-aligned-clip.yaml == reftests/gradient/linear-aligned-clip-ref.yaml
+REFTEST reftests/gradient/radial-circle.yaml == reftests/gradient/radial-circle-ref.png
+REFTEST reftests/gradient/radial-ellipse.yaml == reftests/gradient/radial-ellipse-ref.png
+REFTEST reftests/gradient/radial-circle.yaml != reftests/gradient/radial-ellipse.yaml
+REFTEST reftests/gradient/norm-linear-1.yaml == reftests/gradient/norm-linear-1-ref.yaml
+REFTEST reftests/gradient/norm-linear-2.yaml == reftests/gradient/norm-linear-2-ref.yaml
+REFTEST reftests/gradient/norm-linear-3.yaml == reftests/gradient/norm-linear-3-ref.yaml
+REFTEST reftests/gradient/norm-linear-4.yaml == reftests/gradient/norm-linear-4-ref.yaml
+REFTEST reftests/gradient/norm-linear-degenerate.yaml == reftests/gradient/norm-radial-degenerate-ref.yaml
+REFTEST reftests/gradient/norm-radial-1.yaml == reftests/gradient/norm-radial-1-ref.yaml
+REFTEST reftests/gradient/norm-radial-2.yaml == reftests/gradient/norm-radial-2-ref.yaml
+REFTEST reftests/gradient/norm-radial-3.yaml == reftests/gradient/norm-radial-3-ref.yaml
+REFTEST reftests/gradient/norm-radial-degenerate.yaml == reftests/gradient/norm-radial-degenerate-ref.yaml
+REFTEST reftests/gradient/repeat-linear.yaml == reftests/gradient/repeat-linear-ref.yaml
+REFTEST reftests/gradient/repeat-linear-reverse.yaml == reftests/gradient/repeat-linear-ref.yaml
+REFTEST reftests/gradient/repeat-radial.yaml == reftests/gradient/repeat-radial-ref.yaml
+REFTEST reftests/gradient/repeat-radial-negative.yaml == reftests/gradient/repeat-radial-ref.yaml
+REFTEST reftests/gradient/tiling-linear-1.yaml == reftests/gradient/tiling-linear-1-ref.yaml
+REFTEST reftests/gradient/tiling-linear-2.yaml == reftests/gradient/tiling-linear-2-ref.yaml
+REFTEST reftests/gradient/tiling-linear-3.yaml == reftests/gradient/tiling-linear-3-ref.yaml
+REFTEST reftests/gradient/tiling-radial-1.yaml == reftests/gradient/tiling-radial-1-ref.yaml
+REFTEST reftests/gradient/tiling-radial-2.yaml == reftests/gradient/tiling-radial-2-ref.yaml
+REFTEST reftests/gradient/tiling-radial-3.yaml == reftests/gradient/tiling-radial-3-ref.yaml
+REFTEST TEST-UNEXPECTED-FAIL | reftests/gradient/tiling-radial-3.yaml == reftests/gradient/tiling-radial-3-ref.yaml | image comparison, max difference: 1, number of differing pixels: 2
+REFTEST reftests/gradient/tiling-radial-4.yaml == reftests/gradient/tiling-radial-4-ref.yaml
+REFTEST reftests/gradient/radial-zero-size-1.yaml == reftests/gradient/radial-zero-size-ref.yaml
+REFTEST reftests/gradient/radial-zero-size-2.yaml == reftests/gradient/radial-zero-size-ref.yaml
+REFTEST reftests/gradient/radial-zero-size-3.yaml == reftests/gradient/radial-zero-size-ref.yaml
+REFTEST reftests/gradient/linear-aligned-border-radius.yaml == reftests/gradient/linear-aligned-border-radius.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/gradient/linear-aligned-border-radius.yaml == reftests/gradient/linear-aligned-border-radius.png | image comparison, max difference: 1, number of differing pixels: 343
+REFTEST reftests/gradient/repeat-border-radius.yaml == reftests/gradient/repeat-border-radius.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/gradient/repeat-border-radius.yaml == reftests/gradient/repeat-border-radius.png | image comparison, max difference: 1, number of differing pixels: 981
+REFTEST reftests/image/tile-size.yaml == reftests/image/tile-size-ref.yaml
+REFTEST reftests/image/very-big.yaml == reftests/image/very-big-ref.yaml
+REFTEST reftests/image/very-big-tile-size.yaml == reftests/image/very-big-tile-size-ref.yaml
+REFTEST reftests/image/tile-with-spacing.yaml == reftests/image/tile-with-spacing-ref.yaml
+REFTEST reftests/image/tile-repeat-prim-or-decompose.yaml == reftests/image/tile-repeat-prim-or-decompose-ref.yaml
+REFTEST reftests/image/downscale.yaml == reftests/image/downscale.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/image/downscale.yaml == reftests/image/downscale.png | image comparison, max difference: 1, number of differing pixels: 798
+REFTEST reftests/image/segments.yaml == reftests/image/segments.png
+REFTEST reftests/image/yuv.yaml == reftests/image/yuv.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/image/yuv.yaml == reftests/image/yuv.png | image comparison, max difference: 1, number of differing pixels: 6240
+REFTEST reftests/image/tiled-clip-chain.yaml == reftests/image/tiled-clip-chain-ref.yaml
+REFTEST reftests/image/tiled-complex-clip.yaml == reftests/image/tiled-complex-clip-ref.yaml
+REFTEST reftests/mask/mask.yaml == reftests/mask/mask-ref.yaml
+REFTEST reftests/mask/nested-mask.yaml == reftests/mask/nested-mask-ref.yaml
+REFTEST reftests/mask/mask.yaml != reftests/mask/green.yaml
+REFTEST reftests/mask/aligned-layer-rect.yaml == reftests/mask/aligned-layer-rect-ref.yaml
+REFTEST reftests/mask/mask-transformed-to-empty-rect.yaml == reftests/mask/mask-transformed-to-empty-rect-ref.yaml
+REFTEST reftests/mask/rounded-corners.yaml == reftests/mask/rounded-corners.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/mask/rounded-corners.yaml == reftests/mask/rounded-corners.png | image comparison, max difference: 8, number of differing pixels: 2
+REFTEST reftests/mask/mask.yaml != reftests/mask/out-of-bounds.yaml
+REFTEST reftests/mask/mask-atomicity.yaml == reftests/mask/mask-atomicity-ref.yaml
+REFTEST reftests/performance/no-clip-mask.yaml == reftests/performance/no-clip-mask.png
+REFTEST reftests/scrolling/empty-mask.yaml == reftests/scrolling/empty-mask-ref.yaml
+REFTEST reftests/scrolling/fixed-position-scrolling-clip.yaml == reftests/scrolling/fixed-position-scrolling-clip-ref.yaml
+REFTEST reftests/scrolling/fixed-position.yaml == reftests/scrolling/fixed-position-ref.yaml
+REFTEST reftests/scrolling/nested-scroll-offset.yaml == reftests/scrolling/nested-scroll-offset-ref.yaml
+REFTEST reftests/scrolling/out-of-bounds-scroll.yaml == reftests/scrolling/out-of-bounds-scroll-ref.yaml
+REFTEST reftests/scrolling/root-scroll.yaml == reftests/scrolling/root-scroll-ref.yaml
+REFTEST reftests/scrolling/scroll-layer-with-mask.yaml == reftests/scrolling/scroll-layer-with-mask-ref.yaml
+REFTEST reftests/scrolling/scroll-layer.yaml == reftests/scrolling/scroll-layer-ref.yaml
+REFTEST reftests/scrolling/simple.yaml == reftests/scrolling/simple-ref.yaml
+REFTEST reftests/scrolling/clip-and-scroll-property.yaml == reftests/scrolling/clip-and-scroll-property-ref.yaml
+REFTEST reftests/scrolling/translate-nested.yaml == reftests/scrolling/translate-nested-ref.yaml
+REFTEST reftests/scrolling/sticky.yaml == reftests/scrolling/sticky-ref.yaml
+REFTEST reftests/scrolling/sticky-nested.yaml == reftests/scrolling/sticky-ref.yaml
+REFTEST reftests/scrolling/sticky-applied.yaml == reftests/scrolling/sticky-applied-ref.yaml
+REFTEST reftests/scrolling/sticky-transformed.yaml == reftests/scrolling/sticky-transformed-ref.yaml
+REFTEST reftests/scrolling/sibling-hidden-clip.yaml == reftests/scrolling/sibling-hidden-clip-ref.yaml
+REFTEST reftests/snap/snap.yaml == reftests/snap/snap.png
+REFTEST reftests/snap/transform.yaml == reftests/snap/transform.png
+REFTEST reftests/snap/preserve-3d.yaml == reftests/snap/preserve-3d.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/snap/preserve-3d.yaml == reftests/snap/preserve-3d.png | image comparison, max difference: 1, number of differing pixels: 41
+REFTEST reftests/split/simple.yaml == reftests/split/simple-ref.yaml
+REFTEST reftests/split/order.yaml == reftests/split/order-ref.yaml
+REFTEST reftests/split/nested.yaml == reftests/split/nested-ref.yaml
+REFTEST reftests/split/nested-preserve3d-crash.yaml == reftests/split/nested-preserve3d-crash.yaml
+REFTEST reftests/split/perspective-clipping.yaml == reftests/split/perspective-clipping-ref.yaml
+REFTEST reftests/split/intermediate-1.yaml == reftests/split/intermediate-1-ref.yaml
+REFTEST reftests/split/intermediate-2.yaml == reftests/split/intermediate-1-ref.yaml
+REFTEST reftests/split/split-intersect1.yaml == reftests/split/split-intersect1-ref.yaml
+REFTEST reftests/split/ordering.yaml == reftests/split/ordering-ref.yaml
+REFTEST reftests/split/near-plane.yaml == reftests/split/near-plane.png
+REFTEST reftests/split/same-plane.yaml == reftests/split/same-plane.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/split/same-plane.yaml == reftests/split/same-plane.png | image comparison, max difference: 255, number of differing pixels: 32419
+REFTEST reftests/text/text.yaml != reftests/text/blank.yaml
+REFTEST reftests/text/long-text.yaml != reftests/text/blank.yaml
+REFTEST reftests/text/negative-pos.yaml != reftests/text/blank.yaml
+REFTEST reftests/text/shadow.yaml != reftests/text/text.yaml
+REFTEST reftests/text/shadow-single.yaml != reftests/text/blank.yaml
+REFTEST reftests/text/shadow-cover-1.yaml != reftests/text/blank.yaml
+REFTEST reftests/text/shadow-cover-2.yaml != reftests/text/blank.yaml
+REFTEST reftests/text/shadow.yaml == reftests/text/shadow-ref.yaml
+REFTEST reftests/text/shadow-huge.yaml == reftests/text/shadow-huge-ref.yaml
+REFTEST reftests/text/shadow-cover-1.yaml != reftests/text/shadow-cover-2.yaml
+REFTEST reftests/text/shadow-many.yaml != reftests/text/shadow.yaml
+REFTEST reftests/text/shadow-complex.yaml != reftests/text/shadow-many.yaml
+REFTEST reftests/text/shadow-clipped-text.yaml != reftests/text/blank.yaml
+REFTEST reftests/text/non-opaque.yaml != reftests/text/non-opaque-notref.yaml
+REFTEST reftests/text/decorations.yaml == reftests/text/decorations-ref.yaml
+REFTEST reftests/text/decorations-suite.yaml == reftests/text/decorations-suite.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/text/decorations-suite.yaml == reftests/text/decorations-suite.png | image comparison, max difference: 1, number of differing pixels: 141
+REFTEST reftests/text/1658.yaml == reftests/text/1658-ref.yaml
+REFTEST reftests/text/split-batch.yaml == reftests/text/split-batch-ref.yaml
+REFTEST reftests/text/shadow-red.yaml == reftests/text/shadow-red-ref.yaml
+REFTEST reftests/text/shadow-grey.yaml == reftests/text/shadow-grey-ref.yaml
+REFTEST reftests/text/shadow-grey-transparent.yaml == reftests/text/shadow-grey-ref.yaml
+REFTEST reftests/text/subtle-shadow.yaml == reftests/text/subtle-shadow-ref.yaml
+REFTEST reftests/text/shadow-atomic.yaml == reftests/text/shadow-atomic-ref.yaml
+REFTEST reftests/text/shadow-clip-rect.yaml == reftests/text/shadow-atomic-ref.yaml
+REFTEST reftests/text/shadow-ordering.yaml == reftests/text/shadow-ordering-ref.yaml
+REFTEST reftests/text/synthetic-bold.yaml != reftests/text/synthetic-bold-not-ref.yaml
+REFTEST reftests/text/synthetic-bold-transparent.yaml == reftests/text/synthetic-bold-transparent-ref.yaml
+REFTEST reftests/text/synthetic-bold-transparent.yaml != reftests/text/synthetic-bold.yaml
+REFTEST reftests/text/synthetic-italics.yaml != reftests/text/synthetic-italics-ref.yaml
+REFTEST reftests/text/synthetic-italics-custom.yaml != reftests/text/synthetic-italics-ref.yaml
+REFTEST reftests/text/synthetic-italics-custom.yaml != reftests/text/synthetic-italics.yaml
+REFTEST reftests/text/ahem.yaml == reftests/text/ahem-ref.yaml
+Skipping unknown item type: Hash({String("bounds"): Array([Integer(0), Integer(0), Integer(0), Integer(0)]), String("clip-rect"): Array([Integer(0), Integer(0), Integer(0), Integer(0)]), String("backface-visible"): Boolean(true)})
+Skipping unknown item type: Hash({String("bounds"): Array([Integer(0), Integer(0), Integer(0), Integer(0)]), String("clip-rect"): Array([Integer(0), Integer(0), Integer(0), Integer(0)]), String("clip-and-scroll"): String("root-scroll-node"), String("backface-visible"): Boolean(true)})
+REFTEST reftests/text/isolated-text.yaml == reftests/text/isolated-text.png
+REFTEST reftests/text/colors.yaml == reftests/text/colors-alpha.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/text/colors.yaml == reftests/text/colors-alpha.png | image comparison, max difference: 1, number of differing pixels: 98
+REFTEST reftests/text/colors.yaml == reftests/text/colors-subpx.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/text/colors.yaml == reftests/text/colors-subpx.png | image comparison, max difference: 1, number of differing pixels: 527
+REFTEST reftests/text/colors.yaml == reftests/text/colors-subpx.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/text/colors.yaml == reftests/text/colors-subpx.png | image comparison, max difference: 1, number of differing pixels: 551
+REFTEST reftests/text/border-radius.yaml == reftests/text/border-radius-alpha.png
+REFTEST reftests/text/border-radius.yaml == reftests/text/border-radius-subpx.png
+REFTEST reftests/text/transparent-no-aa.yaml == reftests/text/transparent-no-aa-ref.yaml
+REFTEST reftests/text/diacritics.yaml != reftests/text/diacritics-ref.yaml
+REFTEST reftests/text/text-masking.yaml == reftests/text/text-masking-alpha.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/text/text-masking.yaml == reftests/text/text-masking-alpha.png | image comparison, max difference: 1, number of differing pixels: 31
+REFTEST reftests/text/text-masking.yaml == reftests/text/text-masking-subpx.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/text/text-masking.yaml == reftests/text/text-masking-subpx.png | image comparison, max difference: 1, number of differing pixels: 96
+REFTEST reftests/text/alpha-transform.yaml == reftests/text/alpha-transform.png
+REFTEST reftests/text/subpixel-rotate.yaml == reftests/text/subpixel-rotate.png
+REFTEST reftests/text/subpixel-scale.yaml == reftests/text/subpixel-scale.png
+REFTEST reftests/text/subpixel-skew.yaml == reftests/text/subpixel-skew.png
+REFTEST reftests/text/shadow-rotate.yaml != reftests/text/blank.yaml
+REFTEST reftests/text/embedded-bitmaps.yaml == reftests/text/embedded-bitmaps.png
+REFTEST reftests/text/clipped-transform.yaml == reftests/text/clipped-transform.png
+REFTEST reftests/text/writing-modes.yaml == reftests/text/writing-modes-ref.yaml
+REFTEST reftests/text/blurred-shadow-local-clip-rect.yaml == reftests/text/blurred-shadow-local-clip-rect-ref.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/text/blurred-shadow-local-clip-rect.yaml == reftests/text/blurred-shadow-local-clip-rect-ref.png | image comparison, max difference: 1, number of differing pixels: 12
+REFTEST reftests/text/two-shadows.yaml == reftests/text/two-shadows.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/text/two-shadows.yaml == reftests/text/two-shadows.png | image comparison, max difference: 1, number of differing pixels: 29
+REFTEST reftests/text/shadow-clip.yaml == reftests/text/shadow-clip-ref.yaml
+REFTEST reftests/text/shadow-fast-clip.yaml == reftests/text/shadow-fast-clip-ref.yaml
+REFTEST reftests/text/shadow-partial-glyph.yaml == reftests/text/shadow-partial-glyph-ref.yaml
+REFTEST reftests/text/shadow-transforms.yaml == reftests/text/shadow-transforms.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/text/shadow-transforms.yaml == reftests/text/shadow-transforms.png | image comparison, max difference: 96, number of differing pixels: 2423
+REFTEST reftests/text/raster-space.yaml == reftests/text/raster-space.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/text/raster-space.yaml == reftests/text/raster-space.png | image comparison, max difference: 1, number of differing pixels: 1840
+REFTEST reftests/text/allow-subpixel.yaml != reftests/text/allow-subpixel-ref.yaml
+REFTEST reftests/text/bg-color.yaml == reftests/text/bg-color-ref.yaml
+REFTEST reftests/text/large-glyphs.yaml != reftests/text/blank.yaml
+REFTEST reftests/text/snap-text-offset.yaml == reftests/text/snap-text-offset-ref.yaml
+REFTEST reftests/text/shadow-border.yaml == reftests/text/shadow-solid-ref.yaml
+REFTEST reftests/text/shadow-image.yaml == reftests/text/shadow-solid-ref.yaml
+REFTEST reftests/text/snap-clip.yaml == reftests/text/snap-clip-ref.yaml
+REFTEST reftests/transforms/local-clip.yaml == reftests/transforms/local-clip.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/transforms/local-clip.yaml == reftests/transforms/local-clip.png | image comparison, max difference: 8, number of differing pixels: 208
+REFTEST reftests/transforms/rotated-clip.yaml == reftests/transforms/rotated-clip.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/transforms/rotated-clip.yaml == reftests/transforms/rotated-clip.png | image comparison, max difference: 1, number of differing pixels: 29
+REFTEST reftests/transforms/rotated-clip-large.yaml == reftests/transforms/rotated-clip-large.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/transforms/rotated-clip-large.yaml == reftests/transforms/rotated-clip-large.png | image comparison, max difference: 1, number of differing pixels: 53
+REFTEST reftests/transforms/image-rotated-clip.yaml == reftests/transforms/image-rotated-clip.png
+REFTEST reftests/transforms/rotated-image.yaml == reftests/transforms/rotated-image.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/transforms/rotated-image.yaml == reftests/transforms/rotated-image.png | image comparison, max difference: 1, number of differing pixels: 261
+REFTEST reftests/transforms/singular.yaml == reftests/transforms/singular-ref.yaml
+REFTEST reftests/transforms/perspective.yaml == reftests/transforms/perspective.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/transforms/perspective.yaml == reftests/transforms/perspective.png | image comparison, max difference: 9, number of differing pixels: 7775
+REFTEST reftests/transforms/prim-suite.yaml == reftests/transforms/prim-suite.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/transforms/prim-suite.yaml == reftests/transforms/prim-suite.png | image comparison, max difference: 9, number of differing pixels: 2098
+REFTEST reftests/transforms/segments-bug.yaml == reftests/transforms/segments-bug-ref.yaml
+REFTEST reftests/transforms/content-offset.yaml == reftests/transforms/content-offset.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/transforms/content-offset.yaml == reftests/transforms/content-offset.png | image comparison, max difference: 255, number of differing pixels: 2127
+REFTEST reftests/transforms/coord-system.yaml == reftests/transforms/coord-system.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/transforms/coord-system.yaml == reftests/transforms/coord-system.png | image comparison, max difference: 9, number of differing pixels: 505
+REFTEST reftests/transforms/border-zoom.yaml == reftests/transforms/border-zoom.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/transforms/border-zoom.yaml == reftests/transforms/border-zoom.png | image comparison, max difference: 9, number of differing pixels: 798
+REFTEST reftests/transforms/perspective-origin.yaml == reftests/transforms/perspective-origin.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/transforms/perspective-origin.yaml == reftests/transforms/perspective-origin.png | image comparison, max difference: 9, number of differing pixels: 5091
+REFTEST reftests/transforms/screen-space-blit.yaml == reftests/transforms/screen-space-blit.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/transforms/screen-space-blit.yaml == reftests/transforms/screen-space-blit.png | image comparison, max difference: 127, number of differing pixels: 7455
+REFTEST reftests/transforms/screen-space-blit-trivial.yaml == reftests/transforms/screen-space-blit-trivial.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/transforms/screen-space-blit-trivial.yaml == reftests/transforms/screen-space-blit-trivial.png | image comparison, max difference: 9, number of differing pixels: 7188
+REFTEST reftests/transforms/screen-space-blur.yaml == reftests/transforms/screen-space-blur.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/transforms/screen-space-blur.yaml == reftests/transforms/screen-space-blur.png | image comparison, max difference: 1, number of differing pixels: 6762
+REFTEST reftests/transforms/nested-rotate-x.yaml == reftests/transforms/nested-rotate-x.png
+REFTEST reftests/transforms/nested-preserve-3d.yaml == reftests/transforms/nested-preserve-3d.png
+REFTEST reftests/transforms/near-plane-clip.yaml == reftests/transforms/near-plane-clip.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/transforms/near-plane-clip.yaml == reftests/transforms/near-plane-clip.png | image comparison, max difference: 9, number of differing pixels: 8180
+REFTEST reftests/transforms/perspective-mask.yaml == reftests/transforms/perspective-mask.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/transforms/perspective-mask.yaml == reftests/transforms/perspective-mask.png | image comparison, max difference: 255, number of differing pixels: 947
+REFTEST reftests/transforms/rotate-clip.yaml == reftests/transforms/rotate-clip-ref.yaml
+REFTEST reftests/transforms/clip-translate.yaml == reftests/transforms/clip-translate-ref.yaml
+REFTEST reftests/transforms/perspective-clip.yaml == reftests/transforms/perspective-clip.png
+REFTEST TEST-UNEXPECTED-FAIL | reftests/transforms/perspective-clip.yaml == reftests/transforms/perspective-clip.png | image comparison, max difference: 2, number of differing pixels: 1160
+REFTEST reftests/transforms/complex-preserve-3d.yaml == reftests/transforms/blank.yaml
+REFTEST reftests/transforms/perspective-border-radius.yaml == reftests/transforms/perspective-border-radius.png
+REFTEST INFO | 241 passing, 74 failing
+
+Reftests with unexpected results:
+	reftests/aa/rounded-rects.yaml == reftests/aa/rounded-rects-ref.png
+	reftests/blend/isolated-premultiplied-2.yaml == reftests/blend/isolated-premultiplied-2-ref.yaml
+	reftests/border/border-clamp-corner-radius.yaml == reftests/border/border-clamp-corner-radius.png
+	reftests/border/border-gradient-nine-patch.yaml == reftests/border/border-gradient-nine-patch.png
+	reftests/border/border-suite.yaml == reftests/border/border-suite.png
+	reftests/border/border-suite-2.yaml == reftests/border/border-suite-2.png
+	reftests/border/border-suite-3.yaml == reftests/border/border-suite-3.png
+	reftests/border/degenerate-curve.yaml == reftests/border/degenerate-curve.png
+	reftests/border/overlapping.yaml == reftests/border/overlapping.png
+	reftests/border/small-dotted-border.yaml == reftests/border/small-dotted-border.png
+	reftests/boxshadow/inset-alpha.yaml == reftests/boxshadow/inset-alpha.png
+	reftests/boxshadow/boxshadow-spread-only.yaml == reftests/boxshadow/boxshadow-spread-only-ref.png
+	reftests/boxshadow/inset-border-radius.yaml == reftests/boxshadow/inset-border-radius.png
+	reftests/boxshadow/inset-offset.yaml == reftests/boxshadow/inset-offset.png
+	reftests/boxshadow/inset-neg-offset.yaml == reftests/boxshadow/inset-neg-offset.png
+	reftests/boxshadow/box-shadow-suite-blur.yaml == reftests/boxshadow/box-shadow-suite-blur.png
+	reftests/boxshadow/box-shadow-border-radii.yaml == reftests/boxshadow/box-shadow-border-radii.png
+	reftests/boxshadow/inset-subpx.yaml == reftests/boxshadow/inset-subpx.png
+	reftests/boxshadow/inset-downscale.yaml == reftests/boxshadow/inset-downscale.png
+	reftests/boxshadow/box-shadow-cache.yaml == reftests/boxshadow/box-shadow-cache.png
+	reftests/boxshadow/overlap1.yaml == reftests/boxshadow/overlap1.png
+	reftests/boxshadow/overlap2.yaml == reftests/boxshadow/overlap2.png
+	reftests/boxshadow/no-stretch.yaml == reftests/boxshadow/no-stretch.png
+	reftests/boxshadow/box-shadow-stretch-mode-x.yaml == reftests/boxshadow/box-shadow-stretch-mode-x.png
+	reftests/boxshadow/box-shadow-stretch-mode-y.yaml == reftests/boxshadow/box-shadow-stretch-mode-y.png
+	reftests/boxshadow/inset-mask-region.yaml == reftests/boxshadow/inset-mask-region.png
+	reftests/clip/border-with-rounded-clip.yaml == reftests/clip/border-with-rounded-clip.png
+	reftests/clip/clip-45-degree-rotation.yaml == reftests/clip/clip-45-degree-rotation-ref.png
+	reftests/filters/filter-blur.yaml == reftests/filters/filter-blur.png
+	reftests/filters/filter-large-blur-radius.yaml == reftests/filters/filter-large-blur-radius.png
+	reftests/filters/filter-long-chain.yaml == reftests/filters/filter-long-chain.png
+	reftests/filters/filter-drop-shadow.yaml == reftests/filters/filter-drop-shadow.png
+	reftests/filters/filter-drop-shadow-on-viewport-edge.yaml == reftests/filters/filter-drop-shadow-on-viewport-edge.png
+	reftests/filters/blend-clipped.yaml == reftests/filters/blend-clipped.png
+	reftests/gradient/premultiplied-aligned.yaml == reftests/gradient/premultiplied-aligned.png
+	reftests/gradient/premultiplied-angle.yaml == reftests/gradient/premultiplied-angle.png
+	reftests/gradient/premultiplied-radial.yaml == reftests/gradient/premultiplied-radial.png
+	reftests/gradient/premultiplied-aligned-2.yaml == reftests/gradient/premultiplied-aligned-2.png
+	reftests/gradient/premultiplied-angle-2.yaml == reftests/gradient/premultiplied-angle-2.png
+	reftests/gradient/premultiplied-radial-2.yaml == reftests/gradient/premultiplied-radial-2.png
+	reftests/gradient/tiling-radial-3.yaml == reftests/gradient/tiling-radial-3-ref.yaml
+	reftests/gradient/linear-aligned-border-radius.yaml == reftests/gradient/linear-aligned-border-radius.png
+	reftests/gradient/repeat-border-radius.yaml == reftests/gradient/repeat-border-radius.png
+	reftests/image/downscale.yaml == reftests/image/downscale.png
+	reftests/image/yuv.yaml == reftests/image/yuv.png
+	reftests/mask/rounded-corners.yaml == reftests/mask/rounded-corners.png
+	reftests/snap/preserve-3d.yaml == reftests/snap/preserve-3d.png
+	reftests/split/same-plane.yaml == reftests/split/same-plane.png
+	reftests/text/decorations-suite.yaml == reftests/text/decorations-suite.png
+	reftests/text/colors.yaml == reftests/text/colors-alpha.png
+	reftests/text/colors.yaml == reftests/text/colors-subpx.png
+	reftests/text/colors.yaml == reftests/text/colors-subpx.png
+	reftests/text/text-masking.yaml == reftests/text/text-masking-alpha.png
+	reftests/text/text-masking.yaml == reftests/text/text-masking-subpx.png
+	reftests/text/blurred-shadow-local-clip-rect.yaml == reftests/text/blurred-shadow-local-clip-rect-ref.png
+	reftests/text/two-shadows.yaml == reftests/text/two-shadows.png
+	reftests/text/shadow-transforms.yaml == reftests/text/shadow-transforms.png
+	reftests/text/raster-space.yaml == reftests/text/raster-space.png
+	reftests/transforms/local-clip.yaml == reftests/transforms/local-clip.png
+	reftests/transforms/rotated-clip.yaml == reftests/transforms/rotated-clip.png
+	reftests/transforms/rotated-clip-large.yaml == reftests/transforms/rotated-clip-large.png
+	reftests/transforms/rotated-image.yaml == reftests/transforms/rotated-image.png
+	reftests/transforms/perspective.yaml == reftests/transforms/perspective.png
+	reftests/transforms/prim-suite.yaml == reftests/transforms/prim-suite.png
+	reftests/transforms/content-offset.yaml == reftests/transforms/content-offset.png
+	reftests/transforms/coord-system.yaml == reftests/transforms/coord-system.png
+	reftests/transforms/border-zoom.yaml == reftests/transforms/border-zoom.png
+	reftests/transforms/perspective-origin.yaml == reftests/transforms/perspective-origin.png
+	reftests/transforms/screen-space-blit.yaml == reftests/transforms/screen-space-blit.png
+	reftests/transforms/screen-space-blit-trivial.yaml == reftests/transforms/screen-space-blit-trivial.png
+	reftests/transforms/screen-space-blur.yaml == reftests/transforms/screen-space-blur.png
+	reftests/transforms/near-plane-clip.yaml == reftests/transforms/near-plane-clip.png
+	reftests/transforms/perspective-mask.yaml == reftests/transforms/perspective-mask.png
+	reftests/transforms/perspective-clip.yaml == reftests/transforms/perspective-clip.png

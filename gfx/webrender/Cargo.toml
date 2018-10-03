@@ -11,12 +11,12 @@ build = "build.rs"
 default = ["freetype-lib"]
 freetype-lib = ["freetype/servo-freetype-sys"]
 profiler = ["thread_profiler/thread_profiler", "debug_renderer"]
-debugger = ["ws", "serde_json", "serde", "image", "base64", "debug_renderer"]
-capture = ["webrender_api/serialize", "ron", "serde", "debug_renderer"]
-replay = ["webrender_api/deserialize", "ron", "serde"]
+debugger = ["ws", "serde_json", "image", "base64", "debug_renderer"]
+capture = ["webrender_api/serialize", "debug_renderer"]
+replay = ["webrender_api/deserialize"]
 debug_renderer = []
 pathfinder = ["pathfinder_font_renderer", "pathfinder_gfx_utils", "pathfinder_partitioner", "pathfinder_path_utils"]
-serialize_program = ["serde"]
+serialize_program = []
 
 [dependencies]
 app_units = "0.7"
@@ -27,7 +27,7 @@ byteorder = "1.0"
 cfg-if = "0.1.2"
 euclid = "0.19"
 fxhash = "0.2.1"
-gleam = "0.6.2"
+gleam = { optional = true, version = "0.6" }
 image = { optional = true, version = "0.19" }
 lazy_static = "1"
 log = "0.4"
@@ -35,14 +35,16 @@ num-traits = "0.2"
 plane-split = "0.13.2"
 png = { optional = true, version = "0.12" }
 rayon = "1"
-ron = { optional = true, version = "0.1.7" }
-serde = { optional = true, version = "1.0", features = ["serde_derive"] }
+ron = "0.1.7"
+serde = { version = "1.0", features = ["serde_derive"] }
 serde_json = { optional = true, version = "1.0" }
 smallvec = "0.6"
 thread_profiler = "0.1.1"
 time = "0.1"
 webrender_api = { version = "0.57.2", path = "../webrender_api" }
 ws = { optional = true, version = "0.7.3" }
+gfx-hal = { git = "https://github.com/gfx-rs/gfx.git", features = ["serde"] }
+rand ="0.4"
 
 [dependencies.pathfinder_font_renderer]
 git = "https://github.com/pcwalton/pathfinder"
@@ -79,3 +81,10 @@ dwrote = "0.5.1"
 core-foundation = "0.6"
 core-graphics = "0.17.1"
 core-text = { version = "13", default-features = false }
+
+[build-dependencies]
+cfg-if = "0.1.2"
+glsl-to-spirv = "0.1"
+gfx-hal = { git = "https://github.com/gfx-rs/gfx.git" }
+ron = "0.1.7"
+serde = { version = "1.0", features = ["serde_derive"] }
