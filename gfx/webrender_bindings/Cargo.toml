@@ -20,7 +20,7 @@ fxhash = "0.2.1"
 path = "../webrender"
 version = "0.57.2"
 default-features = false
-features = ["capture", "serialize_program", "vulkan"]
+features = ["capture", "serialize_program", "metal"]
 
 [target.'cfg(target_os = "windows")'.dependencies]
 dwrote = "0.5.1"
