@@ -83,7 +83,7 @@ gfx-backend-dx12 = { git = "https://github.com/gfx-rs/gfx.git", rev = "2e4a90814
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.6"
-core-graphics = "0.17.1"
+core-graphics = "0.17"
 core-text = { version = "13", default-features = false }
 gfx-backend-metal = { git = "https://github.com/gfx-rs/gfx.git", rev = "2e4a9081453883e566471bdaddee457045502b44", optional = true }
 
