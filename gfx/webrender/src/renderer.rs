@@ -477,7 +477,7 @@ impl SourceTextureResolver {
         assert!(self.saved_textures.is_empty());
     }
 
-    fn end_frame(&mut self, device: &mut Device<B>, frame_id: FrameId) {
+    fn end_frame(&mut self, device: &mut Device<back::Backend>, frame_id: FrameId) {
         // return the cached targets to the pool
         self.end_pass(None, None);
         // return the global alpha texture
@@ -498,7 +498,7 @@ impl SourceTextureResolver {
     }
 
     /// Drops all targets from the render target pool that do not satisfy the predicate.
-    pub fn retain_targets<F: Fn(&Texture) -> bool>(&mut self, device: &mut Device<B>, f: F) {
+    pub fn retain_targets<F: Fn(&Texture) -> bool>(&mut self, device: &mut Device<back::Backend>, f: F) {
         // We can't just use retain() because `Texture` requires manual cleanup.
         let mut tmp = SmallVec::<[Texture; 8]>::new();
         for target in self.render_target_pool.drain(..) {
@@ -1250,8 +1250,8 @@ impl Renderer
     /// ```
     /// [rendereroptions]: struct.RendererOptions.html
     pub fn new(
-        //nsview: *mut raw::c_void,
-        nswindow: *mut raw::c_void,
+        nsview: *mut raw::c_void,
+        //nswindow: *mut raw::c_void,
         width: u32,
         height: u32,
         notifier: Box<RenderNotifier>,
@@ -1278,8 +1278,8 @@ impl Renderer
             let instance = back::Instance::create("gfx-rs instance", 1);
             let mut adapters = instance.enumerate_adapters();
             let adapter = adapters.remove(0);
-            //let mut surface = instance.create_surface_from_nsview(nsview as _);
-            let mut surface = instance.create_surface_from_nswindow(nswindow as _);
+            let mut surface = instance.create_surface_from_nsview(nsview as _);
+            //let mut surface = instance.create_surface_from_nswindow(nswindow as _);
             ( adapter, surface, instance)
         };
 

@@ -80,8 +80,8 @@ public:
     //MOZ_ASSERT(nsview);
     if (!wr_window_new(aWindowId, mSize.width, mSize.height, supportLowPriorityTransactions,
                        compositor->gl(),
-                       compWidget->GetNativeData(NS_NATIVE_WINDOW),
-                       //compWidget->GetNativeData(NS_NATIVE_WIDGET),
+                       //compWidget->GetNativeData(NS_NATIVE_WINDOW),
+                       compWidget->GetNativeData(NS_NATIVE_WIDGET),
                        //nsview,
                        aRenderThread.ThreadPool().Raw(),
                        &WebRenderMallocSizeOf,
