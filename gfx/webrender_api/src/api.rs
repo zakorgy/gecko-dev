@@ -196,13 +196,13 @@ impl Transaction {
         &mut self,
         window_size: DeviceUintSize,
         inner_rect: DeviceUintRect,
-        device_pixel_ratio: f32,
+        _device_pixel_ratio: f32,
     ) {
         self.scene_ops.push(
             SceneMsg::SetWindowParameters {
                 window_size,
                 inner_rect,
-                device_pixel_ratio,
+                device_pixel_ratio: 1.0,
             },
         );
     }

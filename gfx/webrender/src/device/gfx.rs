@@ -3095,7 +3095,7 @@ impl<B: hal::Backend> Device<B> {
                     .submit(self.upload_queue.drain(..));
                 self.queue_group.queues[0].submit(submission, Some(&fence));
             }
-            self.device.wait_for_fence(&fence, !0);
+            self.device.wait_for_fence(&fence, 10000);
             self.device.destroy_fence(fence);*/
             self.reset_command_pools();
         }
@@ -3276,7 +3276,7 @@ impl<B: hal::Backend> Device<B> {
         let submission = hal::queue::Submission::new()
             .submit(Some(copy_submit));
         self.queue_group.queues[0].submit(submission, Some(&copy_fence));
-        self.device.wait_for_fence(&copy_fence, !0);
+        self.device.wait_for_fence(&copy_fence, 10000);
         self.device.destroy_fence(copy_fence);
 
         let mut data = vec![0; download_buffer.buffer_size];
@@ -3731,7 +3731,7 @@ impl<B: hal::Backend> Device<B> {
 
     pub fn set_next_frame_id(&mut self) -> bool {
         match self.swap_chain.as_mut().unwrap()
-            .acquire_image(!0, FrameSync::Semaphore(&mut self.image_available_semaphore))
+            .acquire_image(10000, FrameSync::Semaphore(&mut self.image_available_semaphore))
         {
             Ok(id) => {
                 self.current_frame_id = id as _;
@@ -3742,6 +3742,7 @@ impl<B: hal::Backend> Device<B> {
     }
 
     pub fn submit_to_gpu(&mut self) -> bool {
+        println!("submit_to_gpu");
         {
             let mut cmd_buffer = self.command_pool[self.next_id].acquire_command_buffer(false);
             let image = &self.frame_images[self.current_frame_id];
