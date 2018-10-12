@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use api::{DebugCommand, DeviceUintRect, DocumentId, ExternalImageData, ExternalImageId};
+use api::{DebugCommand, DeviceUintRect, DeviceUintSize, DocumentId, ExternalImageData, ExternalImageId};
 use api::{ImageFormat, NotificationRequest};
 use device::TextureFilter;
 use renderer::PipelineInfo;
@@ -165,6 +165,7 @@ pub enum ResultMsg {
         BackendProfileCounters,
     ),
     AppendNotificationRequests(Vec<NotificationRequest>),
+    PossibleResize(DeviceUintSize),
 }
 
 #[derive(Clone, Debug)]

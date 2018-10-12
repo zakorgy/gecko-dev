@@ -488,6 +488,8 @@ impl RenderBackend {
                 doc.view.window_size = window_size;
                 doc.view.inner_rect = inner_rect;
                 doc.view.device_pixel_ratio = device_pixel_ratio;
+                assert_eq!(window_size, inner_rect.size, "window_size {:?}, inner_rect {:?}", window_size, inner_rect.size);
+                self.result_tx.send(ResultMsg::PossibleResize(window_size)).unwrap();
             }
             SceneMsg::SetDisplayList {
                 epoch,

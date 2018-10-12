@@ -1724,6 +1724,12 @@ impl Renderer
         // Pull any pending results and return the most recent.
         while let Ok(msg) = self.result_rx.try_recv() {
             match msg {
+                ResultMsg::PossibleResize(window_size) => {
+                    if window_size != self.device.frame_buffer_size() {
+                        println!("Resize from {:?} to {:?}", self.device.frame_buffer_size(), window_size);
+                        self.resize(Some((window_size.width, window_size.height)));
+                    }
+                }
                 ResultMsg::PublishPipelineInfo(mut pipeline_info) => {
                     for (pipeline_id, epoch) in pipeline_info.epochs {
                         self.pipeline_info.epochs.insert(pipeline_id, epoch);
@@ -2255,11 +2261,6 @@ impl Renderer
             );
 
             for &mut (_, RenderedDocument { ref mut frame, .. }) in &mut active_documents {
-                println!("Frame window_size {}, inner_rect {}, dpi {}", frame.window_size, frame.inner_rect, frame.device_pixel_ratio);
-                println!("Actual framebuffer size {}", self.device.frame_buffer_size());
-                if frame.inner_rect.size != self.device.frame_buffer_size() {
-                    self.resize(Some((frame.inner_rect.size.width, frame.inner_rect.size.height)));
-                }
                 frame.profile_counters.reset_targets();
                 self.prepare_gpu_cache(frame);
                 assert!(frame.gpu_cache_frame_id <= self.gpu_cache_frame_id,
