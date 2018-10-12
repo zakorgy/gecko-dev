@@ -199,7 +199,7 @@ impl DebugRenderer {
     }
 
     pub fn deinit<B: hal::Backend>(self, device: &mut Device<B>) {
-        device.delete_texture(self.font_texture);
+        device.delete_texture(self.font_texture, true);
         device.delete_program(self.font_program);
         device.delete_program(self.color_program);
         device.delete_vao(self.tri_vao);

@@ -2679,7 +2679,7 @@ impl<B: hal::Backend> Device<B> {
             let id = self.generate_texture_id();
             texture.id = id;
         } else {
-            self.free_image(texture);
+            self.free_image(texture, false);
         }
 
         texture.width = width;
@@ -3071,13 +3071,13 @@ impl<B: hal::Backend> Device<B> {
         self.upload_queue.push(cmd_buffer.finish());
     }
 
-    pub fn free_texture_storage(&mut self, texture: &mut Texture) {
+    pub fn free_texture_storage(&mut self, texture: &mut Texture, deinit: bool) {
         debug_assert!(self.inside_frame);
         if texture.width + texture.height == 0 {
             return;
         }
 
-        self.free_image(texture);
+        self.free_image(texture, deinit);
 
         texture.width = 0;
         texture.height = 0;
@@ -3085,10 +3085,10 @@ impl<B: hal::Backend> Device<B> {
         texture.id = 0;
     }
 
-    pub fn free_image(&mut self, texture: &mut Texture) {
+    pub fn free_image(&mut self, texture: &mut Texture, deinit: bool) {
         // Note: this is a very rare case, but if it becomes a problem
         // we need to handle this in renderer.rs
-        if texture.still_in_flight(self.frame_id) && !self.upload_queue.is_empty() {
+        if texture.still_in_flight(self.frame_id) && !self.upload_queue.is_empty() && !deinit {
             println!("free_image");
             self.wait_for_resources();
             let fence = self.device.create_fence(false);
@@ -3119,8 +3119,8 @@ impl<B: hal::Backend> Device<B> {
         image.deinit(&self.device);
     }
 
-    pub fn delete_texture(&mut self, mut texture: Texture) {
-        self.free_texture_storage(&mut texture);
+    pub fn delete_texture(&mut self, mut texture: Texture, deinit: bool) {
+        self.free_texture_storage(&mut texture, deinit);
     }
 
     #[cfg(feature = "replay")]

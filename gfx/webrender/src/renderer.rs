@@ -460,14 +460,14 @@ impl SourceTextureResolver {
     }
 
     fn deinit(self, device: &mut Device<back::Backend>) {
-        device.delete_texture(self.dummy_cache_texture);
+        device.delete_texture(self.dummy_cache_texture, true);
 
         for texture in self.cache_texture_map {
-            device.delete_texture(texture);
+            device.delete_texture(texture, true);
         }
 
         for texture in self.render_target_pool {
-            device.delete_texture(texture);
+            device.delete_texture(texture, true);
         }
     }
 
@@ -505,7 +505,7 @@ impl SourceTextureResolver {
             if f(&target) {
                 tmp.push(target);
             } else {
-                device.delete_texture(target);
+                device.delete_texture(target, false);
             }
         }
         self.render_target_pool.extend(tmp);
@@ -747,7 +747,7 @@ impl CacheTexture {
     }
 
     fn deinit(self, device: &mut Device<back::Backend>) {
-        device.delete_texture(self.texture);
+        device.delete_texture(self.texture, true);
         match self.bus {
             CacheBus::PixelBuffer { buffer, ..} => {
                 device.delete_pbo(buffer);
@@ -1031,7 +1031,7 @@ impl VertexDataTexture {
 
     fn deinit(self, device: &mut Device<back::Backend>) {
         device.delete_pbo(self.pbo);
-        device.delete_texture(self.texture);
+        device.delete_texture(self.texture, true);
     }
 }
 
@@ -2543,7 +2543,7 @@ impl Renderer
                     }
                     TextureUpdateOp::Free => {
                         let texture = &mut self.texture_resolver.cache_texture_map[update.id.0];
-                        self.device.free_texture_storage(texture);
+                        self.device.free_texture_storage(texture, false);
                     }
                 }
             }
@@ -4017,7 +4017,7 @@ impl Renderer
         self.device.wait_for_resources_and_reset();
         self.gpu_cache_texture.deinit(&mut self.device);
         if let Some(dither_matrix_texture) = self.dither_matrix_texture {
-            self.device.delete_texture(dither_matrix_texture);
+            self.device.delete_texture(dither_matrix_texture, true);
         }
         self.transforms_texture.deinit(&mut self.device);
         self.prim_header_f_texture.deinit(&mut self.device);
@@ -4634,7 +4634,7 @@ impl Renderer
             self.device.begin_frame();
 
             for texture in self.texture_resolver.cache_texture_map.drain(..) {
-                self.device.delete_texture(texture);
+                self.device.delete_texture(texture, false);
             }
             for texture in renderer.textures {
                 info!("\t{}", texture.data);
