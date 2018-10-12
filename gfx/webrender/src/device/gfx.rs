@@ -50,7 +50,7 @@ pub const INVALID_TEXTURE_ID: TextureId = 0;
 pub const INVALID_PROGRAM_ID: ProgramId = ProgramId(0);
 pub const DEFAULT_READ_FBO: FBOId = FBOId(0);
 pub const DEFAULT_DRAW_FBO: FBOId = FBOId(1);
-pub const MAX_FRAME_COUNT: usize = 2;
+pub const MAX_FRAME_COUNT: usize = 3;
 
 const COLOR_RANGE: hal::image::SubresourceRange = hal::image::SubresourceRange {
     aspects: hal::format::Aspects::COLOR,
@@ -3099,7 +3099,7 @@ impl<B: hal::Backend> Device<B> {
                     .submit(self.upload_queue.drain(..));
                 self.queue_group.queues[0].submit(submission, Some(&fence));
             }
-            self.device.wait_for_fence(&fence, 10000);
+            self.device.wait_for_fence(&fence, !0);
             self.device.destroy_fence(fence);
             self.reset_command_pools();
         }
@@ -3280,7 +3280,7 @@ impl<B: hal::Backend> Device<B> {
         let submission = hal::queue::Submission::new()
             .submit(Some(copy_submit));
         self.queue_group.queues[0].submit(submission, Some(&copy_fence));
-        self.device.wait_for_fence(&copy_fence, 10000);
+        self.device.wait_for_fence(&copy_fence, !0);
         self.device.destroy_fence(copy_fence);
 
         let mut data = vec![0; download_buffer.buffer_size];
@@ -3782,7 +3782,7 @@ impl<B: hal::Backend> Device<B> {
         self.next_id = (self.next_id + 1) % MAX_FRAME_COUNT;
         self.reset_state();
         if self.frame_fence[self.next_id].is_submitted {
-            self.device.wait_for_fence(&self.frame_fence[self.next_id].inner, 1000);
+            self.device.wait_for_fence(&self.frame_fence[self.next_id].inner, !0);
             self.device.reset_fence(&self.frame_fence[self.next_id].inner);
             self.frame_fence[self.next_id].is_submitted = false;
         }
@@ -3801,7 +3801,7 @@ impl<B: hal::Backend> Device<B> {
     fn wait_for_resources(&mut self) {
         for fence in &mut self.frame_fence {
             if fence.is_submitted {
-                self.device.wait_for_fence(&fence.inner, 1000);
+                self.device.wait_for_fence(&fence.inner, !0);
                 self.device.reset_fence(&fence.inner);
                 fence.is_submitted = false;
             }
