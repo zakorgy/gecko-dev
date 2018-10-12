@@ -50,7 +50,7 @@ pub const INVALID_TEXTURE_ID: TextureId = 0;
 pub const INVALID_PROGRAM_ID: ProgramId = ProgramId(0);
 pub const DEFAULT_READ_FBO: FBOId = FBOId(0);
 pub const DEFAULT_DRAW_FBO: FBOId = FBOId(1);
-pub const MAX_FRAME_COUNT: usize = 1;
+pub const MAX_FRAME_COUNT: usize = 2;
 
 const COLOR_RANGE: hal::image::SubresourceRange = hal::image::SubresourceRange {
     aspects: hal::format::Aspects::COLOR,
@@ -2233,6 +2233,10 @@ impl<B: hal::Backend> Device<B> {
          framebuffers, framebuffers_depth, frame_depths, frame_images, viewport)
     }
 
+    pub(crate) fn frame_buffer_size(&self) -> DeviceUintSize {
+        DeviceUintSize::new(self.viewport.rect.w as _, self.viewport.rect.h as _)
+    }
+
     pub(crate) fn bound_program(&self) -> ProgramId { self.bound_program }
 
     pub fn set_device_pixel_ratio(&mut self, ratio: f32) {
@@ -3087,7 +3091,7 @@ impl<B: hal::Backend> Device<B> {
         if texture.still_in_flight(self.frame_id) && !self.upload_queue.is_empty() {
             println!("free_image");
             self.wait_for_resources();
-            /*let fence = self.device.create_fence(false);
+            let fence = self.device.create_fence(false);
             self.device.reset_fence(&fence);
             {
                 println!("self.upload_queue.len={:?}", self.upload_queue.len());
@@ -3096,7 +3100,7 @@ impl<B: hal::Backend> Device<B> {
                 self.queue_group.queues[0].submit(submission, Some(&fence));
             }
             self.device.wait_for_fence(&fence, 10000);
-            self.device.destroy_fence(fence);*/
+            self.device.destroy_fence(fence);
             self.reset_command_pools();
         }
         if let Some(depth_rb) = texture.depth_rb.take() {
