@@ -2353,7 +2353,12 @@ impl<B: hal::Backend> Device<B> {
                     TextureFilter::Linear | TextureFilter::Trilinear => &self.sampler_linear,
                     TextureFilter::Nearest => &self.sampler_nearest,
                 };
-                program.bind_texture(&self.device, desc_set, &self.images[&self.bound_textures[index]].core, &sampler, sampler_name);
+                program.bind_texture(
+                    &self.device,
+                    desc_set,
+                    &self.images.get(&self.bound_textures[index]).expect(&format!("Image not found with id: {}", self.bound_textures[index])).core,
+                    &sampler,
+                    sampler_name);
             }
         }
     }
