@@ -3518,7 +3518,15 @@ impl Renderer
             counters.targets_changed.inc();
             index = self.texture_resolver.render_target_pool
                 .iter()
-                .position(|texture| texture.get_format() == list.format && !texture.used_in_frame(frame_id));
+                .position(|texture| {
+                    #[cfg(not(feature = "gleam"))]
+                    {
+                        if texture.still_in_flight(frame_id) {
+                            return false;
+                        }
+                    }
+                    texture.get_format() == list.format && !texture.used_in_frame(frame_id)
+                });
         }
 
         let mut texture = match index {
