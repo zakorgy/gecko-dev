@@ -3303,13 +3303,32 @@ impl<B: hal::Backend> Device<B> {
         data.truncate(output.len());
         if !capture_read && self.surface_format.base_format().0 == hal::format::SurfaceType::B8_G8_R8_A8 {
             let mut offset = 0;
+            let mut tmp = vec![0; size_in_bytes];
             for _ in 0..output.len()/4 {
-                output[offset + 0] = data[offset + 2];
-                output[offset + 1] = data[offset + 1];
-                output[offset + 2] = data[offset + 0];
-                output[offset + 3] = data[offset + 3];
+                tmp[offset + 0] = data[offset + 2];
+                tmp[offset + 1] = data[offset + 1];
+                tmp[offset + 2] = data[offset + 0];
+                tmp[offset + 3] = data[offset + 3];
                 offset += 4;
             }
+
+            let width = rect.size.width as usize;
+            let height = rect.size.height as usize;
+            let row_pitch : usize = bytes_per_pixel as usize * width;
+            let mut y_flipped_data = vec![0; size_in_bytes];
+
+            for y in 0..height as usize {
+                for x in 0..width as usize {
+                    let offset : usize = y * row_pitch + x * 4;
+                    let rev_offset : usize = (height - 1 - y) * row_pitch + x * 4;
+                    y_flipped_data[offset + 0] = tmp[rev_offset + 0];
+                    y_flipped_data[offset + 1] = tmp[rev_offset + 1];
+                    y_flipped_data[offset + 2] = tmp[rev_offset + 2];
+                    y_flipped_data[offset + 3] = tmp[rev_offset + 3];
+                }
+            }
+            output.swap_with_slice(&mut y_flipped_data);
+
         } else {
             output.swap_with_slice(&mut data);
         }
