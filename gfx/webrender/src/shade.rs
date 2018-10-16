@@ -676,6 +676,11 @@ impl Shaders {
         format: YuvFormat,
         color_space: YuvColorSpace,
     ) -> usize {
+        let buffer_kind = if cfg!(not(feature = "gleam")) {
+            ImageBufferKind::Texture2DArray
+        } else {
+            buffer_kind
+        };
         ((buffer_kind as usize) * YUV_FORMATS.len() + (format as usize)) * YUV_COLOR_SPACES.len() +
             (color_space as usize)
     }
@@ -691,6 +696,11 @@ impl Shaders {
                         &mut self.brush_solid
                     }
                     BrushBatchKind::Image(image_buffer_kind) => {
+                        let image_buffer_kind = if cfg!(not(feature = "gleam")) {
+                            ImageBufferKind::Texture2DArray
+                        } else {
+                            image_buffer_kind
+                        };
                         self.brush_image[image_buffer_kind as usize]
                             .as_mut()
                             .expect("Unsupported image shader kind")
