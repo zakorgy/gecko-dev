@@ -192,7 +192,7 @@ pub use device::{ProgramBinary, ProgramCache, ProgramCacheObserver, ProgramSourc
 pub use frame_builder::ChasePrimitive;
 pub use renderer::{AsyncPropertySampler, CpuProfile, DebugFlags, OutputImageHandler, RendererKind};
 pub use renderer::{ExternalImage, ExternalImageHandler, ExternalImageSource, GpuProfile};
-pub use renderer::{GraphicsApi, GraphicsApiInfo, PipelineInfo, Renderer, RendererOptions};
+pub use renderer::{GraphicsApi, GraphicsApiInfo, PipelineInfo, Renderer, RendererInit, RendererOptions};
 pub use renderer::{RendererStats, SceneBuilderHooks, ThreadListener};
 pub use renderer::MAX_VERTEX_TEXTURE_WIDTH;
 pub use webrender_api as api;

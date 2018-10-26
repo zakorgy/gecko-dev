@@ -1177,6 +1177,18 @@ impl From<ResourceCacheError> for RendererError {
     }
 }
 
+//#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[repr(u32)]
+pub enum RendererInit {
+    // Display and Window handle
+    LinuxVulkan(*mut raw::c_void, raw::c_ulong),
+    // NSView
+    MacosMetal(*mut raw::c_void),
+    // Hinstance and HWND (DX12 and Vulkan)
+    Windows(*mut raw::c_void, *mut raw::c_void),
+    // TODO: gl
+}
+
 impl Renderer
 {
     /// Initializes webrender and creates a `Renderer` and `RenderApiSender`.
@@ -1197,8 +1209,7 @@ impl Renderer
     /// ```
     /// [rendereroptions]: struct.RendererOptions.html
     pub fn new(
-        display: *mut raw::c_void,
-        window: raw::c_ulong,
+        init: RendererInit,
         width: u32,
         height: u32,
         notifier: Box<RenderNotifier>,
@@ -1219,6 +1230,10 @@ impl Renderer
             let instance = back::Instance::create("gfx-rs instance", 1);
             let mut adapters = instance.enumerate_adapters();
             let adapter = adapters.remove(0);
+            let (display, window) = match init {
+                RendererInit::LinuxVulkan(d, w) => (d, w),
+                _ => unimplemented!(),
+            };
             let mut surface = instance.create_surface_from_xlib(display as _, window as _);
             ( adapter, surface, instance)
         };

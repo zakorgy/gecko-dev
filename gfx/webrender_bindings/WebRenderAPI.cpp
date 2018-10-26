@@ -73,9 +73,22 @@ public:
     wr::Renderer* wrRenderer = nullptr;
     widget::GtkCompositorWidget* compWidget = compositor->GetWidget()->AsX11();
     MOZ_ASSERT(compWidget);
+    auto init;
+
+    #if defined(XP_MACOSX)
+      init = wr::RendererInit::MacosMetal(compWidget->GetNativeData(NS_NATIVE_WIDGET));
+    #endif
+
+    #if defined(XP_WIN)
+      init = wr::RendererInit::Windows(compWidget->XDisplay(), compWidget->XWindow());
+    #endif
+
+    #if !(defined(XP_MACOSX) || defined(XP_WIN))
+      init = wr::RendererInit::LinuxVulkan(compWidget->XDisplay(), compWidget->XWindow());
+    #endif
     if (!wr_window_new(aWindowId, mSize.width, mSize.height, supportLowPriorityTransactions,
                        compositor->gl(),
-                       compWidget->XDisplay(), compWidget->XWindow(),
+                       init,
                        aRenderThread.ThreadPool().Raw(),
                        &WebRenderMallocSizeOf,
                        mDocHandle, &wrRenderer,
