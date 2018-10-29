@@ -1363,8 +1363,8 @@ impl Renderer
                 SurfaceHandles::LinuxVulkan(display, window) => instance.create_surface_from_xlib(display as _, window as _),
                 #[cfg(all(feature = "metal", target_os = "macos"))]
                 SurfaceHandles::MacosMetal(nsview) => instance.create_surface_from_nsview(nsview as _),
-                #[cfg(all(feature = "vulkan", windows))]RendererInit
-                    SurfaceHandles::Windows(hinstance, hwnd) => instance.create_surface_from_hwnd(hinstance as _,hwnd as _),
+                #[cfg(all(feature = "vulkan", windows))]
+                SurfaceHandles::Windows(hinstance, hwnd) => instance.create_surface_from_hwnd(hinstance as _,hwnd as _),
                 #[cfg(all(feature = "dx12", windows))]
                 SurfaceHandles::Windows(_, hwnd) => instance.create_surface_from_hwnd(hwnd as _),
                 h => panic!("Wrong handle variant: {:?}", h),
