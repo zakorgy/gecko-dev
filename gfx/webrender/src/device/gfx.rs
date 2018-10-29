@@ -52,7 +52,7 @@ pub const INVALID_PROGRAM_ID: ProgramId = ProgramId(0);
 pub const DEFAULT_READ_FBO: FBOId = FBOId(0);
 pub const DEFAULT_DRAW_FBO: FBOId = FBOId(1);
 const MAX_FRAME_COUNT: usize = 2;
-const DESCRIPTOR_COUNT: usize = 40;
+const DESCRIPTOR_COUNT: usize = 80;
 const DEBUG_DESCRIPTOR_COUNT: usize = 5;
 // The maximum number of sampled textures in a cache clip shader.
 const CACHE_CLIP_SAMPLERS: usize = 7;
