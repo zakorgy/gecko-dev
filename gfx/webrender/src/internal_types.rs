@@ -4,6 +4,8 @@
 
 use api::{DebugCommand, DeviceUintRect, DocumentId, ExternalImageData, ExternalImageId};
 use api::{ImageFormat, NotificationRequest};
+#[cfg(not(feature = "gleam"))]
+use api::DeviceUintSize;
 use device::TextureFilter;
 use renderer::PipelineInfo;
 use gpu_cache::GpuCacheUpdateList;
@@ -88,7 +90,11 @@ pub enum TextureSource {
 }
 
 pub const ORTHO_NEAR_PLANE: f32 = -100000.0;
+#[cfg(feature = "gleam")]
 pub const ORTHO_FAR_PLANE: f32 = 100000.0;
+#[cfg(not(feature = "gleam"))]
+pub const ORTHO_FAR_PLANE: f32 = 000000.0;
+
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
@@ -183,6 +189,8 @@ pub enum ResultMsg {
         BackendProfileCounters,
     ),
     AppendNotificationRequests(Vec<NotificationRequest>),
+    #[cfg(not(feature = "gleam"))]
+    UpdateWindowSize(DeviceUintSize),
 }
 
 #[derive(Clone, Debug)]

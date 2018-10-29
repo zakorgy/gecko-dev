@@ -232,6 +232,8 @@ pub enum GpuCacheUpdate {
     },
 }
 
+#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct GpuDebugChunk {
     pub address: GpuCacheAddress,
     pub fresh: bool,
