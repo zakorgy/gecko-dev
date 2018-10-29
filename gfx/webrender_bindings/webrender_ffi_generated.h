@@ -270,6 +270,8 @@ enum class YuvColorSpace : uint32_t {
 template<typename T>
 struct Arc;
 
+struct Device;
+
 // Geometry in the coordinate system of the render target (screen or intermediate
 // surface) in physical pixels.
 struct DevicePixel;
