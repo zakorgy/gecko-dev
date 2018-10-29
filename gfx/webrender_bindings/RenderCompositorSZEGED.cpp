@@ -43,7 +43,7 @@ RenderCompositorSZEGED::Initialize()
   const auto flags = gl::CreateContextFlags::NONE;
 
   nsCString discardFailureId;
-  mGL = gl::GLContextProviderCGL::CreateHeadless(flags, &discardFailureId);
+  mGL = gl::GLContextProviderGLX::CreateHeadless(flags, &discardFailureId);
   if (!mGL) {
     gfxCriticalNote << "Failed GL context creation for WebRender: " << gfx::hexa(mGL.get());
     return false;

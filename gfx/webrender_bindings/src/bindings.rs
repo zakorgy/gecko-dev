@@ -9,6 +9,7 @@ use std::os::raw::{c_void, c_char, c_float};
 use gleam::gl;
 
 use webrender::api::*;
+use webrender::back;
 use webrender::{ReadPixelsFormat, Renderer, RendererOptions, ThreadListener};
 use webrender::{ExternalImage, ExternalImageHandler, ExternalImageSource};
 use webrender::DebugFlags;
@@ -502,7 +503,7 @@ extern "C" {
     fn is_in_render_thread() -> bool;
     fn is_in_main_thread() -> bool;
     fn is_glcontext_egl(glcontext_ptr: *mut c_void) -> bool;
-    //fn is_glcontext_angle(glcontext_ptr: *mut c_void) -> bool;
+    fn is_glcontext_angle(glcontext_ptr: *mut c_void) -> bool;
     // Enables binary recording that can be used with `wrench replay`
     // Outputs a wr-record-*.bin file for each window that is shown
     // Note: wrench will panic if external images are used, they can
@@ -925,9 +926,9 @@ fn env_var_to_bool(key: &'static str) -> bool {
     env::var(key).ok().map_or(false, |v| !v.is_empty())
 }
 
-// Call MakeCurrent before this.
+/*// Call MakeCurrent before this.
 fn wr_device_new(gl_context: *mut c_void, pc: Option<&mut WrProgramCache>)
-    -> Device
+    -> Device<back::Backend>
 {
     assert!(unsafe { is_in_render_thread() });
 
@@ -965,8 +966,8 @@ fn wr_device_new(gl_context: *mut c_void, pc: Option<&mut WrProgramCache>)
       None => None,
     };
 
-    Device::new(gl, resource_override_path, upload_method, cached_programs)
-}
+    Device::new(gl, resource_override_path, UploadMethod::PixelBuffer(VertexUsageHint::Dynamic), cached_programs)
+}*/
 
 // Call MakeCurrent before this.
 #[no_mangle]
@@ -1053,7 +1054,7 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
         sampler: Some(Box::new(SamplerCallback::new(window_id))),
         max_texture_size: Some(8192), // Moz2D doesn't like textures bigger than this
         clear_color: Some(ColorF::new(0.0, 0.0, 0.0, 0.0)),
-        precache_flags: false,
+        precache_flags: ShaderPrecacheFlags::empty(),
         namespace_alloc_by_client: true,
         ..Default::default()
     };
@@ -2663,7 +2664,7 @@ fn unpack_clip_id(id: usize, pipeline_id: PipelineId) -> ClipId {
 
 /// cbindgen:postfix=WR_DESTRUCTOR_SAFE_FUNC
 #[no_mangle]
-pub unsafe extern "C" fn wr_device_delete(device: *mut Device) {
+pub unsafe extern "C" fn wr_device_delete(device: *mut Device<back::Backend>) {
     Box::from_raw(device);
 }
 
@@ -2671,7 +2672,7 @@ pub unsafe extern "C" fn wr_device_delete(device: *mut Device) {
 #[no_mangle]
 pub extern "C" fn wr_shaders_new(gl_context: *mut c_void,
                                  program_cache: Option<&mut WrProgramCache>) -> *mut WrShaders {
-    let mut device = wr_device_new(gl_context, program_cache);
+    /*let mut device = wr_device_new(gl_context, program_cache);
 
     let precache_flags = if env_var_to_bool("MOZ_WR_PRECACHE_SHADERS") {
         ShaderPrecacheFlags::FULL_COMPILE
@@ -2702,16 +2703,17 @@ pub extern "C" fn wr_shaders_new(gl_context: *mut c_void,
     let shaders = WrShaders { shaders };
 
     device.end_frame();
-    Box::into_raw(Box::new(shaders))
+    Box::into_raw(Box::new(shaders))*/
+    return ptr::null_mut();
 }
 
 /// cbindgen:postfix=WR_DESTRUCTOR_SAFE_FUNC
 #[no_mangle]
 pub unsafe extern "C" fn wr_shaders_delete(shaders: *mut WrShaders, gl_context: *mut c_void) {
-    let mut device = wr_device_new(gl_context, None);
+    /*let mut device = wr_device_new(gl_context, None);
     let shaders = Box::from_raw(shaders);
     if let Ok(shaders) = Rc::try_unwrap(shaders.shaders) {
       shaders.into_inner().deinit(&mut device);
-    }
+    }*/
     // let shaders go out of scope and get dropped
 }

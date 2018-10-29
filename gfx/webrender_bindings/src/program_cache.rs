@@ -197,7 +197,7 @@ impl WrProgramBinaryDiskCache {
                         // }
                         // Err(err) => {
                         _ => {
-                            error!("Failed to desriralize program binary error: {}", err);
+                            error!("Failed to desriralize program binary error");
                         }
                     };
 
@@ -250,8 +250,8 @@ pub struct WrProgramCache {
 impl WrProgramCache {
     pub fn new(prof_path: &nsAString, workers: &Arc<ThreadPool>) -> Self {
         let disk_cache = Rc::new(RefCell::new(WrProgramBinaryDiskCache::new(prof_path, workers)));
-        //let program_cache_observer = Box::new(WrProgramCacheObserver::new(Rc::clone(&disk_cache)));
-        let program_cache = ProgramCache::new(/*Some(program_cache_observer)*/);
+        let program_cache_observer = Box::new(WrProgramCacheObserver::new(Rc::clone(&disk_cache)));
+        let program_cache = ProgramCache::new(Some(program_cache_observer));
 
         WrProgramCache {
             program_cache,

@@ -13,6 +13,7 @@
 #include "mozilla/layers/CompositorThread.h"
 #include "mozilla/webrender/RenderCompositor.h"
 #include "mozilla/widget/CompositorWidget.h"
+#include "mozilla/widget/GtkCompositorWidget.h"
 #include "mozilla/layers/SynchronousTask.h"
 
 #define WRDL_LOG(...)
@@ -74,17 +75,16 @@ public:
     widget::GtkCompositorWidget* compWidget = compositor->GetWidget()->AsX11();
     MOZ_ASSERT(compWidget);
 
-    auto surfaceHandles;
     #if defined(XP_MACOSX)
-      init = wr::SurfaceHandles::MacosMetal(compWidget->GetNativeData(NS_NATIVE_WIDGET));
+    wr::SurfaceHandles surfaceHandles = wr::SurfaceHandles::MacosMetal(compWidget->GetNativeData(NS_NATIVE_WIDGET));
     #endif
 
     #if defined(XP_WIN)
-      init = wr::SurfaceHandles::Windows(compWidget->XDisplay(), compWidget->XWindow());
+    wr::SurfaceHandles surfaceHandles = wr::SurfaceHandles::Windows(compWidget->XDisplay(), compWidget->XWindow());
     #endif
 
     #if !(defined(XP_MACOSX) || defined(XP_WIN))
-      init = wr::SurfaceHandles::LinuxVulkan(compWidget->XDisplay(), compWidget->XWindow());
+    wr::SurfaceHandles surfaceHandles = wr::SurfaceHandles::LinuxVulkan(compWidget->XDisplay(), compWidget->XWindow());
     #endif
 
     if (!wr_window_new(aWindowId, mSize.width, mSize.height, supportLowPriorityTransactions,
