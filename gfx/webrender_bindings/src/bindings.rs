@@ -2662,11 +2662,11 @@ fn unpack_clip_id(id: usize, pipeline_id: PipelineId) -> ClipId {
     }
 }
 
-/// cbindgen:postfix=WR_DESTRUCTOR_SAFE_FUNC
+/*/// cbindgen:postfix=WR_DESTRUCTOR_SAFE_FUNC
 #[no_mangle]
 pub unsafe extern "C" fn wr_device_delete(device: *mut Device<back::Backend>) {
     Box::from_raw(device);
-}
+}*/
 
 // Call MakeCurrent before this.
 #[no_mangle]
