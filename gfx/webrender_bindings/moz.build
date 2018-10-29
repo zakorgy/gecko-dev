@@ -4,13 +4,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+CXXFLAGS += CONFIG['MOZ_GTK3_CFLAGS']
+
 with Files('**'):
     BUG_COMPONENT = ('Core', 'Graphics: WebRender')
 
 EXPORTS.mozilla.webrender += [
     'RenderBufferTextureHost.h',
     'RenderCompositor.h',
-    'RenderCompositorOGL.h',
+    'RenderCompositorSZEGED.h',
     'RendererOGL.h',
     'RenderSharedSurfaceTextureHost.h',
     'RenderTextureHost.h',
@@ -27,7 +29,7 @@ UNIFIED_SOURCES += [
     'Moz2DImageRenderer.cpp',
     'RenderBufferTextureHost.cpp',
     'RenderCompositor.cpp',
-    'RenderCompositorOGL.cpp',
+    'RenderCompositorSZEGED.cpp',
     'RendererOGL.cpp',
     'RenderSharedSurfaceTextureHost.cpp',
     'RenderTextureHost.cpp',
