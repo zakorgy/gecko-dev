@@ -2190,10 +2190,14 @@ impl<B: hal::Backend> Device<B> {
         if extent.width == 0 { extent.width = 1; }
         if extent.height == 0 { extent.height = 1; }
 
-        let swap_config = SwapchainConfig::from_caps(&caps, surface_format)
-            .with_image_usage(
-                hal::image::Usage::TRANSFER_SRC | hal::image::Usage::TRANSFER_DST | hal::image::Usage::COLOR_ATTACHMENT
-            );
+        let swap_config = SwapchainConfig::new(
+            extent.width,
+            extent.height,
+            surface_format,
+            caps.image_count.start
+        ).with_image_usage(
+            hal::image::Usage::TRANSFER_SRC | hal::image::Usage::TRANSFER_DST | hal::image::Usage::COLOR_ATTACHMENT
+        );
 
         let (swap_chain, backbuffer) = device.create_swapchain(surface, swap_config, None);
         println!("backbuffer={:?}", backbuffer);

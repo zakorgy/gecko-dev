@@ -13,7 +13,7 @@
 #include "mozilla/layers/CompositorThread.h"
 #include "mozilla/webrender/RenderCompositor.h"
 #include "mozilla/widget/CompositorWidget.h"
-#include "mozilla/widget/GtkCompositorWidget.h"
+#include "mozilla/widget/WinCompositorWidget.h"
 #include "mozilla/layers/SynchronousTask.h"
 
 #define WRDL_LOG(...)
@@ -72,7 +72,8 @@ public:
 
     bool supportLowPriorityTransactions = true; // TODO only for main windows.
     wr::Renderer* wrRenderer = nullptr;
-    widget::GtkCompositorWidget* compWidget = compositor->GetWidget()->AsX11();
+    //widget::GtkCompositorWidget* compWidget = compositor->GetWidget()->AsX11();
+    widget::WinCompositorWidget* compWidget = compositor->GetWidget()->AsWindows();
     MOZ_ASSERT(compWidget);
 
     #if defined(XP_MACOSX)
@@ -80,7 +81,7 @@ public:
     #endif
 
     #if defined(XP_WIN)
-    wr::SurfaceHandles surfaceHandles = wr::SurfaceHandles::Windows(compWidget->XDisplay(), compWidget->XWindow());
+    wr::SurfaceHandles surfaceHandles = wr::SurfaceHandles::Windows(GetModuleHandle(nullptr), compWidget->GetHwnd());
     #endif
 
     #if !(defined(XP_MACOSX) || defined(XP_WIN))
