@@ -71,8 +71,25 @@ public:
 
     bool supportLowPriorityTransactions = true; // TODO only for main windows.
     wr::Renderer* wrRenderer = nullptr;
+    widget::GtkCompositorWidget* compWidget = compositor->GetWidget()->AsX11();
+    MOZ_ASSERT(compWidget);
+
+    auto surfaceHandles;
+    #if defined(XP_MACOSX)
+      init = wr::SurfaceHandles::MacosMetal(compWidget->GetNativeData(NS_NATIVE_WIDGET));
+    #endif
+
+    #if defined(XP_WIN)
+      init = wr::SurfaceHandles::Windows(compWidget->XDisplay(), compWidget->XWindow());
+    #endif
+
+    #if !(defined(XP_MACOSX) || defined(XP_WIN))
+      init = wr::SurfaceHandles::LinuxVulkan(compWidget->XDisplay(), compWidget->XWindow());
+    #endif
+
     if (!wr_window_new(aWindowId, mSize.width, mSize.height, supportLowPriorityTransactions,
                        compositor->gl(),
+                       surfaceHandles,
                        aRenderThread.ProgramCache() ? aRenderThread.ProgramCache()->Raw() : nullptr,
                        aRenderThread.Shaders() ? aRenderThread.Shaders()->RawShaders() : nullptr,
                        aRenderThread.ThreadPool().Raw(),

@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* Generated with cbindgen:0.6.3 */
+/* Generated with cbindgen:0.6.6 */
 
 /* DO NOT MODIFY THIS MANUALLY! This file was generated using cbindgen.
  * To generate this file:
@@ -14,12 +14,12 @@
 #include <cstdint>
 #include <cstdlib>
 
-namespace mozilla {
-namespace wr {
-
 static const uint32_t MAX_CACHED_PROGRAM_COUNT = 15;
 
 static const uint64_t MAX_LOAD_TIME_MS = 400;
+
+namespace mozilla {
+namespace wr {
 
 // Whether a border should be antialiased.
 enum class AntialiasBorder {
@@ -269,8 +269,6 @@ enum class YuvColorSpace : uint32_t {
 
 template<typename T>
 struct Arc;
-
-struct Device;
 
 // Geometry in the coordinate system of the render target (screen or intermediate
 // surface) in physical pixels.
@@ -1072,6 +1070,103 @@ struct WrOpacityProperty {
   bool operator==(const WrOpacityProperty& aOther) const {
     return id == aOther.id &&
            opacity == aOther.opacity;
+  }
+};
+
+union SurfaceHandles {
+  enum class Tag : uint32_t {
+    LinuxVulkan,
+    MacosMetal,
+    Windows,
+
+    Sentinel /* this must be last for serialization purposes. */
+  };
+
+  struct LinuxVulkan_Body {
+    Tag tag;
+    void *_0;
+    unsigned long _1;
+
+    bool operator==(const LinuxVulkan_Body& aOther) const {
+      return _0 == aOther._0 &&
+             _1 == aOther._1;
+    }
+  };
+
+  struct MacosMetal_Body {
+    Tag tag;
+    void *_0;
+
+    bool operator==(const MacosMetal_Body& aOther) const {
+      return _0 == aOther._0;
+    }
+  };
+
+  struct Windows_Body {
+    Tag tag;
+    void *_0;
+    void *_1;
+
+    bool operator==(const Windows_Body& aOther) const {
+      return _0 == aOther._0 &&
+             _1 == aOther._1;
+    }
+  };
+
+  struct {
+    Tag tag;
+  };
+  LinuxVulkan_Body linux_vulkan;
+  MacosMetal_Body macos_metal;
+  Windows_Body windows;
+
+  static SurfaceHandles LinuxVulkan(void *const& a0,
+                                    unsigned long const& a1) {
+    SurfaceHandles result;
+    result.linux_vulkan._0 = a0;
+    result.linux_vulkan._1 = a1;
+    result.tag = Tag::LinuxVulkan;
+    return result;
+  }
+
+  static SurfaceHandles MacosMetal(void *const& a0) {
+    SurfaceHandles result;
+    result.macos_metal._0 = a0;
+    result.tag = Tag::MacosMetal;
+    return result;
+  }
+
+  static SurfaceHandles Windows(void *const& a0,
+                                void *const& a1) {
+    SurfaceHandles result;
+    result.windows._0 = a0;
+    result.windows._1 = a1;
+    result.tag = Tag::Windows;
+    return result;
+  }
+
+  bool IsLinuxVulkan() const {
+    return tag == Tag::LinuxVulkan;
+  }
+
+  bool IsMacosMetal() const {
+    return tag == Tag::MacosMetal;
+  }
+
+  bool IsWindows() const {
+    return tag == Tag::Windows;
+  }
+
+  bool operator==(const SurfaceHandles& aOther) const {
+    if (tag != aOther.tag) {
+      return false;
+    }
+    switch (tag) {
+      case Tag::LinuxVulkan: return linux_vulkan == aOther.linux_vulkan;
+      case Tag::MacosMetal: return macos_metal == aOther.macos_metal;
+      case Tag::Windows: return windows == aOther.windows;
+      default: return true;
+    }
   }
 };
 
@@ -1916,6 +2011,7 @@ bool wr_window_new(WrWindowId aWindowId,
                    uint32_t aWindowHeight,
                    bool aSupportLowPriorityTransactions,
                    void *aGlContext,
+                   SurfaceHandles aHandles,
                    WrProgramCache *aProgramCache,
                    WrShaders *aShaders,
                    WrThreadPool *aThreadPool,

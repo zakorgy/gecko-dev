@@ -15,7 +15,7 @@ use webrender::DebugFlags;
 use webrender::{ApiRecordingReceiver, BinaryRecorder};
 use webrender::{AsyncPropertySampler, PipelineInfo, SceneBuilderHooks};
 use webrender::{UploadMethod, VertexUsageHint};
-use webrender::{Device, Shaders, WrShaders, ShaderPrecacheFlags};
+use webrender::{Device, Shaders, WrShaders, ShaderPrecacheFlags, SurfaceHandles};
 use thread_profiler::register_thread_with_profiler;
 use moz2d_renderer::Moz2dBlobImageHandler;
 use program_cache::{WrProgramCache, remove_disk_cache};
@@ -502,7 +502,7 @@ extern "C" {
     fn is_in_render_thread() -> bool;
     fn is_in_main_thread() -> bool;
     fn is_glcontext_egl(glcontext_ptr: *mut c_void) -> bool;
-    fn is_glcontext_angle(glcontext_ptr: *mut c_void) -> bool;
+    //fn is_glcontext_angle(glcontext_ptr: *mut c_void) -> bool;
     // Enables binary recording that can be used with `wrench replay`
     // Outputs a wr-record-*.bin file for each window that is shown
     // Note: wrench will panic if external images are used, they can
@@ -942,11 +942,11 @@ fn wr_device_new(gl_context: *mut c_void, pc: Option<&mut WrProgramCache>)
 
     info!("WebRender - OpenGL version new {}", version);
 
-    let upload_method = if unsafe { is_glcontext_angle(gl_context) } {
+    /*let upload_method = if unsafe { is_glcontext_angle(gl_context) } {
         UploadMethod::Immediate
     } else {
         UploadMethod::PixelBuffer(VertexUsageHint::Dynamic)
-    };
+    };*/
 
     let resource_override_path = unsafe {
         let override_charptr = gfx_wr_resource_path_override();
@@ -975,6 +975,7 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
                                 window_height: u32,
                                 support_low_priority_transactions: bool,
                                 gl_context: *mut c_void,
+                                handles: SurfaceHandles,
                                 program_cache: Option<&mut WrProgramCache>,
                                 shaders: Option<&mut WrShaders>,
                                 thread_pool: *mut WrThreadPool,
@@ -1035,7 +1036,7 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
         thread_listener: Some(Box::new(GeckoProfilerThreadListener::new())),
         size_of_op: Some(size_of_op),
         cached_programs,
-        resource_override_path: unsafe {
+        /*resource_override_path: unsafe {
             let override_charptr = gfx_wr_resource_path_override();
             if override_charptr.is_null() {
                 None
@@ -1045,14 +1046,14 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
                     _ => None
                 }
             }
-        },
+        },*/
         renderer_id: Some(window_id.0),
-        upload_method,
+        upload_method: UploadMethod::PixelBuffer(VertexUsageHint::Dynamic),
         scene_builder_hooks: Some(Box::new(APZCallbacks::new(window_id))),
         sampler: Some(Box::new(SamplerCallback::new(window_id))),
         max_texture_size: Some(8192), // Moz2D doesn't like textures bigger than this
         clear_color: Some(ColorF::new(0.0, 0.0, 0.0, 0.0)),
-        precache_flags,
+        precache_flags: false,
         namespace_alloc_by_client: true,
         ..Default::default()
     };
@@ -1060,7 +1061,14 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
     let notifier = Box::new(CppNotifier {
         window_id: window_id,
     });
-    let (renderer, sender) = match Renderer::new(gl, notifier, opts, shaders) {
+    let (renderer, sender) = match Renderer::new(
+        handles,
+        window_width,
+        window_height,
+        notifier,
+        opts,
+        shaders,
+    ) {
         Ok((renderer, sender)) => (renderer, sender),
         Err(e) => {
             warn!(" Failed to create a Renderer: {:?}", e);
