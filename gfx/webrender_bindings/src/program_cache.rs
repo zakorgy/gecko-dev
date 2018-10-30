@@ -174,7 +174,7 @@ impl WrProgramBinaryDiskCache {
         }
     }
 
-    pub fn try_load_from_disk(&mut self, _program_cache: &Rc<ProgramCache>) {
+    pub fn try_load_from_disk(&mut self, program_cache: &Rc<ProgramCache>) {
         if !self.is_enabled {
             return;
         }
@@ -192,12 +192,11 @@ impl WrProgramBinaryDiskCache {
                     info!("loading shader file");
 
                     match deserialize_program_binary(&path) {
-                        // Ok(program) => {
-                        //     program_cache.load_program_binary(program);
-                        // }
-                        // Err(err) => {
-                        _ => {
-                            error!("Failed to desriralize program binary error");
+                        Ok(program) => {
+                            program_cache.load_program_binary(program);
+                        }
+                        Err(err) => {
+                            error!("Failed to desriralize program binary error: {}", err);
                         }
                     };
 
