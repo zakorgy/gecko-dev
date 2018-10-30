@@ -6,6 +6,10 @@
 
 #CXXFLAGS += CONFIG['MOZ_GTK3_CFLAGS']
 
+OS_LIBS += [
+    "d3d12",
+]
+
 with Files('**'):
     BUG_COMPONENT = ('Core', 'Graphics: WebRender')
 

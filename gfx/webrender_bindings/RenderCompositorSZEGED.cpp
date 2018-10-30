@@ -12,6 +12,10 @@
 #include "mozilla/webrender/RenderThread.h"
 #include "mozilla/widget/CompositorWidget.h"
 
+#pragma comment(lib, "d3d12.lib")       // located in DirectX SDK
+#pragma comment(lib, "D3DCompiler.lib")
+#include <d3d12.h>
+
 namespace mozilla {
 namespace wr {
 
