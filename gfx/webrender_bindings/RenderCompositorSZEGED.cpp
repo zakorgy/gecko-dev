@@ -12,9 +12,11 @@
 #include "mozilla/webrender/RenderThread.h"
 #include "mozilla/widget/CompositorWidget.h"
 
+#if defined(XP_WIN)
 #pragma comment(lib, "d3d12.lib")       // located in DirectX SDK
 #pragma comment(lib, "D3DCompiler.lib")
 #include <d3d12.h>
+#endif
 
 namespace mozilla {
 namespace wr {
@@ -47,8 +49,15 @@ RenderCompositorSZEGED::Initialize()
   const auto flags = gl::CreateContextFlags::NONE;
 
   nsCString discardFailureId;
-  //mGL = gl::GLContextProviderGLX::CreateHeadless(flags, &discardFailureId);
-  mGL = gl::GLContextProviderWGL::CreateHeadless(flags, &discardFailureId);
+
+  #if defined(XP_WIN)
+    mGL = gl::GLContextProviderWGL::CreateHeadless(flags, &discardFailureId);
+  #endif
+
+  #if !(defined(XP_MACOSX) || defined(XP_WIN))
+    mGL = gl::GLContextProviderGLX::CreateHeadless(flags, &discardFailureId);
+  #endif
+
   if (!mGL) {
     gfxCriticalNote << "Failed GL context creation for WebRender: " << gfx::hexa(mGL.get());
     return false;
