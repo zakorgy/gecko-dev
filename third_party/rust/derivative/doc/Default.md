@@ -52,7 +52,7 @@ that calls `Default::default`:
 
 ```rust
 #[derive(Debug, Derivative)]
-#[derivative(Default(new="true"))]
+#[derivative(Default(new="true")]
 struct Foo {
     foo: u8,
     bar: u8,
@@ -63,7 +63,7 @@ println!("{:?}", Foo::new()); // Foo { foo: 0, bar: 0 }
 
 # Custom bound
 
-The following does not work because `derive` adds a `T: Default` bound on the
+The following does now work because `derive` adds a `T: Default` bound on the
 `impl Default for Foo<T>`:
 
 ```rust

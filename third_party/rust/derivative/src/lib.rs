@@ -1,6 +1,4 @@
 extern crate proc_macro;
-extern crate proc_macro2;
-#[macro_use]
 extern crate syn;
 
 #[macro_use]
@@ -19,45 +17,43 @@ mod utils;
 
 use proc_macro::TokenStream;
 
-fn derive_impls(input: &ast::Input) -> Result<proc_macro2::TokenStream, String> {
-    let mut tokens = proc_macro2::TokenStream::new();
+fn derive_impls(input: &ast::Input) -> Result<quote::Tokens, String> {
+    let mut tokens = quote::Tokens::new();
 
     if input.attrs.clone.is_some() {
-        tokens.extend(clone::derive_clone(input));
+        tokens.append(&clone::derive_clone(input).to_string());
     }
     if input.attrs.copy.is_some() {
-        tokens.extend(clone::derive_copy(input));
+        tokens.append(&try!(clone::derive_copy(input)).to_string());
     }
     if input.attrs.debug.is_some() {
-        tokens.extend(debug::derive(input));
+        tokens.append(&debug::derive(input).to_string());
     }
     if let Some(ref default) = input.attrs.default {
-        tokens.extend(default::derive(input, default));
+        tokens.append(&default::derive(input, default).to_string());
     }
     if input.attrs.eq.is_some() {
-        tokens.extend(cmp::derive_eq(input));
+        tokens.append(&cmp::derive_eq(input).to_string());
     }
     if input.attrs.hash.is_some() {
-        tokens.extend(hash::derive(input));
+        tokens.append(&hash::derive(input).to_string());
     }
     if input.attrs.partial_eq.is_some() {
-        tokens.extend(cmp::derive_partial_eq(input)?);
+        tokens.append(&try!(cmp::derive_partial_eq(input)).to_string());
     }
 
     Ok(tokens)
 }
 
-fn detail(input: TokenStream) -> Result<TokenStream, String> {
-    let parsed = syn::parse::<syn::DeriveInput>(input).map_err(|e| e.to_string())?;
-    let output = derive_impls(&ast::Input::from_ast(&parsed)?)?;
-    Ok(output.into())
-}
-
-#[cfg_attr(
-    not(test),
-    proc_macro_derive(Derivative, attributes(derivative))
-)]
+#[cfg_attr(not(test), proc_macro_derive(Derivative, attributes(derivative)))]
 pub fn derivative(input: TokenStream) -> TokenStream {
+    fn detail(input: TokenStream) -> Result<TokenStream, String> {
+        let input = try!(syn::parse_macro_input(&input.to_string()));
+        let parsed = try!(ast::Input::from_ast(&input));
+        let output = try!(derive_impls(&parsed));
+        Ok(output.to_string().parse().unwrap())
+    }
+
     match detail(input) {
         Ok(output) => output,
         Err(e) => panic!(e),
