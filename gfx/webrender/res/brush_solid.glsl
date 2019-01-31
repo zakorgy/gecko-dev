@@ -8,9 +8,7 @@
 
 flat varying vec4 vColor;
 
-#ifdef WR_FEATURE_ALPHA_PASS
 varying vec2 vLocalPos;
-#endif
 
 #ifdef WR_VERTEX_SHADER
 
@@ -37,18 +35,23 @@ void brush_vs(
     SolidBrush prim = fetch_solid_primitive(prim_address);
     vColor = prim.color;
 
-#ifdef WR_FEATURE_ALPHA_PASS
-    vLocalPos = vi.local_pos;
-#endif
+    if (alpha_pass) {
+        vLocalPos = vi.local_pos;
+    } else {
+        vLocalPos = vec2(0.0);
+    }
 }
+
 #endif
 
 #ifdef WR_FRAGMENT_SHADER
 Fragment brush_fs() {
     vec4 color = vColor;
-#ifdef WR_FEATURE_ALPHA_PASS
-    color *= init_transform_fs(vLocalPos);
-#endif
+
+    if (alpha_pass) {
+        color *= init_transform_fs(vLocalPos);
+    }
+
     return Fragment(color);
 }
 #endif

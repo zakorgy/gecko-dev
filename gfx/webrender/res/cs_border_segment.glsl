@@ -182,6 +182,8 @@ void main(void) {
             edge_reference = vec2(outer.x, outer.y - aWidths.y);
             break;
         case SEGMENT_TOP:
+            edge_axis = ivec2(1, 1);
+            break;
         case SEGMENT_BOTTOM:
             edge_axis = ivec2(1, 1);
             break;
@@ -264,7 +266,26 @@ vec4 evaluate_color_for_style_in_corner(
             color0 *= distance_aa(aa_range, d);
             break;
         }
-        case BORDER_STYLE_GROOVE:
+        case BORDER_STYLE_GROOVE: {
+            float d = distance_to_ellipse(
+                clip_relative_pos,
+                clip_radii.xy - vPartialWidths.zw,
+                aa_range
+            );
+            float alpha = distance_aa(aa_range, d);
+            float swizzled_factor;
+            switch (segment) {
+                case SEGMENT_TOP_LEFT: swizzled_factor = 0.0; break;
+                case SEGMENT_TOP_RIGHT: swizzled_factor = mix_factor; break;
+                case SEGMENT_BOTTOM_RIGHT: swizzled_factor = 1.0; break;
+                case SEGMENT_BOTTOM_LEFT: swizzled_factor = 1.0 - mix_factor; break;
+                default: swizzled_factor = 0.0; break;
+            };
+            vec4 c0 = mix(color1, color0, swizzled_factor);
+            vec4 c1 = mix(color0, color1, swizzled_factor);
+            color0 = mix(c0, c1, alpha);
+            break;
+        }
         case BORDER_STYLE_RIDGE: {
             float d = distance_to_ellipse(
                 clip_relative_pos,
@@ -316,7 +337,13 @@ vec4 evaluate_color_for_style_in_edge(
             color0 *= distance_aa(aa_range, d);
             break;
         }
-        case BORDER_STYLE_GROOVE:
+        case BORDER_STYLE_GROOVE: {
+            float ref = dot(vEdgeReference.xy + vPartialWidths.zw, edge_axis);
+            float d = pos - ref;
+            float alpha = distance_aa(aa_range, d);
+            color0 = mix(color0, color1, alpha);
+            break;
+        }
         case BORDER_STYLE_RIDGE: {
             float ref = dot(vEdgeReference.xy + vPartialWidths.zw, edge_axis);
             float d = pos - ref;
