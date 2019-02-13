@@ -25,3 +25,6 @@ wrench/ron_frames
 
 # System
 .fuse_hidden*
+
+# mac
+.DS_Store

@@ -28,6 +28,7 @@ path = "document.rs"
 [[bin]]
 name = "frame_output"
 path = "frame_output.rs"
+required-features = ["gl"]
 
 [[bin]]
 name = "iframe"
@@ -52,16 +53,25 @@ path = "texture_cache_stress.rs"
 [[bin]]
 name = "yuv"
 path = "yuv.rs"
+required-features = ["gl"]
 
 [features]
+default = []
 debug = ["webrender/capture", "webrender/debugger", "webrender/profiler"]
+gfx-hal = ["dirs"]
+gl = ["gleam", "glutin", "webrender/gleam", "webrender/gfx-backend-empty"]
+dx12 = ["webrender/dx12", "gfx-hal"]
+metal = ["webrender/metal", "gfx-hal"]
+vulkan = ["webrender/vulkan", "gfx-hal"]
 
 [dependencies]
 app_units = "0.7"
+dirs = { version = "1.0", optional = true }
 env_logger = "0.5"
 euclid = "0.19"
-gleam = "0.6.2"
-glutin = "0.17"
+gfx-backend-empty = { git = "https://github.com/gfx-rs/gfx.git" }
+gleam = { version = "0.6.2", optional = true}
+glutin = { version = "0.19", optional = true }
 rayon = "1"
 webrender = { path = "../webrender" }
-winit = "0.16"
+winit = "0.18"

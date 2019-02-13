@@ -15,18 +15,19 @@ popd
 
 pushd webrender
 cargo test %CARGOFLAGS%
+cargo test --verbose --features gleam
 if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
 popd
 
 pushd wrench
-cargo test --verbose
+cargo test --verbose --features gl
 if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
-cargo run --release -- --angle reftest
+cargo run --features gl --release -- --angle reftest
 if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
 popd
 
 pushd examples
-cargo check --verbose
+cargo check --verbose --features gl
 if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
 popd
 

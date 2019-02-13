@@ -4,12 +4,21 @@
 
 use api::{ColorU, ColorF, ImageFormat, TextureTarget};
 use api::{DeviceIntRect, DeviceRect, DevicePoint, DeviceSize, DeviceIntSize};
+use back;
 use debug_font_data;
-use device::{Device, Program, Texture, TextureSlot, VertexDescriptor, ShaderError, VAO};
+use device::{create_projection, Device, Texture, TextureSlot, VertexDescriptor, ShaderError, VAO};
 use device::{TextureFilter, VertexAttribute, VertexAttributeKind, VertexUsageHint};
-use euclid::{Point2D, Rect, Size2D, Transform3D};
-use internal_types::{ORTHO_FAR_PLANE, ORTHO_NEAR_PLANE};
+use euclid::{Point2D, Rect, Size2D};
 use std::f32;
+
+cfg_if! {
+    if #[cfg(feature = "gleam")] {
+        use device::Program;
+    } else {
+        use device::{PrimitiveType, ProgramId as Program, ShaderKind};
+        use vertex_types;
+    }
+}
 
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
@@ -75,7 +84,67 @@ const DESC_COLOR: VertexDescriptor = VertexDescriptor {
     instance_attributes: &[],
 };
 
+#[cfg(not(feature = "gleam"))]
+impl PrimitiveType for DebugColorVertex {
+    type Primitive = vertex_types::DebugColorVertex;
+    fn to_primitive_type(&self) -> vertex_types::DebugColorVertex {
+        vertex_types::DebugColorVertex {
+            aPosition: [self.x, self.y, 0.0],
+            aColor: ColorF::from(self.color).to_array(),
+        }
+    }
+}
+
+#[cfg(not(feature = "gleam"))]
+impl PrimitiveType for DebugFontVertex {
+    type Primitive = vertex_types::DebugFontVertex;
+    fn to_primitive_type(&self) -> vertex_types::DebugFontVertex {
+        vertex_types::DebugFontVertex {
+            aPosition: [self.x, self.y, 0.0],
+            aColor: ColorF::from(self.color).to_array(),
+            aColorTexCoord: [self.u, self.v],
+        }
+    }
+}
+
+#[cfg(not(feature = "gleam"))]
+fn create_debug_programs(device: &mut Device<back::Backend>)-> Result<(Program, Program), ShaderError> {
+    let font_program =
+        device.create_program(
+            "debug_font",
+            &ShaderKind::DebugFont,
+            &[],
+        )?;
+
+    let color_program = device
+        .create_program(
+            "debug_color",
+            &ShaderKind::DebugColor,
+            &[],
+        )?;
+    Ok((font_program, color_program))
+}
+
+#[cfg(feature = "gleam")]
+fn create_debug_programs(device: &mut Device<back::Backend>)-> Result<(Program, Program), ShaderError> {
+    let font_program = device.create_program_linked(
+        "debug_font",
+        String::new(),
+        &DESC_FONT,
+    )?;
+    device.bind_program(&font_program);
+    device.bind_shader_samplers(&font_program, &[("sColor0", DebugSampler::Font)]);
+
+    let color_program = device.create_program_linked(
+        "debug_color",
+        String::new(),
+        &DESC_COLOR,
+    )?;
+    Ok((font_program, color_program))
+}
+
 #[repr(C)]
+#[derive(Copy, Clone)]
 pub struct DebugFontVertex {
     pub x: f32,
     pub y: f32,
@@ -91,6 +160,7 @@ impl DebugFontVertex {
 }
 
 #[repr(C)]
+#[derive(Copy, Clone)]
 pub struct DebugColorVertex {
     pub x: f32,
     pub y: f32,
@@ -119,20 +189,8 @@ pub struct DebugRenderer {
 }
 
 impl DebugRenderer {
-    pub fn new(device: &mut Device) -> Result<Self, ShaderError> {
-        let font_program = device.create_program_linked(
-            "debug_font",
-            String::new(),
-            &DESC_FONT,
-        )?;
-        device.bind_program(&font_program);
-        device.bind_shader_samplers(&font_program, &[("sColor0", DebugSampler::Font)]);
-
-        let color_program = device.create_program_linked(
-            "debug_color",
-            String::new(),
-            &DESC_COLOR,
-        )?;
+    pub fn new(device: &mut Device<back::Backend>) -> Result<Self, ShaderError> {
+        let (font_program, color_program) = create_debug_programs(device)?;
 
         let font_vao = device.create_vao(&DESC_FONT);
         let line_vao = device.create_vao(&DESC_COLOR);
@@ -167,7 +225,7 @@ impl DebugRenderer {
         })
     }
 
-    pub fn deinit(self, device: &mut Device) {
+    pub fn deinit(self, device: &mut Device<back::Backend>) {
         device.delete_texture(self.font_texture);
         device.delete_program(self.font_program);
         device.delete_program(self.color_program);
@@ -311,7 +369,7 @@ impl DebugRenderer {
 
     pub fn render(
         &mut self,
-        device: &mut Device,
+        device: &mut Device<back::Backend>,
         viewport_size: Option<DeviceIntSize>,
     ) {
         if let Some(viewport_size) = viewport_size {
@@ -319,13 +377,12 @@ impl DebugRenderer {
             device.set_blend(true);
             device.set_blend_mode_premultiplied_alpha();
 
-            let projection = Transform3D::ortho(
+            let projection = create_projection(
                 0.0,
                 viewport_size.width as f32,
                 viewport_size.height as f32,
                 0.0,
-                ORTHO_NEAR_PLANE,
-                ORTHO_FAR_PLANE,
+                true,
             );
 
             // Triangles

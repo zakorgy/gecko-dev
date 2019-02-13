@@ -11,15 +11,24 @@ build = "build.rs"
 default = ["freetype-lib"]
 freetype-lib = ["freetype/servo-freetype-sys"]
 profiler = ["thread_profiler/thread_profiler"]
-debugger = ["ws", "serde_json", "serde", "image", "base64"]
-capture = ["webrender_api/serialize", "ron", "serde"]
-replay = ["webrender_api/deserialize", "ron", "serde"]
+debugger = ["ws", "serde_json", "image", "base64"]
+capture = ["webrender_api/serialize"]
+replay = ["webrender_api/deserialize"]
 pathfinder = ["pathfinder_font_renderer", "pathfinder_gfx_utils", "pathfinder_partitioner", "pathfinder_path_utils"]
-serialize_program = ["serde", "webrender_build/serialize_program"]
+serialize_program = ["webrender_build/serialize_program"]
 no_static_freetype = []
+dx12 = [ "gfx-backend-dx12" ]
+metal = [ "gfx-backend-metal" ]
+vulkan = [ "gfx-backend-vulkan" ]
+gecko = []
 
 [build-dependencies]
 webrender_build = { version = "0.0.1", path = "../webrender_build" }
+cfg-if = "0.1.2"
+glsl-to-spirv = "0.1"
+gfx-hal = { git = "https://github.com/gfx-rs/gfx.git", rev="f820ada3eda2c17ec9030cc192c72118b18eb73e" }
+ron = "0.1.7"
+serde = { version = "1.0", features = ["serde_derive"] }
 
 [dependencies]
 app_units = "0.7"
@@ -29,7 +38,9 @@ bitflags = "1.0"
 byteorder = "1.0"
 cfg-if = "0.1.2"
 fxhash = "0.2.1"
-gleam = "0.6.8"
+gfx-hal = { git = "https://github.com/gfx-rs/gfx.git", features = ["serde"], rev="f820ada3eda2c17ec9030cc192c72118b18eb73e" }
+gfx-backend-empty = { git = "https://github.com/gfx-rs/gfx.git", rev="f820ada3eda2c17ec9030cc192c72118b18eb73e" }
+gleam = { optional = true, version = "0.6.8" }
 image = { optional = true, version = "0.21" }
 lazy_static = "1"
 log = "0.4"
@@ -37,9 +48,10 @@ malloc_size_of_derive = "0.1"
 num-traits = "0.2"
 plane-split = "0.13.3"
 png = { optional = true, version = "0.14" }
+rand ="0.4"
 rayon = "1"
-ron = { optional = true, version = "0.1.7" }
-serde = { optional = true, version = "1.0", features = ["serde_derive"] }
+ron = "0.1.7"
+serde = { version = "1.0", features = ["serde_derive"] }
 serde_json = { optional = true, version = "1.0" }
 sha2 = "0.8"
 smallvec = "0.6"
@@ -82,8 +94,15 @@ libc = "0.2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 dwrote = "0.8"
+gfx-backend-dx12 = { git = "https://github.com/gfx-rs/gfx.git", optional = true, rev="f820ada3eda2c17ec9030cc192c72118b18eb73e" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.6"
 core-graphics = "0.17.1"
 core-text = { version = "13", default-features = false }
+gfx-backend-metal = { git = "https://github.com/gfx-rs/gfx.git", optional = true, rev="f820ada3eda2c17ec9030cc192c72118b18eb73e" }
+
+[target.'cfg(all(any(unix, windows), not(target_os = "macos")))'.dependencies.gfx-backend-vulkan]
+git = "https://github.com/gfx-rs/gfx.git"
+optional = true
+rev="f820ada3eda2c17ec9030cc192c72118b18eb73e"

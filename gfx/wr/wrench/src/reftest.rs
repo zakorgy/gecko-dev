@@ -503,7 +503,11 @@ impl<'a> ReftestHarness<'a> {
         );
 
         // taking the bottom left sub-rectangle
+        #[cfg(feature = "gl")]
         let rect = DeviceIntRect::new(DeviceIntPoint::new(0, window_size.height - size.height), size);
+        #[cfg(not(feature = "gl"))]
+        let rect = DeviceIntRect::new(DeviceIntPoint::new(0, 0), size);
+
         let pixels = self.wrench.renderer.read_pixels_rgba8(rect);
         self.window.swap_buffers();
 

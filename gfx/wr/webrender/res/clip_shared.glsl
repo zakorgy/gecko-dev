@@ -9,7 +9,6 @@
 in int aClipRenderTaskAddress;
 in int aClipTransformId;
 in int aPrimTransformId;
-in int aClipSegment;
 in ivec4 aClipDataResourceAddress;
 in vec2 aClipLocalPos;
 in vec4 aClipTileRect;

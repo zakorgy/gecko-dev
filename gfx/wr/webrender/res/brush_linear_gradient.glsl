@@ -18,10 +18,8 @@ flat varying vec2 vRepeatedSize;
 
 varying vec2 vPos;
 
-#ifdef WR_FEATURE_ALPHA_PASS
 varying vec2 vLocalPos;
 flat varying vec2 vTileRepeat;
-#endif
 
 #ifdef WR_VERTEX_SHADER
 
@@ -75,35 +73,36 @@ void brush_vs(
     // Whether to repeat the gradient along the line instead of clamping.
     vGradientRepeat = float(gradient.extend_mode != EXTEND_MODE_CLAMP);
 
-#ifdef WR_FEATURE_ALPHA_PASS
-    vTileRepeat = tile_repeat;
-    vLocalPos = vi.local_pos;
-#endif
+    if (alpha_pass) {
+        vTileRepeat = tile_repeat;
+        vLocalPos = vi.local_pos;
+    }
 }
 #endif
 
 #ifdef WR_FRAGMENT_SHADER
 Fragment brush_fs() {
 
-#ifdef WR_FEATURE_ALPHA_PASS
-    // Handle top and left inflated edges (see brush_image).
-    vec2 local_pos = max(vPos, vec2(0.0));
+    vec2 pos;
+    if (alpha_pass) {
+        // Handle top and left inflated edges (see brush_image).
+        vec2 local_pos = max(vPos, vec2(0.0));
 
-    // Apply potential horizontal and vertical repetitions.
-    vec2 pos = mod(local_pos, vRepeatedSize);
+        // Apply potential horizontal and vertical repetitions.
+        pos = mod(local_pos, vRepeatedSize);
 
-    vec2 prim_size = vRepeatedSize * vTileRepeat;
-    // Handle bottom and right inflated edges (see brush_image).
-    if (local_pos.x >= prim_size.x) {
-        pos.x = vRepeatedSize.x;
+        vec2 prim_size = vRepeatedSize * vTileRepeat;
+        // Handle bottom and right inflated edges (see brush_image).
+        if (local_pos.x >= prim_size.x) {
+            pos.x = vRepeatedSize.x;
+        }
+        if (local_pos.y >= prim_size.y) {
+            pos.y = vRepeatedSize.y;
+        }
+    } else {
+        // Apply potential horizontal and vertical repetitions.
+        pos = mod(vPos, vRepeatedSize);
     }
-    if (local_pos.y >= prim_size.y) {
-        pos.y = vRepeatedSize.y;
-    }
-#else
-    // Apply potential horizontal and vertical repetitions.
-    vec2 pos = mod(vPos, vRepeatedSize);
-#endif
 
     float offset = dot(pos - vStartPoint, vScaledDir);
 
@@ -111,9 +110,9 @@ Fragment brush_fs() {
                                  offset,
                                  vGradientRepeat);
 
-#ifdef WR_FEATURE_ALPHA_PASS
-    color *= init_transform_fs(vLocalPos);
-#endif
+    if (alpha_pass) {
+        color *= init_transform_fs(vLocalPos);
+    }
 
     return Fragment(color);
 }

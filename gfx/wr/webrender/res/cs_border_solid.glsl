@@ -46,6 +46,8 @@ in vec4 aColor1;
 in int aFlags;
 in vec2 aWidths;
 in vec2 aRadii;
+in vec4 aClipParams1;
+in vec4 aClipParams2;
 
 vec2 get_outer_corner_scale(int segment) {
     vec2 p;
@@ -83,8 +85,14 @@ void main(void) {
     int mix_colors;
     switch (segment) {
         case SEGMENT_TOP_LEFT:
+            mix_colors = do_aa ? MIX_AA : MIX_NO_AA;
+            break;
         case SEGMENT_TOP_RIGHT:
+            mix_colors = do_aa ? MIX_AA : MIX_NO_AA;
+            break;
         case SEGMENT_BOTTOM_RIGHT:
+            mix_colors = do_aa ? MIX_AA : MIX_NO_AA;
+            break;
         case SEGMENT_BOTTOM_LEFT:
             mix_colors = do_aa ? MIX_AA : MIX_NO_AA;
             break;

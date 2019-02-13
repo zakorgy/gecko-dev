@@ -7,10 +7,7 @@
 #include shared,prim_shared,brush
 
 flat varying vec4 vColor;
-
-#ifdef WR_FEATURE_ALPHA_PASS
 varying vec2 vLocalPos;
-#endif
 
 #ifdef WR_VERTEX_SHADER
 
@@ -39,18 +36,18 @@ void brush_vs(
     float opacity = float(user_data.x) / 65535.0;
     vColor = prim.color * opacity;
 
-#ifdef WR_FEATURE_ALPHA_PASS
-    vLocalPos = vi.local_pos;
-#endif
+    if (alpha_pass) {
+        vLocalPos = vi.local_pos;
+    }
 }
 #endif
 
 #ifdef WR_FRAGMENT_SHADER
 Fragment brush_fs() {
     vec4 color = vColor;
-#ifdef WR_FEATURE_ALPHA_PASS
-    color *= init_transform_fs(vLocalPos);
-#endif
+    if (alpha_pass) {
+        color *= init_transform_fs(vLocalPos);
+    }
     return Fragment(color);
 }
 #endif
