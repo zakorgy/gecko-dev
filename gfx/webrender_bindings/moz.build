@@ -7,7 +7,7 @@
 if CONFIG["OS_TARGET"] == "Linux":
     CXXFLAGS += CONFIG['MOZ_GTK3_CFLAGS']
 
- if CONFIG["OS_TARGET"] == "WINNT":
+if CONFIG["OS_TARGET"] == "WINNT":
     OS_LIBS += ["d3d12"]
 
 with Files('**'):

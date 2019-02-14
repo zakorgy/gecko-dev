@@ -1315,6 +1315,7 @@ impl Renderer {
         options: RendererOptions,
         shaders: Option<&mut WrShaders>
     ) -> Result<(Self, RenderApiSender), RendererError> {
+        use hal::Instance;
         let (adapter, surface, instance) = {
             let instance = back::Instance::create("gfx-rs instance", 1);
             let mut adapters = instance.enumerate_adapters();
@@ -1335,9 +1336,11 @@ impl Renderer {
         let init = DeviceInit {
             adapter: adapter,
             surface: surface,
-            window_size: (width as u32, height as u32),
+            window_size: (width as i32, height as i32),
             frame_count: None,
             descriptor_count: None,
+            cache_path: None,
+            save_cache: false,
         };
         Self::init(init, instance, notifier, options, shaders)
     }
