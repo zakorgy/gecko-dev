@@ -1773,7 +1773,7 @@ impl<B: hal::Backend> RenderPass<B> {
             ImageFormat::R8 => &self.r8,
             ImageFormat::BGRA8 if depth_enabled => &self.bgra8_depth,
             ImageFormat::BGRA8 => &self.bgra8,
-            _ => unimplemented!(),
+            f => unimplemented!("No render pass for image format {:?}", f),
         }
     }
 
@@ -3750,7 +3750,7 @@ impl<B: hal::Backend> Device<B> {
         _dest_rect: DeviceIntRect,
     ) {
         debug_assert!(self.inside_frame);
-        unimplemented!("blit_render_target_invert_y is not implemented yet!");
+        println!("blit_render_target_invert_y is not implemented yet!");
     }
 
     /// Notifies the device that the contents of a render target are no longer
@@ -3856,7 +3856,7 @@ impl<B: hal::Backend> Device<B> {
         debug_assert!(self.inside_frame);
 
         match self.upload_method {
-            UploadMethod::Immediate => unimplemented!(),
+            UploadMethod::Immediate => unimplemented!("UploadMethod::Immediate is not supported"),
             UploadMethod::PixelBuffer(..) => TextureUploader {
                 device: self,
                 texture,
@@ -4077,7 +4077,7 @@ impl<B: hal::Backend> Device<B> {
         _format: ImageFormat,
         _output: &mut [u8],
     ) {
-        unimplemented!();
+        println!("get_tex_image_into is missing");
     }
 
     /// Attaches the provided texture to the current Read FBO binding.
@@ -4093,7 +4093,7 @@ impl<B: hal::Backend> Device<B> {
         _target: TextureTarget,
         _layer_id: i32,
     ) {
-        unimplemented!();
+        println!("attach_read_texture_external is missing");
     }
 
     #[cfg(any(feature = "debug_renderer", feature = "capture"))]
@@ -4522,6 +4522,7 @@ impl<B: hal::Backend> Device<B> {
     }
 
     pub fn submit_to_gpu(&mut self) -> bool {
+        println!("#### Gfx submit");
         {
             let cmd_buffer = self.command_pool[self.next_id].acquire_command_buffer();
             let image = &self.frame_images[self.current_frame_id];

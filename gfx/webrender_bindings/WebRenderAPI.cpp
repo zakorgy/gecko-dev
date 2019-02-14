@@ -24,8 +24,9 @@
 #include "mozilla/widget/GtkCompositorWidget.h"
 #endif
 
- #define WRDL_LOG(...) printf_stderr("WRDL(%p): " __VA_ARGS__)
-#define WRDL_LOG(...) if (XRE_IsContentProcess()) printf_stderr("WRDL(%p): " __VA_ARGS__)
+#define WRDL_LOG(...)
+//#define WRDL_LOG(...) printf_stderr("WRDL(%p): " __VA_ARGS__)
+//#define WRDL_LOG(...) if (XRE_IsContentProcess()) printf_stderr("WRDL(%p): " __VA_ARGS__)
 
 namespace mozilla {
 namespace wr {
@@ -75,9 +76,6 @@ class NewRenderer : public RendererEvent {
 
     bool supportLowPriorityTransactions = true;  // TODO only for main windows.
     wr::Renderer* wrRenderer = nullptr;
-
-    widget::GtkCompositorWidget* compWidget = compositor->GetWidget()->AsX11();
-    MOZ_ASSERT(compWidget);
 
     #if defined(XP_MACOSX)
         wr::SurfaceHandles surfaceHandles = wr::SurfaceHandles::MacosMetal(compWidget->GetNativeData(NS_NATIVE_WIDGET));

@@ -9,7 +9,7 @@ use std::io::Cursor;
 use std::{mem, slice, ptr, env};
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::cell::RefCell;
+//use std::cell::RefCell;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::ops::Range;
@@ -19,7 +19,7 @@ use std::os::raw::{c_int};
 use gleam::gl;
 
 use webrender::api::*;
-use webrender::back;
+//use webrender::back;
 use webrender::{ReadPixelsFormat, Renderer, RendererOptions, RendererStats, ThreadListener};
 use webrender::{ExternalImage, ExternalImageHandler, ExternalImageSource};
 use webrender::DebugFlags;
@@ -1119,6 +1119,7 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
         precache_flags,
         namespace_alloc_by_client: true,
         enable_picture_caching,
+        disable_dual_source_blending: true,
         ..Default::default()
     };
 

@@ -1309,8 +1309,8 @@ impl Renderer {
     #[cfg(all(feature = "gecko", not(feature = "gleam")))]
     pub fn new(
         handles: SurfaceHandles,
-        width: u32,
-        height: u32,
+        width: i32,
+        height: i32,
         notifier: Box<RenderNotifier>,
         options: RendererOptions,
         shaders: Option<&mut WrShaders>
@@ -1336,7 +1336,7 @@ impl Renderer {
         let init = DeviceInit {
             adapter: adapter,
             surface: surface,
-            window_size: (width as i32, height as i32),
+            window_size: (width, height),
             frame_count: None,
             descriptor_count: None,
             cache_path: None,
