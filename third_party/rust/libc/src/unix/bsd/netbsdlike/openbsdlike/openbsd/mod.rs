@@ -248,6 +248,8 @@ pub const IFF_MULTICAST: ::c_int = 0x8000; // supports multicast
 
 pub const SIGSTKSZ : ::size_t = 28672;
 
+pub const PT_FIRSTMACH: ::c_int = 32;
+
 extern {
     pub fn accept4(s: ::c_int, addr: *mut ::sockaddr,
                    addrlen: *mut ::socklen_t, flags: ::c_int) -> ::c_int;
@@ -261,6 +263,8 @@ extern {
 
     pub fn statfs(path: *const ::c_char, buf: *mut statfs) -> ::c_int;
     pub fn fstatfs(fd: ::c_int, buf: *mut statfs) -> ::c_int;
+
+    pub fn dup3(src: ::c_int, dst: ::c_int, flags: ::c_int) -> ::c_int;
 }
 
 cfg_if! {

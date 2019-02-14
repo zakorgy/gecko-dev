@@ -391,7 +391,12 @@ s! {
         pub ssi_utime: ::uint64_t,
         pub ssi_stime: ::uint64_t,
         pub ssi_addr: ::uint64_t,
-        _pad: [::uint8_t; 48],
+        pub ssi_addr_lsb: ::uint16_t,
+        _pad2: ::uint16_t,
+        pub ssi_syscall: ::int32_t,
+        pub ssi_call_addr: ::uint64_t,
+        pub ssi_arch: ::uint32_t,
+        _pad: [::uint8_t; 28],
     }
 
     pub struct fsid_t {
@@ -1546,6 +1551,12 @@ f! {
 }
 
 extern {
+    pub fn abs(i: ::c_int) -> ::c_int;
+    pub fn atof(s: *const ::c_char) -> ::c_double;
+    pub fn labs(i: ::c_long) -> ::c_long;
+    pub fn rand() -> ::c_int;
+    pub fn srand(seed: ::c_uint);
+
     pub fn fdatasync(fd: ::c_int) -> ::c_int;
     pub fn mincore(addr: *mut ::c_void, len: ::size_t,
                    vec: *mut ::c_uchar) -> ::c_int;
@@ -1634,6 +1645,8 @@ extern {
     pub fn uselocale(loc: ::locale_t) -> ::locale_t;
     pub fn creat64(path: *const c_char, mode: mode_t) -> ::c_int;
     pub fn fstat64(fildes: ::c_int, buf: *mut stat64) -> ::c_int;
+    pub fn fstatat64(fildes: ::c_int, path: *const ::c_char,
+                     buf: *mut stat64, flag: ::c_int) -> ::c_int;
     pub fn ftruncate64(fd: ::c_int, length: off64_t) -> ::c_int;
     pub fn getrlimit64(resource: ::c_int, rlim: *mut rlimit64) -> ::c_int;
     pub fn lseek64(fd: ::c_int, offset: off64_t, whence: ::c_int) -> off64_t;
@@ -1853,6 +1866,8 @@ extern {
 
     pub fn seekdir(dirp: *mut ::DIR, loc: ::c_long);
 
+    pub fn dirfd(dirp: *mut ::DIR) -> ::c_int;
+
     pub fn telldir(dirp: *mut ::DIR) -> ::c_long;
     pub fn madvise(addr: *mut ::c_void, len: ::size_t, advice: ::c_int)
                   -> ::c_int;
@@ -1938,10 +1953,11 @@ extern {
                link_name = "popen$UNIX2003")]
     pub fn popen(command: *const c_char,
                  mode: *const c_char) -> *mut ::FILE;
+    pub fn uname(buf: *mut ::utsname) -> ::c_int;
 }
 
 cfg_if! {
-    if #[cfg(target_arch = "mips")] {
+    if #[cfg(any(target_arch = "mips", target_arch = "mips64"))] {
         mod mips;
         pub use self::mips::*;
     } else if #[cfg(target_arch = "x86_64")] {

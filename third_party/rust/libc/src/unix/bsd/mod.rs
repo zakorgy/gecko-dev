@@ -57,7 +57,9 @@ s! {
         pub ifa_addr: *mut ::sockaddr,
         pub ifa_netmask: *mut ::sockaddr,
         pub ifa_dstaddr: *mut ::sockaddr,
-        pub ifa_data: *mut ::c_void
+        pub ifa_data: *mut ::c_void,
+        #[cfg(target_os = "netbsd")]
+        pub ifa_addrflags: ::c_uint
     }
 
     pub struct fd_set {
@@ -179,6 +181,7 @@ pub const SIG_SETMASK: ::c_int = 3;
 pub const SIG_BLOCK: ::c_int = 0x1;
 pub const SIG_UNBLOCK: ::c_int = 0x2;
 
+pub const IP_TOS: ::c_int = 3;
 pub const IP_MULTICAST_IF: ::c_int = 9;
 pub const IP_MULTICAST_TTL: ::c_int = 10;
 pub const IP_MULTICAST_LOOP: ::c_int = 11;
@@ -188,6 +191,12 @@ pub const IPV6_MULTICAST_IF: ::c_int = 9;
 pub const IPV6_MULTICAST_HOPS: ::c_int = 10;
 pub const IPV6_MULTICAST_LOOP: ::c_int = 11;
 pub const IPV6_V6ONLY: ::c_int = 27;
+
+pub const IPTOS_ECN_NOTECT: u8 = 0x00;
+pub const IPTOS_ECN_MASK: u8 = 0x03;
+pub const IPTOS_ECN_ECT1: u8 = 0x01;
+pub const IPTOS_ECN_ECT0: u8 = 0x02;
+pub const IPTOS_ECN_CE: u8 = 0x03;
 
 pub const ST_RDONLY: ::c_ulong = 1;
 
@@ -214,6 +223,10 @@ pub const O_NDELAY: ::c_int = O_NONBLOCK;
 
 pub const F_GETOWN: ::c_int = 5;
 pub const F_SETOWN: ::c_int = 6;
+
+pub const F_RDLCK: ::c_short = 1;
+pub const F_UNLCK: ::c_short = 2;
+pub const F_WRLCK: ::c_short = 3;
 
 pub const MNT_FORCE: ::c_int = 0x80000;
 
@@ -312,6 +325,7 @@ pub const LOG_AUTHPRIV: ::c_int = 10 << 3;
 pub const LOG_FTP: ::c_int = 11 << 3;
 pub const LOG_PERROR: ::c_int = 0x20;
 
+pub const TCP_NODELAY: ::c_int = 1;
 pub const TCP_MAXSEG: ::c_int = 2;
 
 pub const PIPE_BUF: usize = 512;
@@ -328,6 +342,14 @@ pub const POLLRDBAND: ::c_short = 0x080;
 pub const POLLWRBAND: ::c_short = 0x100;
 
 f! {
+    pub fn CMSG_FIRSTHDR(mhdr: *const ::msghdr) -> *mut ::cmsghdr {
+        if (*mhdr).msg_controllen as usize >= mem::size_of::<::cmsghdr>() {
+            (*mhdr).msg_control as *mut ::cmsghdr
+        } else {
+            0 as *mut ::cmsghdr
+        }
+    }
+
     pub fn FD_CLR(fd: ::c_int, set: *mut fd_set) -> () {
         let bits = mem::size_of_val(&(*set).fds_bits[0]) * 8;
         let fd = fd as usize;
@@ -376,6 +398,12 @@ f! {
 }
 
 extern {
+    pub fn abs(i: ::c_int) -> ::c_int;
+    pub fn atof(s: *const ::c_char) -> ::c_double;
+    pub fn labs(i: ::c_long) -> ::c_long;
+    pub fn rand() -> ::c_int;
+    pub fn srand(seed: ::c_uint);
+
     pub fn getifaddrs(ifap: *mut *mut ::ifaddrs) -> ::c_int;
     pub fn freeifaddrs(ifa: *mut ::ifaddrs);
     pub fn setgroups(ngroups: ::c_int,
@@ -444,6 +472,7 @@ extern {
                     flags: ::c_int, addr: *mut ::sockaddr,
                     addrlen: *mut ::socklen_t) -> ::ssize_t;
     pub fn mkstemps(template: *mut ::c_char, suffixlen: ::c_int) -> ::c_int;
+    #[cfg_attr(target_os = "netbsd", link_name = "__futimes50")]
     pub fn futimes(fd: ::c_int, times: *const ::timeval) -> ::c_int;
     pub fn nl_langinfo(item: ::nl_item) -> *mut ::c_char;
 
@@ -538,6 +567,7 @@ extern {
                           attr: *const ::pthread_attr_t,
                           f: extern fn(*mut ::c_void) -> *mut ::c_void,
                           value: *mut ::c_void) -> ::c_int;
+    pub fn acct(filename: *const ::c_char) -> ::c_int;
 }
 
 cfg_if! {

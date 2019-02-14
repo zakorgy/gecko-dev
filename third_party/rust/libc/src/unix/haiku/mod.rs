@@ -351,6 +351,10 @@ pub const F_SETLK: ::c_int = 0x0080;
 pub const F_SETLKW: ::c_int = 0x0100;
 pub const F_DUPFD_CLOEXEC: ::c_int = 0x0200;
 
+pub const F_RDLCK: ::c_int = 0x0040;
+pub const F_UNLCK: ::c_int = 0x0200;
+pub const F_WRLCK: ::c_int = 0x0400;
+
 pub const AT_FDCWD: ::c_int = -1;
 pub const AT_SYMLINK_NOFOLLOW: ::c_int = 0x01;
 pub const AT_SYMLINK_FOLLOW: ::c_int = 0x02;
@@ -1082,6 +1086,14 @@ f! {
     }
 }
 
+extern {
+    pub fn abs(i: ::c_int) -> ::c_int;
+    pub fn atof(s: *const ::c_char) -> ::c_double;
+    pub fn labs(i: ::c_long) -> ::c_long;
+    pub fn rand() -> ::c_int;
+    pub fn srand(seed: ::c_uint);
+}
+
 #[link(name = "bsd")]
 extern {
     pub fn clock_gettime(clk_id: ::c_int, tp: *mut ::timespec) -> ::c_int;
@@ -1230,6 +1242,7 @@ extern {
                    termp: *mut termios,
                    winp: *mut ::winsize) -> ::pid_t;
     pub fn sethostname(name: *const ::c_char, len: ::size_t) -> ::c_int;
+    pub fn uname(buf: *mut ::utsname) -> ::c_int;
 }
 
 cfg_if! {

@@ -1,3 +1,5 @@
+use dox::mem;
+
 pub type time_t = i64;
 pub type mode_t = u32;
 pub type nlink_t = ::uint32_t;
@@ -314,6 +316,17 @@ pub const POSIX_MADV_DONTNEED : ::c_int = 4;
 pub const PTHREAD_CREATE_JOINABLE : ::c_int = 0;
 pub const PTHREAD_CREATE_DETACHED : ::c_int = 1;
 
+pub const PT_TRACE_ME: ::c_int = 0;
+pub const PT_READ_I: ::c_int = 1;
+pub const PT_READ_D: ::c_int = 2;
+pub const PT_WRITE_I: ::c_int = 4;
+pub const PT_WRITE_D: ::c_int = 5;
+pub const PT_CONTINUE: ::c_int = 7;
+pub const PT_KILL: ::c_int = 8;
+pub const PT_ATTACH: ::c_int = 9;
+pub const PT_DETACH: ::c_int = 10;
+pub const PT_IO: ::c_int = 11;
+
 // http://man.openbsd.org/OpenBSD-current/man2/clock_getres.2
 // The man page says clock_gettime(3) can accept various values as clockid_t but
 // http://fxr.watson.org/fxr/source/kern/kern_time.c?v=OPENBSD;im=excerpts#L161
@@ -419,8 +432,8 @@ pub const IP_ADD_MEMBERSHIP: ::c_int = 12;
 pub const IP_DROP_MEMBERSHIP: ::c_int = 13;
 pub const IPV6_RECVPKTINFO: ::c_int = 36;
 pub const IPV6_PKTINFO: ::c_int = 46;
-
-pub const TCP_NODELAY:    ::c_int = 0x01;
+pub const IPV6_RECVTCLASS: ::c_int = 57;
+pub const IPV6_TCLASS: ::c_int = 61;
 
 pub const SOL_SOCKET: ::c_int = 0xffff;
 pub const SO_DEBUG: ::c_int = 0x01;
@@ -569,7 +582,56 @@ pub const TIOCM_DSR: ::c_int = 0o0400;
 pub const TIOCM_CD: ::c_int = TIOCM_CAR;
 pub const TIOCM_RI: ::c_int = TIOCM_RNG;
 
+// Flags for chflags(2)
+pub const UF_SETTABLE:      ::c_ulong = 0x0000ffff;
+pub const UF_NODUMP:        ::c_ulong = 0x00000001;
+pub const UF_IMMUTABLE:     ::c_ulong = 0x00000002;
+pub const UF_APPEND:        ::c_ulong = 0x00000004;
+pub const UF_OPAQUE:        ::c_ulong = 0x00000008;
+pub const SF_SETTABLE:      ::c_ulong = 0xffff0000;
+pub const SF_ARCHIVED:      ::c_ulong = 0x00010000;
+pub const SF_IMMUTABLE:     ::c_ulong = 0x00020000;
+pub const SF_APPEND:        ::c_ulong = 0x00040000;
+
+pub const TIMER_ABSTIME: ::c_int = 1;
+
+fn _ALIGN(p: usize) -> usize {
+    (p + _ALIGNBYTES) & !_ALIGNBYTES
+}
+
 f! {
+    pub fn CMSG_DATA(cmsg: *const ::cmsghdr) -> *mut ::c_uchar {
+        (cmsg as *mut ::c_uchar)
+            .offset(_ALIGN(mem::size_of::<::cmsghdr>()) as isize)
+    }
+
+    pub fn CMSG_LEN(length: ::c_uint) -> ::c_uint {
+        _ALIGN(mem::size_of::<::cmsghdr>()) as ::c_uint + length
+    }
+
+    pub fn CMSG_NXTHDR(mhdr: *const ::msghdr, cmsg: *const ::cmsghdr)
+        -> *mut ::cmsghdr
+    {
+        if cmsg.is_null() {
+            return ::CMSG_FIRSTHDR(mhdr);
+        };
+        let next = cmsg as usize + _ALIGN((*cmsg).cmsg_len as usize)
+            + _ALIGN(mem::size_of::<::cmsghdr>());
+        let max = (*mhdr).msg_control as usize
+            + (*mhdr).msg_controllen as usize;
+        if next > max {
+            0 as *mut ::cmsghdr
+        } else {
+            (cmsg as usize + _ALIGN((*cmsg).cmsg_len as usize))
+                as *mut ::cmsghdr
+        }
+    }
+
+    pub fn CMSG_SPACE(length: ::c_uint) -> ::c_uint {
+        (_ALIGN(mem::size_of::<::cmsghdr>()) + _ALIGN(length as usize))
+            as ::c_uint
+    }
+
     pub fn WSTOPSIG(status: ::c_int) -> ::c_int {
         status >> 8
     }
@@ -647,11 +709,9 @@ extern {
                         groups: *mut ::gid_t,
                         ngroups: *mut ::c_int) -> ::c_int;
     pub fn initgroups(name: *const ::c_char, basegid: ::gid_t) -> ::c_int;
-    pub fn fexecve(fd: ::c_int, argv: *const *const ::c_char,
-                   envp: *const *const ::c_char)
-                   -> ::c_int;
     pub fn getdomainname(name: *mut ::c_char, len: ::size_t) -> ::c_int;
     pub fn setdomainname(name: *const ::c_char, len: ::size_t) -> ::c_int;
+    pub fn uname(buf: *mut ::utsname) -> ::c_int;
 }
 
 cfg_if! {

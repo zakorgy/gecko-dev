@@ -14,6 +14,7 @@ pub type pthread_cond_t = *mut ::c_void;
 pub type pthread_condattr_t = *mut ::c_void;
 pub type pthread_rwlock_t = *mut ::c_void;
 pub type pthread_rwlockattr_t = *mut ::c_void;
+pub type caddr_t = *mut ::c_char;
 
 s! {
     pub struct dirent {
@@ -318,6 +319,11 @@ pub const IPPROTO_DIVERT: ::c_int = 258;
 
 pub const IP_RECVDSTADDR: ::c_int = 7;
 pub const IP_SENDSRCADDR: ::c_int = IP_RECVDSTADDR;
+pub const IP_RECVIF: ::c_int = 30;
+
+// sys/netinet/in.h
+pub const TCP_MD5SIG: ::c_int = 0x04;
+pub const TCP_NOPUSH: ::c_int = 0x10;
 
 pub const AF_ECMA: ::c_int = 8;
 pub const AF_ROUTE: ::c_int = 17;
@@ -663,7 +669,8 @@ pub const KERN_GLOBAL_PTRACE: ::c_int = 81;
 pub const KERN_CONSBUFSIZE: ::c_int = 82;
 pub const KERN_CONSBUF: ::c_int = 83;
 pub const KERN_AUDIO: ::c_int = 84;
-pub const KERN_MAXID: ::c_int = 85;
+pub const KERN_CPUSTATS: ::c_int = 85;
+pub const KERN_MAXID: ::c_int = 86;
 pub const KERN_PROC_ALL: ::c_int = 0;
 pub const KERN_PROC_PID: ::c_int = 1;
 pub const KERN_PROC_PGRP: ::c_int = 2;
@@ -695,6 +702,8 @@ pub const SOCK_CLOEXEC: ::c_int = 0x8000;
 pub const SOCK_NONBLOCK: ::c_int = 0x4000;
 pub const SOCK_DNS: ::c_int = 0x1000;
 
+pub const PTRACE_FORK: ::c_int = 0x0002;
+
 pub const WCONTINUED: ::c_int = 8;
 
 f! {
@@ -704,6 +713,10 @@ f! {
 }
 
 extern {
+    pub fn chflags(path: *const ::c_char, flags: ::c_uint) -> ::c_int;
+    pub fn fchflags(fd: ::c_int, flags: ::c_uint) -> ::c_int;
+    pub fn chflagsat(fd: ::c_int, path: *const ::c_char, flags: ::c_uint,
+                     atflag: ::c_int) -> ::c_int;
     pub fn dirfd(dirp: *mut ::DIR) -> ::c_int;
     pub fn getnameinfo(sa: *const ::sockaddr,
                        salen: ::socklen_t,
@@ -734,6 +747,10 @@ extern {
     pub fn getentropy(buf: *mut ::c_void, buflen: ::size_t) -> ::c_int;
     pub fn setresgid(rgid: ::gid_t, egid: ::gid_t, sgid: ::gid_t) -> ::c_int;
     pub fn setresuid(ruid: ::uid_t, euid: ::uid_t, suid: ::uid_t) -> ::c_int;
+    pub fn ptrace(request: ::c_int,
+                  pid: ::pid_t,
+                  addr: caddr_t,
+                  data: ::c_int) -> ::c_int;
 }
 
 cfg_if! {

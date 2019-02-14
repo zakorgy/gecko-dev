@@ -1,6 +1,5 @@
 use dox::mem;
 
-pub type c_char = i8;
 pub type clock_t = ::c_uint;
 pub type suseconds_t = ::c_int;
 pub type dev_t = u64;
@@ -9,6 +8,7 @@ pub type fsblkcnt_t = ::uint64_t;
 pub type fsfilcnt_t = ::uint64_t;
 pub type idtype_t = ::c_int;
 pub type mqd_t = ::c_int;
+type __pthread_spin_t = __cpu_simple_lock_nv_t;
 
 s! {
     pub struct aiocb {
@@ -161,9 +161,14 @@ s! {
 
     pub struct pthread_mutex_t {
         ptm_magic: ::c_uint,
-        ptm_errorcheck: ::c_uchar,
+        ptm_errorcheck: __pthread_spin_t,
+        #[cfg(any(target_arch = "sparc", target_arch = "sparc64",
+                  target_arch = "x86", target_arch = "x86_64"))]
         ptm_pad1: [u8; 3],
-        ptm_interlock: ::c_uchar,
+        // actually a union with a non-unused, 0-initialized field
+        ptm_unused: __pthread_spin_t,
+        #[cfg(any(target_arch = "sparc", target_arch = "sparc64",
+                  target_arch = "x86", target_arch = "x86_64"))]
         ptm_pad2: [u8; 3],
         ptm_owner: ::pthread_t,
         ptm_waiters: *mut u8,
@@ -183,7 +188,7 @@ s! {
 
     pub struct pthread_cond_t {
         ptc_magic: ::c_uint,
-        ptc_lock: ::c_uchar,
+        ptc_lock: __pthread_spin_t,
         ptc_waiters_first: *mut u8,
         ptc_waiters_last: *mut u8,
         ptc_mutex: *mut ::pthread_mutex_t,
@@ -197,7 +202,7 @@ s! {
 
     pub struct pthread_rwlock_t {
         ptr_magic: ::c_uint,
-        ptr_interlock: ::c_uchar,
+        ptr_interlock: __pthread_spin_t,
         ptr_rblocked_first: *mut u8,
         ptr_rblocked_last: *mut u8,
         ptr_wblocked_first: *mut u8,
@@ -335,6 +340,9 @@ pub const AT_SYMLINK_NOFOLLOW: ::c_int = 0x200;
 pub const AT_SYMLINK_FOLLOW: ::c_int = 0x400;
 pub const AT_REMOVEDIR: ::c_int = 0x800;
 
+pub const EXTATTR_NAMESPACE_USER: ::c_int = 1;
+pub const EXTATTR_NAMESPACE_SYSTEM: ::c_int = 2;
+
 pub const LC_COLLATE_MASK: ::c_int = (1 << ::LC_COLLATE);
 pub const LC_CTYPE_MASK: ::c_int = (1 << ::LC_CTYPE);
 pub const LC_MONETARY_MASK: ::c_int = (1 << ::LC_MONETARY);
@@ -385,6 +393,9 @@ pub const F_GETNOSIGPIPE: ::c_int = 13;
 pub const F_SETNOSIGPIPE: ::c_int = 14;
 pub const F_MAXFD: ::c_int = 11;
 
+pub const IP_RECVDSTADDR: ::c_int = 7;
+pub const IP_SENDSRCADDR: ::c_int = IP_RECVDSTADDR;
+pub const IP_RECVIF: ::c_int = 20;
 pub const IP_PKTINFO: ::c_int = 25;
 pub const IP_RECVPKTINFO: ::c_int = 26;
 pub const IPV6_JOIN_GROUP: ::c_int = 12;
@@ -394,6 +405,9 @@ pub const TCP_KEEPIDLE:  ::c_int = 3;
 pub const TCP_KEEPINTVL: ::c_int = 5;
 pub const TCP_KEEPCNT:   ::c_int = 6;
 pub const TCP_KEEPINIT:  ::c_int = 7;
+pub const TCP_INFO:      ::c_int = 9;
+pub const TCP_MD5SIG:    ::c_int = 0x10;
+pub const TCP_CONGCTL:   ::c_int = 0x20;
 
 pub const SOCK_CONN_DGRAM: ::c_int = 6;
 pub const SOCK_DCCP: ::c_int = SOCK_CONN_DGRAM;
@@ -512,15 +526,16 @@ pub const AF_BLUETOOTH: ::c_int = 31;
 pub const AF_IEEE80211: ::c_int = 32;
 pub const AF_MPLS: ::c_int = 33;
 pub const AF_ROUTE: ::c_int = 34;
-pub const AF_MAX: ::c_int = 35;
+pub const AF_MAX: ::c_int = 36;
 
 pub const NET_MAXID: ::c_int = AF_MAX;
 pub const NET_RT_DUMP: ::c_int = 1;
 pub const NET_RT_FLAGS: ::c_int = 2;
-pub const NET_RT_OOIFLIST: ::c_int = 3;
-pub const NET_RT_OIFLIST: ::c_int = 4;
-pub const NET_RT_IFLIST: ::c_int = 5;
-pub const NET_RT_MAXID: ::c_int = 6;
+pub const NET_RT_OOOIFLIST: ::c_int = 3;
+pub const NET_RT_OOIFLIST: ::c_int = 4;
+pub const NET_RT_OIFLIST: ::c_int = 5;
+pub const NET_RT_IFLIST: ::c_int = 6;
+pub const NET_RT_MAXID: ::c_int = 7;
 
 pub const PF_OROUTE: ::c_int = AF_OROUTE;
 pub const PF_ARP: ::c_int = AF_ARP;
@@ -696,14 +711,19 @@ pub const ST_NOSUID: ::c_ulong = 8;
 pub const PTHREAD_MUTEX_INITIALIZER: pthread_mutex_t = pthread_mutex_t {
     ptm_magic: 0x33330003,
     ptm_errorcheck: 0,
-    ptm_interlock: 0,
+    #[cfg(any(target_arch = "sparc", target_arch = "sparc64",
+              target_arch = "x86", target_arch = "x86_64"))]
+    ptm_pad1: [0; 3],
+    ptm_unused: 0,
+    #[cfg(any(target_arch = "sparc", target_arch = "sparc64",
+              target_arch = "x86", target_arch = "x86_64"))]
+    ptm_pad2: [0; 3],
     ptm_waiters: 0 as *mut _,
     ptm_owner: 0,
-    ptm_pad1: [0; 3],
-    ptm_pad2: [0; 3],
     ptm_recursed: 0,
     ptm_spare2: 0 as *mut _,
 };
+
 pub const PTHREAD_COND_INITIALIZER: pthread_cond_t = pthread_cond_t {
     ptc_magic: 0x55550005,
     ptc_lock: 0,
@@ -968,7 +988,35 @@ pub const CHWFLOW: ::tcflag_t = ::MDMBUF | ::CRTSCTS | ::CDTRCTS;
 pub const SOCK_CLOEXEC: ::c_int = 0x10000000;
 pub const SOCK_NONBLOCK: ::c_int = 0x20000000;
 
+pub const FIONCLEX: ::c_ulong = 0x20006602;
+// Uncomment on next NetBSD release
+// pub const FIOSEEKDATA: ::c_ulong = 0xc0086661;
+// pub const FIOSEEKHOLE: ::c_ulong = 0xc0086662;
+pub const FIONREAD: ::c_ulong = 0x4004667f;
+pub const FIOASYNC: ::c_ulong = 0x8004667d;
+pub const FIOSETOWN: ::c_ulong = 0x8004667c;
+pub const FIOGETOWN: ::c_ulong = 0x4004667b;
+pub const OFIOGETBMAP: ::c_ulong = 0xc004667a;
+pub const FIOGETBMAP: ::c_ulong = 0xc008667a;
+pub const FIONWRITE: ::c_ulong = 0x40046679;
+pub const FIONSPACE: ::c_ulong = 0x40046678;
+pub const FIBMAP: ::c_ulong = 0xc008667a;
+
 pub const SIGSTKSZ : ::size_t = 40960;
+
+pub const PT_DUMPCORE: ::c_int = 12;
+pub const PT_LWPINFO: ::c_int = 13;
+pub const PT_SYSCALL: ::c_int = 14;
+pub const PT_SYSCALLEMU: ::c_int = 15;
+pub const PT_SET_EVENT_MASK: ::c_int = 16;
+pub const PT_GET_EVENT_MASK: ::c_int = 17;
+pub const PT_GET_PROCESS_STATE: ::c_int = 18;
+pub const PT_FIRSTMACH: ::c_int = 32;
+
+// Flags for chflags(2)
+pub const SF_SNAPSHOT:  ::c_ulong = 0x00200000;
+pub const SF_LOG:       ::c_ulong = 0x00400000;
+pub const SF_SNAPINVAL: ::c_ulong = 0x00800000;
 
 // dirfd() is a macro on netbsd to access
 // the first field of the struct where dirp points to:
@@ -992,6 +1040,7 @@ f! {
     }
 }
 
+#[link(name = "rt")]
 extern {
     pub fn aio_read(aiocbp: *mut aiocb) -> ::c_int;
     pub fn aio_write(aiocbp: *mut aiocb) -> ::c_int;
@@ -1004,7 +1053,58 @@ extern {
     pub fn aio_cancel(fd: ::c_int, aiocbp: *mut aiocb) -> ::c_int;
     pub fn lio_listio(mode: ::c_int, aiocb_list: *const *mut aiocb,
                       nitems: ::c_int, sevp: *mut sigevent) -> ::c_int;
+}
 
+extern {
+    pub fn chflags(path: *const ::c_char, flags: ::c_ulong) -> ::c_int;
+    pub fn fchflags(fd: ::c_int, flags: ::c_ulong) -> ::c_int;
+    pub fn lchflags(path: *const ::c_char, flags: ::c_ulong) -> ::c_int;
+
+    pub fn extattr_delete_fd(fd: ::c_int,
+                             attrnamespace: ::c_int,
+                             attrname: *const ::c_char) -> ::c_int;
+    pub fn extattr_delete_file(path: *const ::c_char,
+                               attrnamespace: ::c_int,
+                               attrname: *const ::c_char) -> ::c_int;
+    pub fn extattr_delete_link(path: *const ::c_char,
+                               attrnamespace: ::c_int,
+                               attrname: *const ::c_char) -> ::c_int;
+    pub fn extattr_get_fd(fd: ::c_int,
+                          attrnamespace: ::c_int,
+                          attrname: *const ::c_char,
+                          data: *mut ::c_void,
+                          nbytes: ::size_t) -> ::ssize_t;
+    pub fn extattr_get_file(path: *const ::c_char,
+                            attrnamespace: ::c_int,
+                            attrname: *const ::c_char,
+                            data: *mut ::c_void,
+                            nbytes: ::size_t) -> ::ssize_t;
+    pub fn extattr_get_link(path: *const ::c_char,
+                            attrnamespace: ::c_int,
+                            attrname: *const ::c_char,
+                            data: *mut ::c_void,
+                            nbytes: ::size_t) -> ::ssize_t;
+    pub fn extattr_namespace_to_string(attrnamespace: ::c_int,
+                                       string: *mut *mut ::c_char) -> ::c_int;
+    pub fn extattr_set_fd(fd: ::c_int,
+                          attrnamespace: ::c_int,
+                          attrname: *const ::c_char,
+                          data: *const ::c_void,
+                          nbytes: ::size_t) -> ::c_int;
+    pub fn extattr_set_file(path: *const ::c_char,
+                            attrnamespace: ::c_int,
+                            attrname: *const ::c_char,
+                            data: *const ::c_void,
+                            nbytes: ::size_t) -> ::c_int;
+    pub fn extattr_set_link(path: *const ::c_char,
+                            attrnamespace: ::c_int,
+                            attrname: *const ::c_char,
+                            data: *const ::c_void,
+                            nbytes: ::size_t) -> ::c_int;
+    pub fn extattr_string_to_namespace(string: *const ::c_char,
+                                       attrnamespace: *mut ::c_int) -> ::c_int;
+
+    #[link_name = "__lutimes50"]
     pub fn lutimes(file: *const ::c_char, times: *const ::timeval) -> ::c_int;
     pub fn getnameinfo(sa: *const ::sockaddr,
                        salen: ::socklen_t,
@@ -1056,11 +1156,13 @@ extern {
     pub fn mq_setattr(mqd: ::mqd_t,
                       newattr: *const ::mq_attr,
                       oldattr: *mut ::mq_attr) -> ::c_int;
+    #[link_name = "__mq_timedreceive50"]
     pub fn mq_timedreceive(mqd: ::mqd_t,
                            msg_ptr: *mut ::c_char,
                            msg_len: ::size_t,
                            msq_prio: *mut ::c_uint,
                            abs_timeout: *const ::timespec) -> ::ssize_t;
+    #[link_name = "__mq_timedsend50"]
     pub fn mq_timedsend(mqd: ::mqd_t,
                         msg_ptr: *const ::c_char,
                         msg_len: ::size_t,
@@ -1095,6 +1197,8 @@ extern {
                      base: ::locale_t) -> ::locale_t;
     #[link_name = "__settimeofday50"]
     pub fn settimeofday(tv: *const ::timeval, tz: *const ::c_void) -> ::c_int;
+
+    pub fn dup3(src: ::c_int, dst: ::c_int, flags: ::c_int) -> ::c_int;
 }
 
 #[link(name = "util")]
@@ -1110,5 +1214,26 @@ extern {
                       result: *mut *mut ::group) -> ::c_int;
 }
 
-mod other;
-pub use self::other::*;
+cfg_if! {
+    if #[cfg(target_arch = "aarch64")] {
+        mod aarch64;
+        pub use self::aarch64::*;
+    } else if #[cfg(target_arch = "arm")] {
+        mod arm;
+        pub use self::arm::*;
+    } else if #[cfg(target_arch = "powerpc")] {
+        mod powerpc;
+        pub use self::powerpc::*;
+    } else if #[cfg(target_arch = "sparc64")] {
+        mod sparc64;
+        pub use self::sparc64::*;
+    } else if #[cfg(target_arch = "x86_64")] {
+        mod x86_64;
+        pub use self::x86_64::*;
+    } else if #[cfg(target_arch = "x86")] {
+        mod x86;
+        pub use self::x86::*;
+    } else {
+        // Unknown target_arch
+    }
+}

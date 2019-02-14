@@ -40,8 +40,7 @@ pub type ReentrantMutex<T> = lock_api::ReentrantMutex<RawMutex, RawThreadId, T>;
 ///
 /// The data protected by the mutex can be accessed through this guard via its
 /// `Deref` implementation.
-pub type ReentrantMutexGuard<'a, T> =
-    lock_api::ReentrantMutexGuard<'a, RawMutex, RawThreadId, T>;
+pub type ReentrantMutexGuard<'a, T> = lock_api::ReentrantMutexGuard<'a, RawMutex, RawThreadId, T>;
 
 /// An RAII mutex guard returned by `ReentrantMutexGuard::map`, which can point to a
 /// subfield of the protected data.
@@ -103,8 +102,9 @@ mod tests {
         thread::spawn(move || {
             let lock = m2.try_lock();
             assert!(lock.is_none());
-        }).join()
-            .unwrap();
+        })
+        .join()
+        .unwrap();
         let _lock3 = m.try_lock();
     }
 

@@ -269,13 +269,13 @@ pub const SOCK_NONBLOCK: ::c_int = O_NONBLOCK;
 
 pub const SOL_RXRPC: ::c_int = 272;
 pub const SOL_PPPOL2TP: ::c_int = 273;
-pub const SOL_BLUETOOTH: ::c_int = 274;
 pub const SOL_PNPIPE: ::c_int = 275;
 pub const SOL_RDS: ::c_int = 276;
 pub const SOL_IUCV: ::c_int = 277;
 pub const SOL_CAIF: ::c_int = 278;
 pub const SOL_ALG: ::c_int = 279;
 pub const SOL_NFC: ::c_int = 280;
+pub const SOL_XDP: ::c_int = 283;
 
 pub const MSG_TRYHARD: ::c_int = 4;
 
@@ -824,6 +824,19 @@ pub const NFT_TRACETYPE_RULE: ::c_int = 3;
 pub const NFT_NG_INCREMENTAL: ::c_int = 0;
 pub const NFT_NG_RANDOM: ::c_int = 1;
 
+pub const M_MXFAST: ::c_int = 1;
+pub const M_NLBLKS: ::c_int = 2;
+pub const M_GRAIN: ::c_int = 3;
+pub const M_KEEP: ::c_int = 4;
+pub const M_TRIM_THRESHOLD: ::c_int = -1;
+pub const M_TOP_PAD: ::c_int = -2;
+pub const M_MMAP_THRESHOLD: ::c_int = -3;
+pub const M_MMAP_MAX: ::c_int = -4;
+pub const M_CHECK_ACTION: ::c_int = -5;
+pub const M_PERTURB: ::c_int = -6;
+pub const M_ARENA_TEST: ::c_int = -7;
+pub const M_ARENA_MAX: ::c_int = -8;
+
 #[doc(hidden)]
 pub const AF_MAX: ::c_int = 42;
 #[doc(hidden)]
@@ -856,6 +869,7 @@ extern {
     pub fn setutxent();
     pub fn endutxent();
     pub fn getpt() -> ::c_int;
+    pub fn mallopt(param: ::c_int, value: ::c_int) -> ::c_int;
 }
 
 #[link(name = "util")]

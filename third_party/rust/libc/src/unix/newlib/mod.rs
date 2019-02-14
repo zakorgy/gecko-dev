@@ -654,6 +654,12 @@ f! {
 }
 
 extern {
+    pub fn abs(i: ::c_int) -> ::c_int;
+    pub fn atof(s: *const ::c_char) -> ::c_double;
+    pub fn labs(i: ::c_long) -> ::c_long;
+    pub fn rand() -> ::c_int;
+    pub fn srand(seed: ::c_uint);
+
     pub fn bind(fd: ::c_int, addr: *const sockaddr, len: socklen_t) -> ::c_int;
     pub fn closesocket(sockfd: ::c_int) -> ::c_int;
     pub fn ioctl(fd: ::c_int, request: ::c_ulong, ...) -> ::c_int;
@@ -722,6 +728,7 @@ extern {
                link_name = "popen$UNIX2003")]
     pub fn popen(command: *const c_char,
                  mode: *const c_char) -> *mut ::FILE;
+    pub fn uname(buf: *mut ::utsname) -> ::c_int;
 }
 
 cfg_if! {

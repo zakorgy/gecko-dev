@@ -33,6 +33,10 @@ pub type Elf64_Word = u32;
 pub type Elf64_Off = u64;
 pub type Elf64_Addr = u64;
 pub type Elf64_Xword = u64;
+pub type Elf64_Sxword = i64;
+
+pub type Elf32_Section = u16;
+pub type Elf64_Section = u16;
 
 pub enum fpos64_t {} // TODO: fill this out with a struct
 
@@ -266,7 +270,12 @@ s! {
         pub ssi_utime: ::uint64_t,
         pub ssi_stime: ::uint64_t,
         pub ssi_addr: ::uint64_t,
-        _pad: [::uint8_t; 48],
+        pub ssi_addr_lsb: ::uint16_t,
+        _pad2: ::uint16_t,
+        pub ssi_syscall: ::int32_t,
+        pub ssi_call_addr: ::uint64_t,
+        pub ssi_arch: ::uint32_t,
+        _pad: [::uint8_t; 28],
     }
 
     pub struct itimerspec {
@@ -479,6 +488,58 @@ s! {
         pub dlpi_tls_data: *mut ::c_void,
     }
 
+    pub struct Elf32_Ehdr {
+        pub e_ident: [::c_uchar; 16],
+        pub e_type: Elf32_Half,
+        pub e_machine: Elf32_Half,
+        pub e_version: Elf32_Word,
+        pub e_entry: Elf32_Addr,
+        pub e_phoff: Elf32_Off,
+        pub e_shoff: Elf32_Off,
+        pub e_flags: Elf32_Word,
+        pub e_ehsize: Elf32_Half,
+        pub e_phentsize: Elf32_Half,
+        pub e_phnum: Elf32_Half,
+        pub e_shentsize: Elf32_Half,
+        pub e_shnum: Elf32_Half,
+        pub e_shstrndx: Elf32_Half,
+    }
+
+    pub struct Elf64_Ehdr {
+        pub e_ident: [::c_uchar; 16],
+        pub e_type: Elf64_Half,
+        pub e_machine: Elf64_Half,
+        pub e_version: Elf64_Word,
+        pub e_entry: Elf64_Addr,
+        pub e_phoff: Elf64_Off,
+        pub e_shoff: Elf64_Off,
+        pub e_flags: Elf64_Word,
+        pub e_ehsize: Elf64_Half,
+        pub e_phentsize: Elf64_Half,
+        pub e_phnum: Elf64_Half,
+        pub e_shentsize: Elf64_Half,
+        pub e_shnum: Elf64_Half,
+        pub e_shstrndx: Elf64_Half,
+    }
+
+    pub struct Elf32_Sym {
+        pub st_name: Elf32_Word,
+        pub st_value: Elf32_Addr,
+        pub st_size: Elf32_Word,
+        pub st_info: ::c_uchar,
+        pub st_other: ::c_uchar,
+        pub st_shndx: Elf32_Section,
+    }
+
+    pub struct Elf64_Sym {
+        pub st_name: Elf64_Word,
+        pub st_info: ::c_uchar,
+        pub st_other: ::c_uchar,
+        pub st_shndx: Elf64_Section,
+        pub st_value: Elf64_Addr,
+        pub st_size: Elf64_Xword,
+    }
+
     pub struct Elf32_Phdr {
         pub p_type: Elf32_Word,
         pub p_offset: Elf32_Off,
@@ -499,6 +560,45 @@ s! {
         pub p_filesz: Elf64_Xword,
         pub p_memsz: Elf64_Xword,
         pub p_align: Elf64_Xword,
+    }
+
+    pub struct Elf32_Shdr {
+        pub sh_name: Elf32_Word,
+        pub sh_type: Elf32_Word,
+        pub sh_flags: Elf32_Word,
+        pub sh_addr: Elf32_Addr,
+        pub sh_offset: Elf32_Off,
+        pub sh_size: Elf32_Word,
+        pub sh_link: Elf32_Word,
+        pub sh_info: Elf32_Word,
+        pub sh_addralign: Elf32_Word,
+        pub sh_entsize: Elf32_Word,
+    }
+
+    pub struct Elf64_Shdr {
+        pub sh_name: Elf64_Word,
+        pub sh_type: Elf64_Word,
+        pub sh_flags: Elf64_Xword,
+        pub sh_addr: Elf64_Addr,
+        pub sh_offset: Elf64_Off,
+        pub sh_size: Elf64_Xword,
+        pub sh_link: Elf64_Word,
+        pub sh_info: Elf64_Word,
+        pub sh_addralign: Elf64_Xword,
+        pub sh_entsize: Elf64_Xword,
+    }
+
+    pub struct Elf32_Chdr {
+        pub ch_type: Elf32_Word,
+        pub ch_size: Elf32_Word,
+        pub ch_addralign: Elf32_Word,
+    }
+
+    pub struct Elf64_Chdr {
+        pub ch_type: Elf64_Word,
+        pub ch_reserved: Elf64_Word,
+        pub ch_size: Elf64_Xword,
+        pub ch_addralign: Elf64_Xword,
     }
 
     pub struct ucred {
@@ -958,10 +1058,12 @@ pub const AF_IB: ::c_int = 27;
 pub const AF_MPLS: ::c_int = 28;
 pub const AF_NFC: ::c_int = 39;
 pub const AF_VSOCK: ::c_int = 40;
+pub const AF_XDP: ::c_int = 44;
 pub const PF_IB: ::c_int = AF_IB;
 pub const PF_MPLS: ::c_int = AF_MPLS;
 pub const PF_NFC: ::c_int = AF_NFC;
 pub const PF_VSOCK: ::c_int = AF_VSOCK;
+pub const PF_XDP: ::c_int = AF_XDP;
 
 // System V IPC
 pub const IPC_PRIVATE: ::key_t = 0;
@@ -1218,6 +1320,7 @@ pub const CMSPAR: ::tcflag_t = 0o10000000000;
 
 pub const MFD_CLOEXEC: ::c_uint = 0x0001;
 pub const MFD_ALLOW_SEALING: ::c_uint = 0x0002;
+pub const MFD_HUGETLB: ::c_uint = 0x0004;
 
 // these are used in the p_type field of Elf32_Phdr and Elf64_Phdr, which has
 // the type Elf32Word and Elf64Word respectively. Luckily, both of those are u32
@@ -1509,6 +1612,8 @@ pub const SIOCSIFMAP: ::c_ulong = 0x00008971;
 pub const IPTOS_TOS_MASK: u8 = 0x1E;
 pub const IPTOS_PREC_MASK: u8 = 0xE0;
 
+pub const IPTOS_ECN_NOT_ECT: u8 = 0x00;
+
 pub const RTF_UP: ::c_ushort = 0x0001;
 pub const RTF_GATEWAY: ::c_ushort = 0x0002;
 
@@ -1572,9 +1677,24 @@ pub const ARPD_LOOKUP: ::c_ushort = 0x02;
 pub const ARPD_FLUSH: ::c_ushort = 0x03;
 pub const ATF_MAGIC: ::c_int = 0x80;
 
+#[cfg(not(target_arch = "sparc64"))]
+pub const SO_TIMESTAMPING: ::c_int = 37;
+#[cfg(target_arch = "sparc64")]
+pub const SO_TIMESTAMPING: ::c_int = 35;
+pub const SCM_TIMESTAMPING: ::c_int = SO_TIMESTAMPING;
+
 // linux/module.h
 pub const MODULE_INIT_IGNORE_MODVERSIONS: ::c_uint = 0x0001;
 pub const MODULE_INIT_IGNORE_VERMAGIC: ::c_uint = 0x0002;
+
+// linux/net_tstamp.h
+pub const SOF_TIMESTAMPING_TX_HARDWARE: ::c_uint = 1 << 0;
+pub const SOF_TIMESTAMPING_TX_SOFTWARE: ::c_uint = 1 << 1;
+pub const SOF_TIMESTAMPING_RX_HARDWARE: ::c_uint = 1 << 2;
+pub const SOF_TIMESTAMPING_RX_SOFTWARE: ::c_uint = 1 << 3;
+pub const SOF_TIMESTAMPING_SOFTWARE: ::c_uint = 1 << 4;
+pub const SOF_TIMESTAMPING_SYS_HARDWARE: ::c_uint = 1 << 5;
+pub const SOF_TIMESTAMPING_RAW_HARDWARE: ::c_uint = 1 << 6;
 
 f! {
     pub fn CPU_ZERO(cpuset: &mut cpu_set_t) -> () {
@@ -1654,6 +1774,12 @@ f! {
 }
 
 extern {
+    pub fn abs(i: ::c_int) -> ::c_int;
+    pub fn atof(s: *const ::c_char) -> ::c_double;
+    pub fn labs(i: ::c_long) -> ::c_long;
+    pub fn rand() -> ::c_int;
+    pub fn srand(seed: ::c_uint);
+
     pub fn aio_read(aiocbp: *mut aiocb) -> ::c_int;
     pub fn aio_write(aiocbp: *mut aiocb) -> ::c_int;
     pub fn aio_fsync(op: ::c_int, aiocbp: *mut aiocb) -> ::c_int;
@@ -1721,8 +1847,12 @@ extern {
     pub fn ftello64(stream: *mut ::FILE) -> ::off64_t;
     pub fn fallocate(fd: ::c_int, mode: ::c_int,
                      offset: ::off_t, len: ::off_t) -> ::c_int;
+    pub fn fallocate64(fd: ::c_int, mode: ::c_int,
+                       offset: ::off64_t, len: ::off64_t) -> ::c_int;
     pub fn posix_fallocate(fd: ::c_int, offset: ::off_t,
                            len: ::off_t) -> ::c_int;
+    pub fn posix_fallocate64(fd: ::c_int, offset: ::off64_t,
+                             len: ::off64_t) -> ::c_int;
     pub fn readahead(fd: ::c_int, offset: ::off64_t,
                      count: ::size_t) -> ::ssize_t;
     pub fn getxattr(path: *const c_char, name: *const c_char,
@@ -2132,7 +2262,7 @@ extern {
 }
 
 cfg_if! {
-    if #[cfg(any(target_env = "musl", target_os = "fuchsia"))] {
+    if #[cfg(target_env = "musl")] {
         mod musl;
         pub use self::musl::*;
     } else if #[cfg(any(target_arch = "mips",

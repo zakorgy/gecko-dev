@@ -1195,6 +1195,9 @@ pub const PORT_SOURCE_FILE: ::c_int = 7;
 pub const PORT_SOURCE_POSTWAIT: ::c_int = 8;
 pub const PORT_SOURCE_SIGNAL: ::c_int = 9;
 
+pub const TIOCGWINSZ: ::c_int = 0x5468;
+pub const TIOCSWINSZ: ::c_int = 0x5467;
+
 pub const EPOLLIN: ::c_int = 0x1;
 pub const EPOLLPRI: ::c_int = 0x2;
 pub const EPOLLOUT: ::c_int = 0x4;
@@ -1255,6 +1258,12 @@ f! {
 }
 
 extern {
+    pub fn abs(i: ::c_int) -> ::c_int;
+    pub fn atof(s: *const ::c_char) -> ::c_double;
+    pub fn labs(i: ::c_long) -> ::c_long;
+    pub fn rand() -> ::c_int;
+    pub fn srand(seed: ::c_uint);
+
     pub fn getifaddrs(ifap: *mut *mut ::ifaddrs) -> ::c_int;
     pub fn freeifaddrs(ifa: *mut ::ifaddrs);
 
@@ -1455,4 +1464,7 @@ extern {
     pub fn getgrgid(gid: ::gid_t) -> *mut ::group;
     pub fn popen(command: *const c_char,
                  mode: *const c_char) -> *mut ::FILE;
+
+    pub fn dup3(src: ::c_int, dst: ::c_int, flags: ::c_int) -> ::c_int;
+    pub fn uname(buf: *mut ::utsname) -> ::c_int;
 }

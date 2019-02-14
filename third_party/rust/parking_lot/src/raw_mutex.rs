@@ -7,7 +7,7 @@
 
 use std::sync::atomic::Ordering;
 #[cfg(feature = "nightly")]
-use std::sync::atomic::{ATOMIC_U8_INIT, AtomicU8};
+use std::sync::atomic::{AtomicU8, ATOMIC_U8_INIT};
 #[cfg(feature = "nightly")]
 type U8 = u8;
 #[cfg(not(feature = "nightly"))]
@@ -20,6 +20,7 @@ use deadlock;
 use lock_api::{GuardNoSend, RawMutex as RawMutexTrait, RawMutexFair, RawMutexTimed};
 use parking_lot_core::{self, ParkResult, SpinWait, UnparkResult, UnparkToken, DEFAULT_PARK_TOKEN};
 use std::time::{Duration, Instant};
+use util;
 
 // UnparkToken used to indicate that that the target thread should attempt to
 // lock the mutex again as soon as it is unparked.
@@ -144,7 +145,7 @@ unsafe impl RawMutexTimed for RawMutex {
         {
             true
         } else {
-            self.lock_slow(Some(Instant::now() + timeout))
+            self.lock_slow(util::to_deadline(timeout))
         };
         if result {
             unsafe { deadlock::acquire_resource(self as *const _ as usize) };

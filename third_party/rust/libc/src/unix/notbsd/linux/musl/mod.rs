@@ -121,6 +121,10 @@ pub const ECOMM: ::c_int = 70;
 pub const EPROTO: ::c_int = 71;
 pub const EDOTDOT: ::c_int = 73;
 
+pub const F_RDLCK: ::c_int = 0;
+pub const F_WRLCK: ::c_int = 1;
+pub const F_UNLCK: ::c_int = 2;
+
 pub const SA_NODEFER: ::c_int = 0x40000000;
 pub const SA_RESETHAND: ::c_int = 0x80000000;
 pub const SA_RESTART: ::c_int = 0x10000000;
@@ -250,6 +254,13 @@ extern {
     pub fn ptrace(request: ::c_int, ...) -> ::c_long;
     pub fn getpriority(which: ::c_int, who: ::id_t) -> ::c_int;
     pub fn setpriority(which: ::c_int, who: ::id_t, prio: ::c_int) -> ::c_int;
+    pub fn pthread_getaffinity_np(thread: ::pthread_t,
+                                  cpusetsize: ::size_t,
+                                  cpuset: *mut ::cpu_set_t) -> ::c_int;
+    pub fn pthread_setaffinity_np(thread: ::pthread_t,
+                                  cpusetsize: ::size_t,
+                                  cpuset: *const ::cpu_set_t) -> ::c_int;
+    pub fn sched_getcpu() -> ::c_int;
 }
 
 cfg_if! {

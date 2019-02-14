@@ -184,7 +184,12 @@ s! {
         pub ssi_utime: ::uint64_t,
         pub ssi_stime: ::uint64_t,
         pub ssi_addr: ::uint64_t,
-        _pad: [::uint8_t; 48],
+        pub ssi_addr_lsb: ::uint16_t,
+        _pad2: ::uint16_t,
+        pub ssi_syscall: ::int32_t,
+        pub ssi_call_addr: ::uint64_t,
+        pub ssi_arch: ::uint32_t,
+        _pad: [::uint8_t; 28],
     }
 
     pub struct fsid_t {
@@ -1568,6 +1573,12 @@ f! {
 }
 
 extern {
+    pub fn abs(i: ::c_int) -> ::c_int;
+    pub fn atof(s: *const ::c_char) -> ::c_double;
+    pub fn labs(i: ::c_long) -> ::c_long;
+    pub fn rand() -> ::c_int;
+    pub fn srand(seed: ::c_uint);
+
     pub fn setpwent();
     pub fn endpwent();
     pub fn getpwent() -> *mut passwd;

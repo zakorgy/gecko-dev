@@ -53,8 +53,7 @@ s! {
         pub ai_addrlen: socklen_t,
 
         #[cfg(any(target_os = "linux",
-                  target_os = "emscripten",
-                  target_os = "fuchsia"))]
+                  target_os = "emscripten"))]
         pub ai_addr: *mut ::sockaddr,
 
         pub ai_canonname: *mut c_char,
@@ -514,6 +513,7 @@ pub const SOL_LLC: ::c_int = 268;
 pub const SOL_DCCP: ::c_int = 269;
 pub const SOL_NETLINK: ::c_int = 270;
 pub const SOL_TIPC: ::c_int = 271;
+pub const SOL_BLUETOOTH: ::c_int = 274;
 
 pub const AF_UNSPEC: ::c_int = 0;
 pub const AF_UNIX: ::c_int = 1;
@@ -623,9 +623,11 @@ pub const SOCK_RDM: ::c_int = 4;
 pub const IP_MULTICAST_IF: ::c_int = 32;
 pub const IP_MULTICAST_TTL: ::c_int = 33;
 pub const IP_MULTICAST_LOOP: ::c_int = 34;
+pub const IP_TOS: ::c_int = 1;
 pub const IP_TTL: ::c_int = 2;
 pub const IP_HDRINCL: ::c_int = 3;
 pub const IP_PKTINFO: ::c_int = 8;
+pub const IP_RECVTOS: ::c_int = 13;
 pub const IP_ADD_MEMBERSHIP: ::c_int = 35;
 pub const IP_DROP_MEMBERSHIP: ::c_int = 36;
 pub const IP_TRANSPARENT: ::c_int = 19;
@@ -638,6 +640,8 @@ pub const IPV6_DROP_MEMBERSHIP: ::c_int = 21;
 pub const IPV6_V6ONLY: ::c_int = 26;
 pub const IPV6_RECVPKTINFO: ::c_int = 49;
 pub const IPV6_PKTINFO: ::c_int = 50;
+pub const IPV6_RECVTCLASS: ::c_int = 66;
+pub const IPV6_TCLASS: ::c_int = 67;
 
 pub const TCP_NODELAY: ::c_int = 1;
 pub const TCP_MAXSEG: ::c_int = 2;
@@ -874,6 +878,11 @@ pub const IPTOS_PREC_IMMEDIATE: u8 = 0x40;
 pub const IPTOS_PREC_PRIORITY: u8 = 0x20;
 pub const IPTOS_PREC_ROUTINE: u8 = 0x00;
 
+pub const IPTOS_ECN_MASK: u8 = 0x03;
+pub const IPTOS_ECN_ECT1: u8 = 0x01;
+pub const IPTOS_ECN_ECT0: u8 = 0x02;
+pub const IPTOS_ECN_CE: u8 = 0x03;
+
 pub const IPOPT_COPY: u8 = 0x80;
 pub const IPOPT_CLASS_MASK: u8 = 0x60;
 pub const IPOPT_NUMBER_MASK: u8 = 0x1f;
@@ -977,6 +986,43 @@ pub const ARPHRD_VOID: u16 = 0xFFFF;
 pub const ARPHRD_NONE: u16 = 0xFFFE;
 
 f! {
+    pub fn CMSG_FIRSTHDR(mhdr: *const msghdr) -> *mut cmsghdr {
+        if (*mhdr).msg_controllen as usize >= mem::size_of::<cmsghdr>() {
+            (*mhdr).msg_control as *mut cmsghdr
+        } else {
+            0 as *mut cmsghdr
+        }
+    }
+
+    pub fn CMSG_NXTHDR(mhdr: *const msghdr,
+                       cmsg: *const cmsghdr) -> *mut cmsghdr {
+        if cmsg.is_null() {
+            return CMSG_FIRSTHDR(mhdr);
+        };
+        let pad = mem::align_of::<cmsghdr>() - 1;
+        let next = cmsg as usize + (*cmsg).cmsg_len as usize + pad & !pad;
+        let max = (*mhdr).msg_control as usize
+            + (*mhdr).msg_controllen as usize;
+        if next < max {
+            next as *mut cmsghdr
+        } else {
+            0 as *mut cmsghdr
+        }
+    }
+
+    pub fn CMSG_DATA(cmsg: *const cmsghdr) -> *mut ::c_uchar {
+        cmsg.offset(1) as *mut ::c_uchar
+    }
+
+    pub fn CMSG_SPACE(length: ::c_uint) -> ::c_uint {
+        let pad = mem::align_of::<cmsghdr>() as ::c_uint - 1;
+        mem::size_of::<cmsghdr>() as ::c_uint + ((length + pad) & !pad)
+    }
+
+    pub fn CMSG_LEN(length: ::c_uint) -> ::c_uint {
+        mem::size_of::<cmsghdr>() as ::c_uint + length
+    }
+
     pub fn FD_CLR(fd: ::c_int, set: *mut fd_set) -> () {
         let fd = fd as usize;
         let size = mem::size_of_val(&(*set).fds_bits[0]) * 8;
@@ -1049,6 +1095,10 @@ f! {
 
     pub fn IPOPT_NUMBER(o: u8) -> u8 {
         o & IPOPT_NUMBER_MASK
+    }
+
+    pub fn IPTOS_ECN(x: u8) -> u8 {
+        x & ::IPTOS_ECN_MASK
     }
 }
 
@@ -1192,13 +1242,14 @@ extern {
                    flags: ::c_int) -> ::ssize_t;
     pub fn recvmsg(fd: ::c_int, msg: *mut ::msghdr, flags: ::c_int)
                    -> ::ssize_t;
+    pub fn uname(buf: *mut ::utsname) -> ::c_int;
 }
 
 cfg_if! {
     if #[cfg(target_os = "emscripten")] {
         mod emscripten;
         pub use self::emscripten::*;
-    } else if #[cfg(any(target_os = "linux", target_os = "fuchsia"))] {
+    } else if #[cfg(target_os = "linux")] {
         mod linux;
         pub use self::linux::*;
     } else if #[cfg(target_os = "android")] {

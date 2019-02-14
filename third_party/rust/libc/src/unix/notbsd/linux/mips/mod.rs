@@ -397,8 +397,6 @@ pub const SO_PASSSEC: ::c_int = 34;
 pub const SO_TIMESTAMPNS: ::c_int = 35;
 pub const SCM_TIMESTAMPNS: ::c_int = SO_TIMESTAMPNS;
 pub const SO_MARK: ::c_int = 36;
-pub const SO_TIMESTAMPING: ::c_int = 37;
-pub const SCM_TIMESTAMPING: ::c_int = SO_TIMESTAMPING;
 pub const SO_RXQ_OVFL: ::c_int = 40;
 pub const SO_WIFI_STATUS: ::c_int = 41;
 pub const SCM_WIFI_STATUS: ::c_int = SO_WIFI_STATUS;
@@ -539,6 +537,9 @@ pub const MAP_HUGETLB: ::c_int = 0x080000;
 
 pub const EFD_NONBLOCK: ::c_int = 0x80;
 
+pub const F_RDLCK: ::c_int = 0;
+pub const F_WRLCK: ::c_int = 1;
+pub const F_UNLCK: ::c_int = 2;
 pub const F_GETLK: ::c_int = 14;
 pub const F_GETOWN: ::c_int = 23;
 pub const F_SETOWN: ::c_int = 24;

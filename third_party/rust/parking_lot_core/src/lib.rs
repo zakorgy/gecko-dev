@@ -38,7 +38,10 @@
 //! reference count and the two mutex bits in the same atomic word.
 
 #![warn(missing_docs)]
-#![cfg_attr(all(feature = "nightly", target_os = "linux"), feature(integer_atomics))]
+#![cfg_attr(
+    all(feature = "nightly", target_os = "linux"),
+    feature(integer_atomics)
+)]
 
 extern crate rand;
 extern crate smallvec;
@@ -69,13 +72,13 @@ mod thread_parker;
 #[path = "thread_parker/generic.rs"]
 mod thread_parker;
 
-mod util;
-mod spinwait;
-mod word_lock;
 mod parking_lot;
+mod spinwait;
+mod util;
+mod word_lock;
 
+pub use parking_lot::deadlock;
+pub use parking_lot::{park, unpark_all, unpark_filter, unpark_one, unpark_requeue};
 pub use parking_lot::{FilterOp, ParkResult, ParkToken, RequeueOp, UnparkResult, UnparkToken};
 pub use parking_lot::{DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN};
-pub use parking_lot::{park, unpark_all, unpark_filter, unpark_one, unpark_requeue};
 pub use spinwait::SpinWait;
-pub use parking_lot::deadlock;

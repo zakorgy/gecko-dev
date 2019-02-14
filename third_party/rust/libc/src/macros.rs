@@ -48,6 +48,7 @@ macro_rules! s {
     )*)
 }
 
+#[allow(unused_macros)]
 macro_rules! f {
     ($(pub fn $i:ident($($arg:ident: $argty:ty),*) -> $ret:ty {
         $($body:stmt);*
@@ -67,7 +68,9 @@ macro_rules! f {
 }
 
 macro_rules! __item {
-    ($i:item) => ($i)
+    ($i:item) => {
+        $i
+    };
 }
 
 #[allow(unused_macros)]

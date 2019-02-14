@@ -371,8 +371,6 @@ pub const SO_PASSSEC: ::c_int = 34;
 pub const SO_TIMESTAMPNS: ::c_int = 35;
 pub const SCM_TIMESTAMPNS: ::c_int = SO_TIMESTAMPNS;
 pub const SO_MARK: ::c_int = 36;
-pub const SO_TIMESTAMPING: ::c_int = 37;
-pub const SCM_TIMESTAMPING: ::c_int = SO_TIMESTAMPING;
 pub const SO_PROTOCOL: ::c_int = 38;
 pub const SO_DOMAIN: ::c_int = 39;
 pub const SO_RXQ_OVFL: ::c_int = 40;
@@ -645,6 +643,31 @@ pub const DS: ::c_int = 23;
 pub const ES: ::c_int = 24;
 pub const FS: ::c_int = 25;
 pub const GS: ::c_int = 26;
+
+// offsets in mcontext_t.gregs from sys/ucontext.h
+pub const REG_R8: ::c_int = 0;
+pub const REG_R9: ::c_int = 1;
+pub const REG_R10: ::c_int = 2;
+pub const REG_R11: ::c_int = 3;
+pub const REG_R12: ::c_int = 4;
+pub const REG_R13: ::c_int = 5;
+pub const REG_R14: ::c_int = 6;
+pub const REG_R15: ::c_int = 7;
+pub const REG_RDI: ::c_int = 8;
+pub const REG_RSI: ::c_int = 9;
+pub const REG_RBP: ::c_int = 10;
+pub const REG_RBX: ::c_int = 11;
+pub const REG_RDX: ::c_int = 12;
+pub const REG_RAX: ::c_int = 13;
+pub const REG_RCX: ::c_int = 14;
+pub const REG_RSP: ::c_int = 15;
+pub const REG_RIP: ::c_int = 16;
+pub const REG_EFL: ::c_int = 17;
+pub const REG_CSGSFS: ::c_int = 18;
+pub const REG_ERR: ::c_int = 19;
+pub const REG_TRAPNO: ::c_int = 20;
+pub const REG_OLDMASK: ::c_int = 21;
+pub const REG_CR2: ::c_int = 22;
 
 extern {
     pub fn getcontext(ucp: *mut ucontext_t) -> ::c_int;
