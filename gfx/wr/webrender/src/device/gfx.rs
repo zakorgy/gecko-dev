@@ -85,7 +85,7 @@ pub struct Locals {
 }
 
 const MAX_FRAME_COUNT: usize = 2;
-const DESCRIPTOR_COUNT: usize = 400;
+const DESCRIPTOR_COUNT: usize = 100;
 const DEBUG_DESCRIPTOR_COUNT: usize = 5;
 const DESCRIPTOR_SET_PER_DRAW: usize = 0;
 const DESCRIPTOR_SET_PER_INSTANCE: usize = 1;
