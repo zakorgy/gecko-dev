@@ -93,10 +93,10 @@ impl FontConfig {
                 .filter_map(|e| e.ok())
                 .filter(|p| p.file_type().is_file())
             {
-                let path = file.into_path();
+                let path = file.path();
                 if let Some(extension) = path.extension() {
                     match extension.to_str() {
-                        Some("ttf") | Some("otf") => fonts.push(path.clone()),
+                        Some("ttf") | Some("otf") => fonts.push(path.to_path_buf()),
                         _ => {}
                     }
                 }
@@ -114,10 +114,10 @@ impl FontConfig {
                 .filter_map(|e| e.ok())
                 .filter(|p| p.file_type().is_file())
             {
-                let path = file.into_path();
+                let path = file.path();
                 if let Some(file_name) = path.clone().file_name() {
                     if file_name.to_str() == Some("fonts.dir") {
-                        fonts.push(path);
+                        fonts.push(path.to_path_buf());
                     }
                 }
             }
