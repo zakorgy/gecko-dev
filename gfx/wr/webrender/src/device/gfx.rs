@@ -85,7 +85,7 @@ pub struct Locals {
 }
 
 const MAX_FRAME_COUNT: usize = 2;
-const DESCRIPTOR_COUNT: usize = 100;
+const DESCRIPTOR_COUNT: usize = 400;
 const DEBUG_DESCRIPTOR_COUNT: usize = 5;
 const DESCRIPTOR_SET_PER_DRAW: usize = 0;
 const DESCRIPTOR_SET_PER_INSTANCE: usize = 1;
@@ -163,7 +163,7 @@ pub trait PrimitiveType {
 
 impl Texture {
     pub fn still_in_flight(&self, frame_id: GpuFrameId, frame_count: usize) -> bool {
-        for i in 0 ..= frame_count {
+        for i in 0 .. frame_count {
             if self.bound_in_frame.get() == GpuFrameId(frame_id.0 - i) {
                 return true;
             }
@@ -504,7 +504,7 @@ impl<B: hal::Backend> ImageCore<B> {
                         .properties
                         .contains(hal::memory::Properties::DEVICE_LOCAL)
             })
-            .unwrap()
+            .expect("No memory type found")
             .into();
 
         let memory = unsafe {
@@ -730,7 +730,7 @@ impl<B: hal::Backend> Buffer<B> {
                         .properties
                         .contains(hal::memory::Properties::CPU_VISIBLE)
             })
-            .unwrap()
+            .expect("No memory type found")
             .into();
         let memory = unsafe { device.allocate_memory(memory_type, requirements.size) }
             .expect("Allocate memory failed");
@@ -772,7 +772,7 @@ impl<B: hal::Backend> Buffer<B> {
                 (offset * self.stride) as u64 .. (size_aligned + (offset * self.stride)) as u64,
             )
         }
-        .unwrap();
+        .expect("acquire_mapping_writer failed");
         upload_data[0 .. data.len()].copy_from_slice(&data);
         unsafe { device.release_mapping_writer(upload_data) }
             .expect("release_mapping_writer failed");
@@ -1191,7 +1191,7 @@ impl<B: hal::Backend> Program<B> {
             shader_modules.insert(String::from(shader_name), (vs_module, fs_module));
         }
 
-        let (vs_module, fs_module) = shader_modules.get(shader_name).unwrap();
+        let (vs_module, fs_module) = shader_modules.get(shader_name).expect(&format!("No shader module for shader names: {:?}", shader_name));
 
         let mut constants = Vec::with_capacity(SPECIALIZATION_CONSTANT_COUNT);
         let mut specialization_data = vec![0; SPECIALIZATION_CONSTANT_COUNT * SPECIALIZATION_CONSTANT_SIZE];
@@ -1350,7 +1350,7 @@ impl<B: hal::Backend> Program<B> {
             pipeline_states
                 .iter()
                 .cloned()
-                .zip(pipelines.map(|pipeline| pipeline.unwrap()))
+                .zip(pipelines.map(|pipeline| pipeline.expect("Graphic pipeline creation failed")))
                 .collect::<HashMap<(BlendState, DepthTest), B::GraphicsPipeline>>()
         };
 
@@ -1532,6 +1532,7 @@ impl<B: hal::Backend> Program<B> {
         next_id: usize,
         pipeline_layouts: &FastHashMap<ShaderKind, B::PipelineLayout>,
     ) {
+        print!("!!!!!! Submitting program: {:?} ", self.shader_name);
         let cmd_buffer = cmd_pool.acquire_command_buffer();
         let vertex_buffer = &self.vertex_buffer[next_id];
         let instance_buffer = &self.instance_buffer[next_id];
@@ -1628,6 +1629,7 @@ impl<B: hal::Backend> Program<B> {
 
             cmd_buffer.finish();
         }
+        println!("Succesfully");
     }
 
     pub fn deinit(mut self, device: &B::Device) {
@@ -1698,7 +1700,7 @@ impl<B: hal::Backend> Framebuffer<B> {
             if rbo != RBOId(0) {
                 device.create_framebuffer(
                     render_pass.get_render_pass(texture.format, true),
-                    vec![&image_view, depth.unwrap()],
+                    vec![&image_view, depth.expect("Depth value is None")],
                     extent,
                 )
             } else {
@@ -2148,7 +2150,7 @@ impl<B: hal::Backend> Device<B> {
                     hal::Graphics::supported_by(family.queue_type())
                         && surface.supports_queue_family(&family)
                 })
-                .unwrap();
+                .expect("No queue family found");
 
             let priorities = vec![1.0];
             let (id, families) = (family.id(), [(family, priorities.as_slice())]);
@@ -2157,11 +2159,11 @@ impl<B: hal::Backend> Device<B> {
                     .physical_device
                     .open(&families, hal::Features::DUAL_SRC_BLENDING)
                     .unwrap_or_else( |_| {
-                        adapter.physical_device.open(&families, hal::Features::empty()).unwrap()
+                        adapter.physical_device.open(&families, hal::Features::empty()).expect("Unable to open physical_device")
                     }
                 )
             };
-            (device, queues.take(id).unwrap())
+            (device, queues.take(id).expect("queue_group doesn't exist"))
         };
 
         let (
@@ -2367,7 +2369,7 @@ impl<B: hal::Backend> Device<B> {
     }
 
     pub(crate) fn recreate_swapchain(&mut self, window_size: Option<(i32, i32)>) -> DeviceIntSize {
-        self.device.wait_idle().unwrap();
+        self.device.wait_idle().expect("Wait idle failed");
 
         for (_id, program) in self.programs.drain() {
             program.deinit(&self.device);
@@ -2394,7 +2396,7 @@ impl<B: hal::Backend> Device<B> {
                 self.device.destroy_framebuffer(framebuffer_depth);
             }
             self.device
-                .destroy_swapchain(self.swap_chain.take().unwrap());
+                .destroy_swapchain(self.swap_chain.take().expect("Destroy swapchain failed"));
         }
 
         let window_size =
@@ -2463,7 +2465,7 @@ impl<B: hal::Backend> Device<B> {
             formats
                 .into_iter()
                 .find(|format| format == &hal::format::Format::Bgra8Unorm)
-                .unwrap()
+                .expect("No surface format found")
         });
 
         let mut extent = caps.current_extent.unwrap_or(hal::window::Extent2D {
@@ -2790,6 +2792,7 @@ impl<B: hal::Backend> Device<B> {
         shader_kind: &ShaderKind,
         features: &[&str],
     ) -> Result<ProgramId, ShaderError> {
+        println!("Creating program {:?} with features {:?}", shader_name, features);
         let mut name = String::from(shader_name);
         for feature_names in features {
             for feature in feature_names.split(',') {
@@ -3080,6 +3083,7 @@ impl<B: hal::Backend> Device<B> {
         let (fbo_id, dimensions, depth_available) = match texture_target {
             DrawTarget::Default(dim) => (DEFAULT_DRAW_FBO, dim, true),
             DrawTarget::Texture { texture, layer, with_depth } => {
+                texture.bound_in_frame.set(self.frame_id);
                 let fbo_id = if with_depth {
                     texture.fbos_with_depth[layer]
                 } else {
@@ -3316,7 +3320,7 @@ impl<B: hal::Backend> Device<B> {
             let fbo = Framebuffer::new(
                 &self.device,
                 &texture,
-                &self.images.get(&texture.id).unwrap(),
+                &self.images.get(&texture.id).expect(&format!("No image found with id {:?}", texture.id)),
                 i,
                 self.render_pass.as_ref().unwrap(),
                 rbo_id.clone(),
@@ -3334,6 +3338,9 @@ impl<B: hal::Backend> Device<B> {
 
     /// Copies the contents from one renderable texture to another.
     pub fn blit_renderable_texture(&mut self, dst: &mut Texture, src: &Texture) {
+        dst.bound_in_frame.set(self.frame_id);
+        src.bound_in_frame.set(self.frame_id);
+
         debug_assert!(self.inside_frame);
         debug_assert!(dst.size.width >= src.size.width);
         debug_assert!(dst.size.height >= src.size.height);
@@ -3431,6 +3438,7 @@ impl<B: hal::Backend> Device<B> {
     }
 
     fn generate_mipmaps(&mut self, texture: &Texture) {
+        texture.bound_in_frame.set(self.frame_id);
         let cmd_buffer = self.command_pool[self.next_id].acquire_command_buffer();
 
         let image = self
@@ -3550,7 +3558,7 @@ impl<B: hal::Backend> Device<B> {
 
     fn acquire_depth_target(&mut self, dimensions: DeviceIntSize) -> RBOId {
         if self.depth_targets.contains_key(&dimensions) {
-            let target = self.depth_targets.get_mut(&dimensions).unwrap();
+            let target = self.depth_targets.get_mut(&dimensions).expect(&format!("No depth target found with dimensions {:?}", dimensions));
             target.refcount += 1;
             target.rbo_id
         } else {
@@ -3582,7 +3590,7 @@ impl<B: hal::Backend> Device<B> {
         entry.get_mut().refcount -= 1;
         if entry.get().refcount == 0 {
             let t = entry.remove();
-            let old_rbo = self.rbos.remove(&t.rbo_id).unwrap();
+            let old_rbo = self.rbos.remove(&t.rbo_id).expect(&format!("No rbo found with id {:?}", t.rbo_id));
             old_rbo.deinit(&self.device);
             record_gpu_free(depth_target_size_in_bytes(&dimensions));
         }
@@ -3779,9 +3787,13 @@ impl<B: hal::Backend> Device<B> {
     }
 
     pub fn free_image(&mut self, texture: &mut Texture) {
-        if texture.still_in_flight(self.frame_id, self.frame_count) {
+        if texture.bound_in_frame.get() == self.frame_id {
             self.retained_textures.push(texture.clone());
             return;
+        }
+
+        if texture.still_in_flight(self.frame_id, self.frame_count) {
+            self.wait_for_resources();
         }
 
         if texture.supports_depth() {
@@ -3791,7 +3803,7 @@ impl<B: hal::Backend> Device<B> {
         if !texture.fbos_with_depth.is_empty() {
             for old in texture.fbos_with_depth.drain(..) {
                 debug_assert!(self.bound_draw_fbo != old || self.bound_read_fbo != old);
-                let old_fbo = self.fbos.remove(&old).unwrap();
+                let old_fbo = self.fbos.remove(&old).expect(&format!("No fbo found with id {:?}", old));
                 old_fbo.deinit(&self.device);
             }
         }
@@ -3799,7 +3811,7 @@ impl<B: hal::Backend> Device<B> {
         if !texture.fbos.is_empty() {
             for old in texture.fbos.drain(..) {
                 debug_assert!(self.bound_draw_fbo != old || self.bound_read_fbo != old);
-                let old_fbo = self.fbos.remove(&old).unwrap();
+                let old_fbo = self.fbos.remove(&old).expect(&format!("No fbo found with id {:?}", old));
                 old_fbo.deinit(&self.device);
             }
         }
@@ -3865,6 +3877,7 @@ impl<B: hal::Backend> Device<B> {
     }
 
     pub fn upload_texture_immediate<T: Texel>(&mut self, texture: &Texture, pixels: &[T]) {
+        texture.bound_in_frame.set(self.frame_id);
         let len = pixels.len() / texture.layer_count as usize;
         for i in 0 .. texture.layer_count {
             let start = len * i as usize;
@@ -4645,7 +4658,7 @@ impl<B: hal::Backend> Device<B> {
                     let mut file = OpenOptions::new()
                         .write(true)
                         .create(true)
-                        .open(&self.cache_path.as_ref().unwrap())
+                        .open(&self.cache_path.as_ref().expect("Cache path not set"))
                         .expect("File open/creation failed");
 
                     file.write(&data).expect("File write failed");
@@ -4781,6 +4794,8 @@ impl<'a, B: hal::Backend> TextureUploader<'a, B> {
             height,
             data_stride
         );
+
+        self.texture.bound_in_frame.set(self.device.frame_id);
 
         self.device
             .images

@@ -651,6 +651,9 @@ impl Shaders {
                         &mut self.brush_solid
                     }
                     BrushBatchKind::Image(image_buffer_kind) => {
+                        if !image_buffer_kind.has_platform_support() {
+                            println!("!!!!! Unsupported image buffer kind {:?}", image_buffer_kind);
+                        }
                         self.brush_image[image_buffer_kind as usize]
                             .as_mut()
                             .expect("Unsupported image shader kind")
@@ -668,6 +671,9 @@ impl Shaders {
                         &mut self.brush_linear_gradient
                     }
                     BrushBatchKind::YuvImage(image_buffer_kind, ..) => {
+                        if !image_buffer_kind.has_platform_support() {
+                            println!("!!!!! Unsupported image buffer kind {:?}", image_buffer_kind);
+                        }
                         let shader_index =
                             Self::get_yuv_shader_index(image_buffer_kind);
                         self.brush_yuv_image[shader_index]

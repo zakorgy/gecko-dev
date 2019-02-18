@@ -3287,10 +3287,12 @@ impl Renderer {
                         blit.size,
                     );
 
-                    // Modify the src/dest rects since we are blitting from the framebuffer
-                    src_rect.origin.y = draw_target.dimensions().height as i32 - src_rect.size.height - src_rect.origin.y;
-                    dest_rect.origin.y += dest_rect.size.height;
-                    dest_rect.size.height = -dest_rect.size.height;
+                    if cfg!(feature = "gleam") {
+                        // Modify the src/dest rects since we are blitting from the framebuffer
+                        src_rect.origin.y = draw_target.dimensions().height as i32 - src_rect.size.height - src_rect.origin.y;
+                        dest_rect.origin.y += dest_rect.size.height;
+                        dest_rect.size.height = -dest_rect.size.height;
+                    }
 
                     self.device.blit_render_target(
                         src_rect,
