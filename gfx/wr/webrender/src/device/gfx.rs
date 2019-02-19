@@ -1532,7 +1532,6 @@ impl<B: hal::Backend> Program<B> {
         next_id: usize,
         pipeline_layouts: &FastHashMap<ShaderKind, B::PipelineLayout>,
     ) {
-        print!("!!!!!! Submitting program: {:?} ", self.shader_name);
         let cmd_buffer = cmd_pool.acquire_command_buffer();
         let vertex_buffer = &self.vertex_buffer[next_id];
         let instance_buffer = &self.instance_buffer[next_id];
@@ -1629,7 +1628,6 @@ impl<B: hal::Backend> Program<B> {
 
             cmd_buffer.finish();
         }
-        println!("Succesfully");
     }
 
     pub fn deinit(mut self, device: &B::Device) {
@@ -2792,7 +2790,6 @@ impl<B: hal::Backend> Device<B> {
         shader_kind: &ShaderKind,
         features: &[&str],
     ) -> Result<ProgramId, ShaderError> {
-        println!("Creating program {:?} with features {:?}", shader_name, features);
         let mut name = String::from(shader_name);
         for feature_names in features {
             for feature in feature_names.split(',') {
@@ -4535,7 +4532,9 @@ impl<B: hal::Backend> Device<B> {
     }
 
     pub fn submit_to_gpu(&mut self) -> bool {
-        println!("#### Gfx submit");
+        if self.frame_id.0 / 30 == 0 {
+            println!("#### Gfx submit");            
+        }
         {
             let cmd_buffer = self.command_pool[self.next_id].acquire_command_buffer();
             let image = &self.frame_images[self.current_frame_id];
