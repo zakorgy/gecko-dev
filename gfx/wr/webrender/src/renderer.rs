@@ -3107,6 +3107,11 @@ impl Renderer {
                                 self.device.set_scissor_rect(scissor_rect);
                             }
 
+                            #[cfg(not(feature = "gleam"))]
+                            let program = self.device.bound_program();
+                            #[cfg(not(feature = "gleam"))]
+                            self.device.set_uniforms(&program, projection);
+
                             self.draw_instanced_batch(
                                 &batch.instances,
                                 VertexArrayKind::Primitive,
@@ -3198,6 +3203,11 @@ impl Renderer {
                                 );
                                 self.device.set_scissor_rect(scissor_rect);
                             }
+
+                            #[cfg(not(feature = "gleam"))]
+                            let program = self.device.bound_program();
+                            #[cfg(not(feature = "gleam"))]
+                            self.device.set_uniforms(&program, projection);
 
                             self.draw_instanced_batch(
                                 &batch.instances,
