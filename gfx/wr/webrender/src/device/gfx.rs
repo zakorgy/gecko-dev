@@ -1574,6 +1574,7 @@ impl<B: hal::Backend> Program<B> {
             desc_pools.next(&self.shader_kind);
 
             if blend_state == SUBPIXEL_CONSTANT_TEXT_COLOR {
+                println!("### Blend color {:?}", blend_color);
                 cmd_buffer.set_blend_constants(blend_color.to_array());
             }
 

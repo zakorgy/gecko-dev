@@ -1119,6 +1119,8 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
         precache_flags,
         namespace_alloc_by_client: true,
         enable_picture_caching,
+        #[cfg(windows)]
+        disable_dual_source_blending: true,
         ..Default::default()
     };
 
