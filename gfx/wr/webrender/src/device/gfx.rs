@@ -2322,7 +2322,7 @@ impl<B: hal::Backend> Device<B> {
 
             max_texture_size,
             //TODO: Add to the limits in gfx-rs
-            max_texture_layers: 4,
+            max_texture_layers: 2048,
             _renderer_name: renderer_name,
             frame_id: GpuFrameId(0),
             features,
