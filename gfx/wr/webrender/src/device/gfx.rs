@@ -1526,7 +1526,6 @@ impl<B: hal::Backend> Program<B> {
         desc_pools_sampler: &DescriptorPools<B>,
         clear_values: &[hal::command::ClearValue],
         blend_state: BlendState,
-        blend_color: ColorF,
         depth_test: DepthTest,
         scissor_rect: Option<DeviceIntRect>,
         next_id: usize,
@@ -1535,7 +1534,6 @@ impl<B: hal::Backend> Program<B> {
         let cmd_buffer = cmd_pool.acquire_command_buffer();
         let vertex_buffer = &self.vertex_buffer[next_id];
         let instance_buffer = &self.instance_buffer[next_id];
-
         unsafe {
             cmd_buffer.begin();
             cmd_buffer.set_viewports(0, &[viewport.clone()]);
@@ -1572,10 +1570,6 @@ impl<B: hal::Backend> Program<B> {
                 &[],
             );
             desc_pools.next(&self.shader_kind);
-
-            if blend_state == SUBPIXEL_CONSTANT_TEXT_COLOR {
-                cmd_buffer.set_blend_constants(blend_color.to_array());
-            }
 
             if let Some(ref index_buffer) = self.index_buffer {
                 cmd_buffer.bind_vertex_buffers(0, vec![(&vertex_buffer.buffer().buffer, 0)]);
@@ -2048,7 +2042,7 @@ pub struct Device<B: hal::Backend> {
     pub sampler_nearest: B::Sampler,
     pub current_frame_id: usize,
     current_blend_state: Cell<BlendState>,
-    blend_color: Cell<ColorF>,
+    blend_color: hal::pso::ColorValue,
     current_depth_test: DepthTest,
     // device state
     programs: FastHashMap<ProgramId, Program<B>>,
@@ -2288,7 +2282,7 @@ impl<B: hal::Backend> Device<B> {
             current_frame_id: 0,
             current_blend_state: Cell::new(BlendState::Off),
             current_depth_test: DepthTest::Off,
-            blend_color: Cell::new(ColorF::new(0.0, 0.0, 0.0, 0.0)),
+            blend_color: [0.0; 4],
             _resource_override_path: resource_override_path,
             // This is initialized to 1 by default, but it is reset
             // at the beginning of each frame in `Renderer::bind_frame_data`.
@@ -2977,6 +2971,17 @@ impl<B: hal::Backend> Device<B> {
             .unwrap()
             .get_render_pass(format, self.current_depth_test != DepthTest::Off);
 
+        if self.current_blend_state.get() == SUBPIXEL_CONSTANT_TEXT_COLOR {
+            println!("###### Setting constant blend color");
+            let cmd_buffer = self.command_pool[self.next_id].acquire_command_buffer();
+            unsafe {
+                cmd_buffer.begin();
+                cmd_buffer.set_blend_constants(self.blend_color);
+                cmd_buffer.finish();
+            }
+            println!("###### Constant blend color set");
+        }
+
         self.programs
             .get_mut(&self.bound_program)
             .expect("Program not found")
@@ -2990,7 +2995,6 @@ impl<B: hal::Backend> Device<B> {
                 &self.descriptor_pools_sampler,
                 &vec![],
                 self.current_blend_state.get(),
-                self.blend_color.get(),
                 self.current_depth_test,
                 self.scissor_rect,
                 self.next_id,
@@ -4498,10 +4502,11 @@ impl<B: hal::Backend> Device<B> {
 
     pub fn set_blend_mode_subpixel_with_bg_color_pass2(&self) { self.current_blend_state.set(SUBPIXEL_WITH_BG_COLOR_PASS2); }
 
-    pub fn set_blend_mode_subpixel_constant_text_color(&self, color: ColorF) {
+    pub fn set_blend_mode_subpixel_constant_text_color(&mut self, color: ColorF) {
         self.current_blend_state.set(SUBPIXEL_CONSTANT_TEXT_COLOR);
         // color is an unpremultiplied color.
-        self.blend_color.set(ColorF::new(color.r, color.g, color.b, 1.0));
+        self.blend_color = color.to_array();
+        self.blend_color[3] = 1.0;
     }
 
     pub fn set_blend_mode_subpixel_dual_source(&self) { self.current_blend_state.set(SUBPIXEL_DUAL_SOURCE); }
@@ -4532,9 +4537,7 @@ impl<B: hal::Backend> Device<B> {
     }
 
     pub fn submit_to_gpu(&mut self) -> bool {
-        if self.frame_id.0 / 30 == 0 {
-            println!("#### Gfx submit");            
-        }
+        println!("#### Gfx submit");
         {
             let cmd_buffer = self.command_pool[self.next_id].acquire_command_buffer();
             let image = &self.frame_images[self.current_frame_id];
