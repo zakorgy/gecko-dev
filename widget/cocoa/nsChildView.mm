@@ -810,14 +810,15 @@ LayoutDeviceIntRect nsChildView::GetScreenBounds() {
 double nsChildView::GetDefaultScaleInternal() { return BackingScaleFactor(); }
 
 CGFloat nsChildView::BackingScaleFactor() const {
-  if (mBackingScaleFactor > 0.0) {
+  /*if (mBackingScaleFactor > 0.0) {
     return mBackingScaleFactor;
   }
   if (!mView) {
     return 1.0;
   }
   mBackingScaleFactor = nsCocoaUtils::GetBackingScaleFactor(mView);
-  return mBackingScaleFactor;
+  return mBackingScaleFactor;*/
+  return 1.0;
 }
 
 void nsChildView::BackingScaleFactorChanged() {

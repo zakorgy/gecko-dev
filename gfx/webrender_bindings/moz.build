@@ -10,6 +10,9 @@ if CONFIG["OS_TARGET"] == "Linux":
 if CONFIG["OS_TARGET"] == "WINNT":
     OS_LIBS += ["d3d12"]
 
+if CONFIG["OS_TARGET"] == "Darwin":
+    OS_LIBS += ['-framework Metal']
+
 with Files('**'):
     BUG_COMPONENT = ('Core', 'Graphics: WebRender')
 

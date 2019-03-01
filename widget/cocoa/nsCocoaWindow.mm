@@ -1575,14 +1575,15 @@ static CGFloat GetBackingScaleFactor(NSWindow* aWindow) {
 }
 
 CGFloat nsCocoaWindow::BackingScaleFactor() {
-  if (mBackingScaleFactor > 0.0) {
+  /*if (mBackingScaleFactor > 0.0) {
     return mBackingScaleFactor;
   }
   if (!mWindow) {
     return 1.0;
   }
   mBackingScaleFactor = GetBackingScaleFactor(mWindow);
-  return mBackingScaleFactor;
+  return mBackingScaleFactor;*/
+  return 1.0;
 }
 
 void nsCocoaWindow::BackingScaleFactorChanged() {
