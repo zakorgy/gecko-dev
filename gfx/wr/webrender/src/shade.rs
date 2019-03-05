@@ -45,7 +45,7 @@ impl ImageBufferKind {
     }
 
     #[cfg(not(feature = "gleam"))]
-    fn has_platform_support(&self) -> bool {
+    pub(crate) fn has_platform_support(&self) -> bool {
         match *self {
             ImageBufferKind::Texture2D => true,
             ImageBufferKind::Texture2DArray => true,
@@ -670,9 +670,15 @@ impl Shaders {
                     BrushBatchKind::LinearGradient => {
                         &mut self.brush_linear_gradient
                     }
-                    BrushBatchKind::YuvImage(image_buffer_kind, ..) => {
+                    BrushBatchKind::YuvImage(mut image_buffer_kind, ..) => {
                         if !image_buffer_kind.has_platform_support() {
                             println!("!!!!! Unsupported image buffer kind {:?}", image_buffer_kind);
+                            image_buffer_kind = ImageBufferKind::Texture2D;
+                        }
+
+                        if image_buffer_kind == ImageBufferKind::TextureRect {
+                            println!("Changing image buffer kind");
+                            image_buffer_kind = ImageBufferKind::Texture2D;
                         }
                         let shader_index =
                             Self::get_yuv_shader_index(image_buffer_kind);
