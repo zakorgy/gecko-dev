@@ -37,6 +37,10 @@ class RenderMacIOSurfaceTextureHostOGL final : public RenderTextureHostOGL {
   RefPtr<MacIOSurface> mSurface;
   RefPtr<gl::GLContext> mGL;
   GLuint mTextureHandles[3];
+
+  RefPtr<gfx::DataSourceSurface> mDataSurface;
+  UniquePtr<uint8_t[]> mData;
+  gfx::DataSourceSurface::MappedSurface mMap;
 };
 
 }  // namespace wr
