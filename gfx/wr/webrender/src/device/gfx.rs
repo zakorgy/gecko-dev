@@ -1149,6 +1149,8 @@ pub(crate) struct Program<B: hal::Backend> {
     pub instance_buffer: SmallVec<[InstanceBufferHandler<B>; 1]>,
     pub locals_buffer: SmallVec<[UniformBufferHandler<B>; 1]>,
     shader_name: String,
+    #[cfg(feature = "metal")]
+    unnormalized_cords: bool,
     shader_kind: ShaderKind,
     bound_textures: [u32; 16],
 }
@@ -1433,6 +1435,8 @@ impl<B: hal::Backend> Program<B> {
             instance_buffer,
             locals_buffer,
             shader_name: String::from(shader_name),
+            #[cfg(feature = "metal")]
+            unnormalized_cords: features.contains(&"TEXTURE_RECT"),
             shader_kind,
             bound_textures: [0; 16],
         }
@@ -2029,6 +2033,77 @@ impl<B: hal::Backend> CommandPool<B> {
     }
 }
 
+pub trait DeviceHelper {
+    #[cfg(feature = "metal")]
+   fn make_sampler_descriptor_metal(&self) -> back::Sampler;
+
+    //#[cfg(feature = "metal")]
+   //fn bind_sampler_metal<B: hal::Backend>(&self, binding: u32, set: &back::DescriptorSet, sampler: &back::Sampler);
+}
+
+impl DeviceHelper for back::Device {
+    #[cfg(feature = "metal")]
+    fn make_sampler_descriptor_metal(&self) -> back::Sampler {
+        let descriptor = self.make_sampler_descriptor(hal::image::SamplerInfo::new(
+            hal::image::Filter::Linear,
+            hal::image::WrapMode::Clamp,
+        )).expect("Descriptor creation failed");
+        descriptor.set_normalized_coordinates(false);
+        self.create_sampler_from_descriptor(&descriptor)
+    }
+}
+
+pub trait DescriptorSetHelper {
+    #[cfg(feature = "metal")]
+   fn bind_sampler_metal(&self, binding: u32, sampler: &back::Sampler);
+}
+
+impl DescriptorSetHelper for back::DescriptorSet {
+    #[cfg(feature = "metal")]
+    fn bind_sampler_metal(&self, binding: u32, sampler: &back::Sampler) {
+        match self {
+            back::DescriptorSet::Emulated {
+                ref pool,
+                ref layouts,
+                ref resources,
+            } => {
+                let mut counters = resources.map(|r| r.start);
+                let mut start = None; //TODO: can pre-compute this
+                for (i, layout) in layouts.iter().enumerate() {
+                    if layout.binding == binding
+                        && layout.array_index == 0
+                    {
+                        start = Some(i);
+                        break;
+                    }
+                    counters.add(layout.content);
+                }
+                let mut data = pool.write();
+
+                for layout in layouts[start.unwrap()..].iter()
+                {
+                    /*debug_assert!(!layout
+                        .content
+                        .contains(n::DescriptorContent::IMMUTABLE_SAMPLER));*/
+                    data.samplers[counters.samplers as usize] =
+                        Some(back::AsNative::from(sampler.0.as_ref()));
+                    counters.add(layout.content);
+                }
+            }
+            back::DescriptorSet::ArgumentBuffer {
+                ref raw,
+                offset,
+                ref encoder,
+                ..
+            } => {
+                //debug_assert!(self.shared.private_caps.argument_buffers);
+                encoder.set_argument_buffer(raw, *offset);
+                encoder.set_sampler_states(&[&sampler.0], binding as _);
+            }
+        }
+    }
+}
+
 pub struct Device<B: hal::Backend> {
     pub device: B::Device,
     pub memory_types: Vec<hal::MemoryType>,
@@ -2049,6 +2124,8 @@ pub struct Device<B: hal::Backend> {
     pub frame_count: usize,
     pub viewport: hal::pso::Viewport,
     pub sampler_linear: B::Sampler,
+    #[cfg(feature = "metal")]
+    pub sampler_linear_unnormalized: back::Sampler,
     pub sampler_nearest: B::Sampler,
     pub current_frame_id: usize,
     current_blend_state: Cell<BlendState>,
@@ -2116,7 +2193,11 @@ pub struct Device<B: hal::Backend> {
     save_cache: bool,
 }
 
-impl<B: hal::Backend> Device<B> {
+impl<B: hal::Backend> Device<B>
+    where
+        B::Device: DeviceHelper,
+        B::DescriptorSet: DescriptorSetHelper,
+    {
     pub fn new(
         init: DeviceInit<B>,
         resource_override_path: Option<PathBuf>,
@@ -2195,6 +2276,9 @@ impl<B: hal::Backend> Device<B> {
             ))
         }
         .expect("sampler_linear failed");
+
+        #[cfg(feature = "metal")]
+        let sampler_linear_unnormalized = device.make_sampler_descriptor_metal();
 
         let sampler_nearest = unsafe {
             device.create_sampler(hal::image::SamplerInfo::new(
@@ -2288,6 +2372,8 @@ impl<B: hal::Backend> Device<B> {
             frame_count,
             viewport,
             sampler_linear,
+            #[cfg(feature = "metal")]
+            sampler_linear_unnormalized,
             sampler_nearest,
             current_frame_id: 0,
             current_blend_state: Cell::new(BlendState::Off),
@@ -2797,6 +2883,10 @@ impl<B: hal::Backend> Device<B> {
         for feature_names in features {
             for feature in feature_names.split(',') {
                 if NON_SPECIALIZATION_FEATURES.iter().any(|f| *f == feature) {
+                    if cfg!(feature = "metal") && feature == "TEXTURE_RECT" {
+                        name.push_str(&format!("_{}", "TEXTURE_2D".to_lowercase()));
+                        continue;
+                    }
                     name.push_str(&format!("_{}", feature.to_lowercase()));
                 }
             }
@@ -2891,8 +2981,21 @@ impl<B: hal::Backend> Device<B> {
     fn bind_samplers(&self, program: &Program<B>) {
         let desc_set = self.descriptor_pools_sampler.get(&program.shader_kind);
         for &(index, sampler_name) in SAMPLERS.iter() {
+            println!("Sampler name {:?}, sampler {:?}", sampler_name, self.bound_sampler[index]);
             let sampler = match self.bound_sampler[index] {
-                TextureFilter::Linear | TextureFilter::Trilinear => &self.sampler_linear,
+                TextureFilter::Linear | TextureFilter::Trilinear => {
+                    #[cfg(feature = "metal")]
+                    {
+                        if program.unnormalized_cords && sampler_name.contains("Color") {
+                            if let Some(binding) = program.bindings_map.get(&("s".to_owned() + sampler_name)) {
+                                println!("##### Binding unnornalized sampler");
+                                desc_set.bind_sampler_metal(*binding, &self.sampler_linear_unnormalized);
+                                continue;
+                            }
+                        }
+                    }
+                    &self.sampler_linear
+                }
                 TextureFilter::Nearest => &self.sampler_nearest,
             };
             program.bind_sampler(&self.device, desc_set, &sampler, sampler_name);
@@ -3245,7 +3348,7 @@ impl<B: hal::Backend> Device<B> {
             | hal::image::Usage::SAMPLED;
         let (view_kind, mip_levels, usage) = match texture.filter {
             TextureFilter::Nearest => (
-                hal::image::ViewKind::D2,
+                hal::image::ViewKind::D2Array,
                 1,
                 usage_base | hal::image::Usage::COLOR_ATTACHMENT,
             ),
@@ -4699,6 +4802,10 @@ impl<B: hal::Backend> Device<B> {
                 self.device.destroy_framebuffer(framebuffer_depth);
             }
             self.device.destroy_sampler(self.sampler_linear);
+
+            // Note: we don't need to destroy sampler_linear_unnormalized
+            // because with metal backend we only drop samplers
+
             self.device.destroy_sampler(self.sampler_nearest);
             for descriptor_pool in self.descriptor_pools {
                 descriptor_pool.deinit(&self.device);
@@ -4733,7 +4840,10 @@ pub struct TextureUploader<'a, B: hal::Backend> {
     texture: &'a Texture,
 }
 
-impl<'a, B: hal::Backend> TextureUploader<'a, B> {
+impl<'a, B: hal::Backend> TextureUploader<'a, B>
+    where
+        B::Device: DeviceHelper,
+        B::DescriptorSet: DescriptorSetHelper, {
     pub fn upload<T>(
         &mut self,
         rect: DeviceIntRect,
