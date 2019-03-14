@@ -28,7 +28,7 @@ pub use self::addr::{
     Ipv6Addr,
     LinkAddr,
 };
-#[cfg(any(target_os = "linux", target_os = "android"))]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 pub use ::sys::socket::addr::netlink::NetlinkAddr;
 
 pub use libc::{
@@ -153,7 +153,7 @@ libc_bitflags!{
         /// This flag specifies that queued errors should be received from
         /// the socket error queue. (For more details, see
         /// [recvfrom(2)](https://linux.die.net/man/2/recvfrom))
-        #[cfg(any(target_os = "linux", target_os = "android"))]
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         MSG_ERRQUEUE;
         /// Set the `close-on-exec` flag for the file descriptor received via a UNIX domain
         /// file descriptor using the `SCM_RIGHTS` operation (described in
@@ -258,9 +258,13 @@ impl Eq for IpMembershipRequest {}
 
 impl fmt::Debug for IpMembershipRequest {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mref = &self.0.imr_multiaddr;
+        let maddr = mref.s_addr;
+        let iref = &self.0.imr_interface;
+        let ifaddr = iref.s_addr;
         f.debug_struct("IpMembershipRequest")
-            .field("imr_multiaddr", &self.0.imr_multiaddr.s_addr)
-            .field("imr_interface", &self.0.imr_interface.s_addr)
+            .field("imr_multiaddr", &maddr)
+            .field("imr_interface", &ifaddr)
             .finish()
     }
 }
@@ -476,56 +480,62 @@ pub enum ControlMessage<'a> {
     /// use std::time::*;
     ///
     /// // Set up
-    /// let message1 = "Ohayō!".as_bytes();
-    /// let message2 = "Jā ne".as_bytes();
-    /// let in_socket = socket(AddressFamily::Inet, SockType::Datagram, SockFlag::empty(), None).unwrap();
+    /// let message = "Ohayō!".as_bytes();
+    /// let in_socket = socket(
+    ///     AddressFamily::Inet,
+    ///     SockType::Datagram,
+    ///     SockFlag::empty(),
+    ///     None).unwrap();
     /// setsockopt(in_socket, sockopt::ReceiveTimestamp, &true).unwrap();
-    /// bind(in_socket, &SockAddr::new_inet(InetAddr::new(IpAddr::new_v4(127, 0, 0, 1), 0))).unwrap();
-    /// let address = if let Ok(address) = getsockname(in_socket) { address } else { unreachable!() };
-    ///
-    /// // Send both
-    /// assert!(Ok(message1.len()) == sendmsg(in_socket, &[IoVec::from_slice(message1)], &[], MsgFlags::empty(), Some(&address)));
-    /// let time = SystemTime::now();
-    /// std::thread::sleep(Duration::from_millis(250));
-    /// assert!(Ok(message2.len()) == sendmsg(in_socket, &[IoVec::from_slice(message2)], &[], MsgFlags::empty(), Some(&address)));
-    /// let delay = time.elapsed().unwrap();
-    ///
-    /// // Receive the first
-    /// let mut buffer1 = vec![0u8; message1.len() + message2.len()];
-    /// let mut time1: CmsgSpace<TimeVal> = CmsgSpace::new();
-    /// let received1 = recvmsg(in_socket, &[IoVec::from_mut_slice(&mut buffer1)], Some(&mut time1), MsgFlags::empty()).unwrap();
-    /// let mut time1 = if let Some(ControlMessage::ScmTimestamp(&time1)) = received1.cmsgs().next() { time1 } else { panic!("Unexpected or no control message") };
-    ///
-    /// // Receive the second
-    /// let mut buffer2 = vec![0u8; message1.len() + message2.len()];
-    /// let mut time2: CmsgSpace<TimeVal> = CmsgSpace::new();
-    /// let received2 = recvmsg(in_socket, &[IoVec::from_mut_slice(&mut buffer2)], Some(&mut time2), MsgFlags::empty()).unwrap();
-    /// let mut time2 = if let Some(ControlMessage::ScmTimestamp(&time2)) = received2.cmsgs().next() { time2 } else { panic!("Unexpected or no control message") };
-    ///
-    /// // Swap if needed; UDP is unordered
-    /// match (received1.bytes, received2.bytes, message1.len(), message2.len()) {
-    ///     (l1, l2, m1, m2) if l1 == m1 && l2 == m2 => {},
-    ///     (l2, l1, m1, m2) if l1 == m1 && l2 == m2 => {
-    ///         std::mem::swap(&mut time1, &mut time2);
-    ///         std::mem::swap(&mut buffer1, &mut buffer2);
-    ///     },
-    ///     _ => panic!("Wrong packets"),
+    /// let localhost = InetAddr::new(IpAddr::new_v4(127, 0, 0, 1), 0);
+    /// bind(in_socket, &SockAddr::new_inet(localhost)).unwrap();
+    /// let address = getsockname(in_socket).unwrap();
+    /// // Get initial time
+    /// let time0 = SystemTime::now();
+    /// // Send the message
+    /// let iov = [IoVec::from_slice(message)];
+    /// let flags = MsgFlags::empty();
+    /// let l = sendmsg(in_socket, &iov, &[], flags, Some(&address)).unwrap();
+    /// assert_eq!(message.len(), l);
+    /// // Receive the message
+    /// let mut buffer = vec![0u8; message.len()];
+    /// let mut cmsgspace: CmsgSpace<TimeVal> = CmsgSpace::new();
+    /// let iov = [IoVec::from_mut_slice(&mut buffer)];
+    /// let r = recvmsg(in_socket, &iov, Some(&mut cmsgspace), flags).unwrap();
+    /// let rtime = match r.cmsgs().next() {
+    ///     Some(ControlMessage::ScmTimestamp(&rtime)) => rtime,
+    ///     Some(_) => panic!("Unexpected control message"),
+    ///     None => panic!("No control message")
     /// };
-    ///
-    /// // Compare results
-    /// println!("{:?} @ {:?}, {:?} @ {:?}, {:?}", buffer1, time1, buffer2, time2, delay);
-    /// assert!(message1 == &buffer1[0..(message1.len())], "{:?} == {:?}", message1, buffer1);
-    /// assert!(message2 == &buffer2[0..(message2.len())], "{:?} == {:?}", message2, buffer2);
-    /// let time = time2 - time1;
-    /// let time = Duration::new(time.num_seconds() as u64, time.num_nanoseconds() as u32);
-    /// let difference = if delay < time { time - delay } else { delay - time };
-    /// assert!(difference.subsec_nanos() < 5_000_000, "{}ns < 5ms", difference.subsec_nanos());
-    /// assert!(difference.as_secs() == 0);
-    ///
+    /// // Check the final time
+    /// let time1 = SystemTime::now();
+    /// // the packet's received timestamp should lie in-between the two system
+    /// // times, unless the system clock was adjusted in the meantime.
+    /// let rduration = Duration::new(rtime.tv_sec() as u64,
+    ///                               rtime.tv_usec() as u32 * 1000);
+    /// assert!(time0.duration_since(UNIX_EPOCH).unwrap() <= rduration);
+    /// assert!(rduration <= time1.duration_since(UNIX_EPOCH).unwrap());
     /// // Close socket
     /// nix::unistd::close(in_socket).unwrap();
     /// ```
     ScmTimestamp(&'a TimeVal),
+
+    #[cfg(any(
+        target_os = "android",
+        target_os = "ios",
+        target_os = "linux",
+        target_os = "macos"
+    ))]
+    Ipv4PacketInfo(&'a libc::in_pktinfo),
+    #[cfg(any(
+        target_os = "android",
+        target_os = "freebsd",
+        target_os = "ios",
+        target_os = "linux",
+        target_os = "macos"
+    ))]
+    Ipv6PacketInfo(&'a libc::in6_pktinfo),
+
     /// Catch-all variant for unimplemented cmsg types.
     #[doc(hidden)]
     Unknown(UnknownCmsg<'a>),
@@ -565,9 +575,54 @@ impl<'a> ControlMessage<'a> {
             ControlMessage::ScmTimestamp(t) => {
                 mem::size_of_val(t)
             },
+            #[cfg(any(
+                target_os = "android",
+                target_os = "ios",
+                target_os = "linux",
+                target_os = "macos"
+            ))]
+            ControlMessage::Ipv4PacketInfo(pktinfo) => {
+                mem::size_of_val(pktinfo)
+            },
+            #[cfg(any(
+                target_os = "android",
+                target_os = "freebsd",
+                target_os = "ios",
+                target_os = "linux",
+                target_os = "macos"
+            ))]
+            ControlMessage::Ipv6PacketInfo(pktinfo) => {
+                mem::size_of_val(pktinfo)
+            },
             ControlMessage::Unknown(UnknownCmsg(_, bytes)) => {
                 mem::size_of_val(bytes)
             }
+        }
+    }
+
+    /// Returns the value to put into the `cmsg_level` field of the header.
+    fn cmsg_level(&self) -> libc::c_int {
+        match *self {
+            ControlMessage::ScmRights(_) => libc::SOL_SOCKET,
+            #[cfg(any(target_os = "android", target_os = "linux"))]
+            ControlMessage::ScmCredentials(_) => libc::SOL_SOCKET,
+            ControlMessage::ScmTimestamp(_) => libc::SOL_SOCKET,
+            #[cfg(any(
+                target_os = "android",
+                target_os = "ios",
+                target_os = "linux",
+                target_os = "macos"
+            ))]
+            ControlMessage::Ipv4PacketInfo(_) => libc::IPPROTO_IP,
+            #[cfg(any(
+                target_os = "android",
+                target_os = "freebsd",
+                target_os = "ios",
+                target_os = "linux",
+                target_os = "macos"
+            ))]
+            ControlMessage::Ipv6PacketInfo(_) => libc::IPPROTO_IPV6,
+            ControlMessage::Unknown(ref cmsg) => cmsg.0.cmsg_level,
         }
     }
 
@@ -578,6 +633,21 @@ impl<'a> ControlMessage<'a> {
             #[cfg(any(target_os = "android", target_os = "linux"))]
             ControlMessage::ScmCredentials(_) => libc::SCM_CREDENTIALS,
             ControlMessage::ScmTimestamp(_) => libc::SCM_TIMESTAMP,
+            #[cfg(any(
+                target_os = "android",
+                target_os = "ios",
+                target_os = "linux",
+                target_os = "macos"
+            ))]
+            ControlMessage::Ipv4PacketInfo(_) => libc::IP_PKTINFO,
+            #[cfg(any(
+                target_os = "android",
+                target_os = "freebsd",
+                target_os = "ios",
+                target_os = "linux",
+                target_os = "macos"
+            ))]
+            ControlMessage::Ipv6PacketInfo(_) => libc::IPV6_PKTINFO,
             ControlMessage::Unknown(ref cmsg) => cmsg.0.cmsg_type,
         }
     }
@@ -598,7 +668,7 @@ impl<'a> ControlMessage<'a> {
         } else {
             let cmsg = cmsghdr {
                 cmsg_len: self.len() as _,
-                cmsg_level: libc::SOL_SOCKET,
+                cmsg_level: self.cmsg_level(),
                 cmsg_type: self.cmsg_type(),
                 ..mem::zeroed() // zero out platform-dependent padding fields
             };
@@ -615,10 +685,29 @@ impl<'a> ControlMessage<'a> {
                 #[cfg(any(target_os = "android", target_os = "linux"))]
                 ControlMessage::ScmCredentials(creds) => {
                     copy_bytes(creds, buf)
-                }
+                },
                 ControlMessage::ScmTimestamp(t) => {
                     copy_bytes(t, buf)
                 },
+                #[cfg(any(
+                    target_os = "android",
+                    target_os = "ios",
+                    target_os = "linux",
+                    target_os = "macos"
+                ))]
+                ControlMessage::Ipv4PacketInfo(pktinfo) => {
+                    copy_bytes(pktinfo, buf)
+                },
+                #[cfg(any(
+                    target_os = "android",
+                    target_os = "freebsd",
+                    target_os = "ios",
+                    target_os = "linux",
+                    target_os = "macos"
+                ))]
+                ControlMessage::Ipv6PacketInfo(pktinfo) => {
+                    copy_bytes(pktinfo, buf)
+                }
                 ControlMessage::Unknown(_) => unreachable!(),
             }
         };
@@ -650,6 +739,28 @@ impl<'a> ControlMessage<'a> {
                 ControlMessage::ScmTimestamp(
                     &*(data.as_ptr() as *const _))
             },
+            #[cfg(any(
+                target_os = "android",
+                target_os = "freebsd",
+                target_os = "ios",
+                target_os = "linux",
+                target_os = "macos"
+            ))]
+            (libc::IPPROTO_IPV6, libc::IPV6_PKTINFO) => {
+                ControlMessage::Ipv6PacketInfo(
+                    &*(data.as_ptr() as *const _))
+            }
+            #[cfg(any(
+                target_os = "android",
+                target_os = "ios",
+                target_os = "linux",
+                target_os = "macos"
+            ))]
+            (libc::IPPROTO_IP, libc::IP_PKTINFO) => {
+                ControlMessage::Ipv4PacketInfo(
+                    &*(data.as_ptr() as *const _))
+            }
+
             (_, _) => {
                 ControlMessage::Unknown(UnknownCmsg(header, data))
             }
@@ -750,7 +861,7 @@ pub fn recvmsg<'a, T>(fd: RawFd, iov: &[IoVec<&mut [u8]>], cmsg_buffer: Option<&
     };
 
     Ok(unsafe { RecvMsg {
-        bytes: try!(Errno::result(ret)) as usize,
+        bytes: Errno::result(ret)? as usize,
         cmsg_buffer,
         address: sockaddr_storage_to_addr(&address,
                                           mhdr.msg_namelen as usize).ok(),
@@ -890,13 +1001,13 @@ pub fn recvfrom(sockfd: RawFd, buf: &mut [u8]) -> Result<(usize, SockAddr)> {
         let addr: sockaddr_storage = mem::zeroed();
         let mut len = mem::size_of::<sockaddr_storage>() as socklen_t;
 
-        let ret = try!(Errno::result(libc::recvfrom(
+        let ret = Errno::result(libc::recvfrom(
             sockfd,
             buf.as_ptr() as *mut c_void,
             buf.len() as size_t,
             0,
             mem::transmute(&addr),
-            &mut len as *mut socklen_t)));
+            &mut len as *mut socklen_t))?;
 
         sockaddr_storage_to_addr(&addr, len as usize)
             .map(|addr| (ret as usize, addr))
@@ -1004,7 +1115,7 @@ pub fn getpeername(fd: RawFd) -> Result<SockAddr> {
 
         let ret = libc::getpeername(fd, mem::transmute(&addr), &mut len);
 
-        try!(Errno::result(ret));
+        Errno::result(ret)?;
 
         sockaddr_storage_to_addr(&addr, len as usize)
     }
@@ -1020,7 +1131,7 @@ pub fn getsockname(fd: RawFd) -> Result<SockAddr> {
 
         let ret = libc::getsockname(fd, mem::transmute(&addr), &mut len);
 
-        try!(Errno::result(ret));
+        Errno::result(ret)?;
 
         sockaddr_storage_to_addr(&addr, len as usize)
     }
@@ -1055,7 +1166,7 @@ pub unsafe fn sockaddr_storage_to_addr(
             let pathlen = len - offset_of!(sockaddr_un, sun_path);
             Ok(SockAddr::Unix(UnixAddr(sun, pathlen)))
         }
-        #[cfg(any(target_os = "linux", target_os = "android"))]
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         libc::AF_NETLINK => {
             use libc::sockaddr_nl;
             Ok(SockAddr::Netlink(NetlinkAddr(*(addr as *const _ as *const sockaddr_nl))))

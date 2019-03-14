@@ -1,4 +1,4 @@
-use nix::fcntl::{fcntl, FcntlArg, FdFlag, open, OFlag};
+use nix::fcntl::{fcntl, FcntlArg, FdFlag, open, OFlag, readlink};
 use nix::unistd::*;
 use nix::unistd::ForkResult::*;
 use nix::sys::signal::{SaFlags, SigAction, SigHandler, SigSet, Signal, sigaction};
@@ -13,6 +13,7 @@ use tempfile::{self, tempfile};
 use libc::{self, _exit, off_t};
 
 #[test]
+#[cfg(not(any(target_os = "netbsd")))]
 fn test_fork_and_waitpid() {
     let _m = ::FORK_MTX.lock().expect("Mutex got poisoned by another test");
 
@@ -229,16 +230,20 @@ cfg_if!{
         execve_test_factory!(test_execve, execve, &CString::new("/system/bin/sh").unwrap());
         execve_test_factory!(test_fexecve, fexecve, File::open("/system/bin/sh").unwrap().into_raw_fd());
     } else if #[cfg(any(target_os = "freebsd",
-                        target_os = "linux",
-                        target_os = "netbsd",
-                        target_os = "openbsd"))] {
+                        target_os = "linux"))] {
         execve_test_factory!(test_execve, execve, &CString::new("/bin/sh").unwrap());
         execve_test_factory!(test_fexecve, fexecve, File::open("/bin/sh").unwrap().into_raw_fd());
     } else if #[cfg(any(target_os = "dragonfly",
                         target_os = "ios",
-                        target_os = "macos"))] {
+                        target_os = "macos",
+                        target_os = "netbsd",
+                        target_os = "openbsd"))] {
         execve_test_factory!(test_execve, execve, &CString::new("/bin/sh").unwrap());
-        // No fexecve() on macos/ios and DragonFly.
+        // No fexecve() on DragonFly, ios, macos, NetBSD, OpenBSD.
+        //
+        // Note for NetBSD and OpenBSD: although rust-lang/libc includes it
+        // (under unix/bsd/netbsdlike/) fexecve is not currently implemented on
+        // NetBSD nor on OpenBSD.
     }
 }
 
@@ -542,4 +547,30 @@ fn test_canceling_alarm() {
 
     assert_eq!(alarm::set(60), None);
     assert_eq!(alarm::cancel(), Some(60));
+}
+
+#[test]
+fn test_symlinkat() {
+    let mut buf = [0; 1024];
+    let tempdir = tempfile::tempdir().unwrap();
+
+    let target = tempdir.path().join("a");
+    let linkpath = tempdir.path().join("b");
+    symlinkat(&target, None, &linkpath).unwrap();
+    assert_eq!(
+        readlink(&linkpath, &mut buf).unwrap().to_str().unwrap(),
+        target.to_str().unwrap()
+    );
+
+    let dirfd = open(tempdir.path(), OFlag::empty(), Mode::empty()).unwrap();
+    let target = "c";
+    let linkpath = "d";
+    symlinkat(target, Some(dirfd), linkpath).unwrap();
+    assert_eq!(
+        readlink(&tempdir.path().join(linkpath), &mut buf)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        target
+    );
 }

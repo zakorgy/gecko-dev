@@ -43,11 +43,11 @@ libc_bitflags! {
 }
 
 pub fn mknod<P: ?Sized + NixPath>(path: &P, kind: SFlag, perm: Mode, dev: dev_t) -> Result<()> {
-    let res = try!(path.with_nix_path(|cstr| {
+    let res = path.with_nix_path(|cstr| {
         unsafe {
             libc::mknod(cstr.as_ptr(), kind.bits | perm.bits() as mode_t, dev)
         }
-    }));
+    })?;
 
     Errno::result(res).map(drop)
 }
@@ -79,26 +79,26 @@ pub fn umask(mode: Mode) -> Mode {
 
 pub fn stat<P: ?Sized + NixPath>(path: &P) -> Result<FileStat> {
     let mut dst = unsafe { mem::uninitialized() };
-    let res = try!(path.with_nix_path(|cstr| {
+    let res = path.with_nix_path(|cstr| {
         unsafe {
             libc::stat(cstr.as_ptr(), &mut dst as *mut FileStat)
         }
-    }));
+    })?;
 
-    try!(Errno::result(res));
+    Errno::result(res)?;
 
     Ok(dst)
 }
 
 pub fn lstat<P: ?Sized + NixPath>(path: &P) -> Result<FileStat> {
     let mut dst = unsafe { mem::uninitialized() };
-    let res = try!(path.with_nix_path(|cstr| {
+    let res = path.with_nix_path(|cstr| {
         unsafe {
             libc::lstat(cstr.as_ptr(), &mut dst as *mut FileStat)
         }
-    }));
+    })?;
 
-    try!(Errno::result(res));
+    Errno::result(res)?;
 
     Ok(dst)
 }
@@ -107,18 +107,18 @@ pub fn fstat(fd: RawFd) -> Result<FileStat> {
     let mut dst = unsafe { mem::uninitialized() };
     let res = unsafe { libc::fstat(fd, &mut dst as *mut FileStat) };
 
-    try!(Errno::result(res));
+    Errno::result(res)?;
 
     Ok(dst)
 }
 
 pub fn fstatat<P: ?Sized + NixPath>(dirfd: RawFd, pathname: &P, f: AtFlags) -> Result<FileStat> {
     let mut dst = unsafe { mem::uninitialized() };
-    let res = try!(pathname.with_nix_path(|cstr| {
+    let res = pathname.with_nix_path(|cstr| {
         unsafe { libc::fstatat(dirfd, cstr.as_ptr(), &mut dst as *mut FileStat, f.bits() as libc::c_int) }
-    }));
+    })?;
 
-    try!(Errno::result(res));
+    Errno::result(res)?;
 
     Ok(dst)
 }
@@ -209,7 +209,12 @@ pub fn utimes<P: ?Sized + NixPath>(path: &P, atime: &TimeVal, mtime: &TimeVal) -
 /// # References
 ///
 /// [lutimes(2)](http://pubs.opengroup.org/onlinepubs/9699919799/functions/lutimes.html).
-#[cfg(not(target_os = "android"))]
+#[cfg(any(target_os = "linux",
+          target_os = "haiku",
+          target_os = "ios",
+          target_os = "macos",
+          target_os = "freebsd",
+          target_os = "netbsd"))]
 pub fn lutimes<P: ?Sized + NixPath>(path: &P, atime: &TimeVal, mtime: &TimeVal) -> Result<()> {
     let times: [libc::timeval; 2] = [*atime.as_ref(), *mtime.as_ref()];
     let res = path.with_nix_path(|cstr| unsafe {

@@ -5,6 +5,14 @@ use sys::time::TimeVal;
 use libc::{self, c_int, uint8_t, c_void, socklen_t};
 use std::mem;
 use std::os::unix::io::RawFd;
+use std::ffi::{OsStr, OsString};
+#[cfg(target_family = "unix")]
+use std::os::unix::ffi::OsStrExt;
+
+// Constants
+// TCP_CA_NAME_MAX isn't defined in user space include files
+#[cfg(any(target_os = "freebsd", target_os = "linux"))] 
+const TCP_CA_NAME_MAX: usize = 16;
 
 /// Helper for implementing `SetSockOpt` for a given socket option. See
 /// [`::sys::socket::SetSockOpt`](sys/socket/trait.SetSockOpt.html).
@@ -81,7 +89,7 @@ macro_rules! getsockopt_impl {
                     let res = libc::getsockopt(fd, $level, $flag,
                                                getter.ffi_ptr(),
                                                getter.ffi_len());
-                    try!(Errno::result(res));
+                    Errno::result(res)?;
 
                     Ok(getter.unwrap())
                 }
@@ -150,6 +158,10 @@ macro_rules! sockopt_impl {
 
     (Both, $name:ident, $level:path, $flag:path, usize) => {
         sockopt_impl!(Both, $name, $level, $flag, usize, GetUsize, SetUsize);
+    };
+
+    (Both, $name:ident, $level:path, $flag:path, OsString<$array:ty>) => {
+        sockopt_impl!(Both, $name, $level, $flag, OsString, GetOsString<$array>, SetOsString);
     };
 
     /*
@@ -257,6 +269,24 @@ sockopt_impl!(Both, BindAny, libc::IPPROTO_IP, libc::IP_BINDANY, bool);
 sockopt_impl!(Both, Mark, libc::SOL_SOCKET, libc::SO_MARK, u32);
 #[cfg(any(target_os = "android", target_os = "linux"))]
 sockopt_impl!(Both, PassCred, libc::SOL_SOCKET, libc::SO_PASSCRED, bool);
+#[cfg(any(target_os = "freebsd", target_os = "linux"))] 
+sockopt_impl!(Both, TcpCongestion, libc::IPPROTO_TCP, libc::TCP_CONGESTION, OsString<[u8; TCP_CA_NAME_MAX]>);
+#[cfg(any(
+    target_os = "android",
+    target_os = "ios",
+    target_os = "linux",
+    target_os = "macos"
+))]
+sockopt_impl!(Both, Ipv4PacketInfo, libc::IPPROTO_IP, libc::IP_PKTINFO, bool);
+#[cfg(any(
+    target_os = "android",
+    target_os = "freebsd",
+    target_os = "ios",
+    target_os = "linux",
+    target_os = "macos"
+))]
+sockopt_impl!(Both, Ipv6RecvPacketInfo, libc::IPPROTO_IPV6, libc::IPV6_RECVPKTINFO, bool);
+
 
 /*
  *
@@ -477,6 +507,53 @@ unsafe impl<'a> Set<'a, usize> for SetUsize {
         mem::size_of::<c_int>() as socklen_t
     }
 }
+
+/// Getter for a `OsString` value.
+struct GetOsString<T: AsMut<[u8]>> {
+    len: socklen_t,
+    val: T,
+}
+
+unsafe impl<T: AsMut<[u8]>> Get<OsString> for GetOsString<T> {
+    unsafe fn blank() -> Self {
+        GetOsString {
+            len: mem::size_of::<T>() as socklen_t,
+            val: mem::zeroed(),
+        }
+    }
+
+    fn ffi_ptr(&mut self) -> *mut c_void {
+        &mut self.val as *mut T as *mut c_void
+    }
+
+    fn ffi_len(&mut self) -> *mut socklen_t {
+        &mut self.len
+    }
+
+    unsafe fn unwrap(mut self) -> OsString {
+        OsStr::from_bytes(self.val.as_mut()).to_owned()
+    }
+}
+
+/// Setter for a `OsString` value.
+struct SetOsString<'a> {
+    val: &'a OsStr,
+}
+
+unsafe impl<'a> Set<'a, OsString> for SetOsString<'a> {
+    fn new(val: &'a OsString) -> SetOsString {
+        SetOsString { val: val.as_os_str() }
+    }
+
+    fn ffi_ptr(&self) -> *const c_void {
+        self.val.as_bytes().as_ptr() as *const c_void
+    }
+
+    fn ffi_len(&self) -> socklen_t {
+        self.val.len() as socklen_t
+    }
+}
+
 
 #[cfg(test)]
 mod test {

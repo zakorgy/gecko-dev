@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Keyboard: fix system repeat rate as repeats per second rather then millisecond delay between repeats
+- Surface: fix panic in `compute_dpi_factor()` by only computing the dpi factor on surfaces known to the OutputMgr
+- Window: `set_title()` now requires a manual `refresh()` for the change to take effect
+
 ## 0.4.4 -- 2018-12-27
 
 - Shell: expose shell interface and add `create_shell_surface` to `Environment`.

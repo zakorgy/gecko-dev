@@ -12,7 +12,7 @@
 
 [package]
 name = "smithay-client-toolkit"
-version = "0.4.4"
+version = "0.4.5"
 authors = ["Victor Berger <victor.berger@m4x.org>"]
 description = "Toolkit for making client wayland applications."
 documentation = "https://smithay.github.io/client-toolkit"
@@ -21,7 +21,7 @@ categories = ["gui"]
 license = "MIT"
 repository = "https://github.com/smithay/client-toolkit"
 [dependencies.andrew]
-version = "0.1.2"
+version = "0.2.0"
 
 [dependencies.bitflags]
 version = "1.0"
@@ -36,10 +36,7 @@ version = "1"
 version = "0.7"
 
 [dependencies.nix]
-version = "0.12"
-
-[dependencies.rand]
-version = "0.6"
+version = "0.13"
 
 [dependencies.wayland-client]
 version = "0.21"

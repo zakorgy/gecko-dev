@@ -497,7 +497,8 @@ impl Eq for Ipv4Addr {
 
 impl hash::Hash for Ipv4Addr {
     fn hash<H: hash::Hasher>(&self, s: &mut H) {
-        self.0.s_addr.hash(s)
+        let saddr = self.0.s_addr;
+        saddr.hash(s)
     }
 }
 
@@ -600,7 +601,7 @@ pub struct UnixAddr(pub libc::sockaddr_un, pub usize);
 impl UnixAddr {
     /// Create a new sockaddr_un representing a filesystem path.
     pub fn new<P: ?Sized + NixPath>(path: &P) -> Result<UnixAddr> {
-        try!(path.with_nix_path(|cstr| {
+        path.with_nix_path(|cstr| {
             unsafe {
                 let mut ret = libc::sockaddr_un {
                     sun_family: AddressFamily::Unix as sa_family_t,
@@ -619,7 +620,7 @@ impl UnixAddr {
 
                 Ok(UnixAddr(ret, bytes.len()))
             }
-        }))
+        })?
     }
 
     /// Create a new `sockaddr_un` representing an address in the "abstract namespace".
@@ -759,7 +760,7 @@ impl SockAddr {
     }
 
     pub fn new_unix<P: ?Sized + NixPath>(path: &P) -> Result<SockAddr> {
-        Ok(SockAddr::Unix(try!(UnixAddr::new(path))))
+        Ok(SockAddr::Unix(UnixAddr::new(path)?))
     }
 
     #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -1079,7 +1080,7 @@ pub mod sys_control {
             ctl_name[..name.len()].clone_from_slice(name.as_bytes());
             let mut info = ctl_ioc_info { ctl_id: 0, ctl_name: ctl_name };
 
-            unsafe { try!(ctl_info(sockfd, &mut info)); }
+            unsafe { ctl_info(sockfd, &mut info)?; }
 
             Ok(SysControlAddr::new(info.ctl_id, unit))
         }

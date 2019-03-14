@@ -388,6 +388,9 @@ impl<F: Frame + 'static> Window<F> {
     ///
     /// This string may be used to identify the surface in a task bar, window list, or other
     /// user interface elements provided by the compositor.
+    ///
+    /// You need to call `refresh()` afterwards for this to properly
+    /// take effect.
     pub fn set_title(&self, title: String) {
         self.frame.lock().unwrap().set_title(title.clone());
         self.shell_surface.set_title(title);
@@ -546,8 +549,7 @@ impl<F: Frame + 'static> Window<F> {
     /// Provide a type that implements the 'Theme' trait to adjust
     /// the look of the windows decorations
     ///
-    /// The theme must return colors of the format of ARGB8888 and in
-    /// the order of byte endianess
+    /// The theme must return colors of the format of ARGB8888
     pub fn set_theme<T: Theme>(&mut self, theme: T) {
         self.frame.lock().unwrap().set_theme(theme)
     }
