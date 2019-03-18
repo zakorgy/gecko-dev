@@ -10,6 +10,7 @@
 #include "mozilla/gfx/Logging.h"
 #include "ScopedGLHelpers.h"
 #include "mozilla/gfx/DataSurfaceHelpers.h"
+#include "mozilla/gfx/Types.h"
 #include "MacIOSurfaceHelpers.h"
 
 namespace mozilla {
@@ -128,20 +129,24 @@ wr::WrExternalImage RenderMacIOSurfaceTextureHostOGL::Lock(
     return InvalidToWrExternalImage();
   }
 
-  gfxCriticalNote << "mDataSurface info [stride:" << mMap.mStride << " size-width:" << mDataSurface->GetSize().width << " size-height:" << mDataSurface->GetSize().height << "]";
-  gfxCriticalNote << " surface format: " << mSurface->GetFormat() << " planeCount: " << mSurface->GetPlaneCount();
+  //gfxCriticalNote << "mDataSurface info [stride:" << mMap.mStride << " size-width:" << mDataSurface->GetSize().width << " size-height:" << mDataSurface->GetSize().height << "]";
+  //gfxCriticalNote << " surface format: " << mSurface->GetFormat() << " planeCount: " << mSurface->GetPlaneCount();
 
   size_t dataWidth = mDataSurface->GetSize().width;
   size_t dataHeight = mDataSurface->GetSize().height;
+  auto bytesPerPixel = gfx::BytesPerPixel(mDataSurface->GetFormat());
+
+  gfxCriticalNote << "!!!!! mDataSurface info format: " << mDataSurface->GetFormat() << " bpp: " << bytesPerPixel << "\n";
+
   size_t bytesPerRow = mMap.mStride;
   mData = UniquePtr<uint8_t[]>(new (fallible) uint8_t[4 * dataWidth * dataHeight]);
   for (size_t i = 0; i < dataHeight; i++) {
-    memcpy(mData.get() + i * (dataWidth * 4), mMap.mData + i * bytesPerRow, dataWidth * 4);
+    memcpy(mData.get() + i * (dataWidth * bytesPerPixel), mMap.mData + i * bytesPerRow, dataWidth * bytesPerPixel);
   }
   mDataSurface->Unmap();
   mDataSurface = nullptr;
 
-  return RawDataToWrExternalImage(mData.get(), 4 * dataWidth * dataHeight);
+  return RawDataToWrExternalImage(mData.get(), bytesPerPixel * dataWidth * dataHeight);
 }
 
 void RenderMacIOSurfaceTextureHostOGL::Unlock() {
