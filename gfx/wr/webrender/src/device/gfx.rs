@@ -2217,7 +2217,7 @@ impl<B: hal::Backend> Device<B>
         let features = adapter.physical_device.features();
 
         let memory_types = adapter.physical_device.memory_properties().memory_types;
-        println!("memory_types: {:?}", memory_types);
+        //println!("memory_types: {:?}", memory_types);
 
         let limits = adapter.physical_device.limits();
         let max_texture_size = 4400i32; // TODO use limits after it points to the correct texture size
@@ -2586,7 +2586,7 @@ impl<B: hal::Backend> Device<B>
         let (swap_chain, backbuffer) =
             unsafe { device.create_swapchain(surface, swap_config, None) }
                 .expect("create_swapchain failed");
-        println!("backbuffer={:?}", backbuffer);
+        //println!("backbuffer={:?}", backbuffer);
         let depth_format = hal::format::Format::D32Sfloat; //maybe d24s8?
         let render_pass = {
             let attachment_r8 = hal::pass::Attachment {
@@ -2879,6 +2879,7 @@ impl<B: hal::Backend> Device<B>
         shader_kind: &ShaderKind,
         features: &[&str],
     ) -> Result<ProgramId, ShaderError> {
+        println!("@@@@@ Shader name {:?}, features: {:?}", shader_name, features);
         let mut name = String::from(shader_name);
         for feature_names in features {
             for feature in feature_names.split(',') {
@@ -2981,7 +2982,7 @@ impl<B: hal::Backend> Device<B>
     fn bind_samplers(&self, program: &Program<B>) {
         let desc_set = self.descriptor_pools_sampler.get(&program.shader_kind);
         for &(index, sampler_name) in SAMPLERS.iter() {
-            println!("Sampler name {:?}, sampler {:?}", sampler_name, self.bound_sampler[index]);
+            //println!("Sampler name {:?}, sampler {:?}", sampler_name, self.bound_sampler[index]);
             let sampler = match self.bound_sampler[index] {
                 TextureFilter::Linear | TextureFilter::Trilinear => {
                     #[cfg(feature = "metal")]
@@ -3861,7 +3862,7 @@ impl<B: hal::Backend> Device<B>
         _dest_rect: DeviceIntRect,
     ) {
         debug_assert!(self.inside_frame);
-        println!("blit_render_target_invert_y is not implemented yet!");
+        //println!("blit_render_target_invert_y is not implemented yet!");
     }
 
     /// Notifies the device that the contents of a render target are no longer
@@ -4193,7 +4194,7 @@ impl<B: hal::Backend> Device<B>
         _format: ImageFormat,
         _output: &mut [u8],
     ) {
-        println!("get_tex_image_into is missing");
+        //println!("get_tex_image_into is missing");
     }
 
     /// Attaches the provided texture to the current Read FBO binding.
@@ -4209,7 +4210,7 @@ impl<B: hal::Backend> Device<B>
         _target: TextureTarget,
         _layer_id: i32,
     ) {
-        println!("attach_read_texture_external is missing");
+        //println!("attach_read_texture_external is missing");
     }
 
     #[cfg(any(feature = "debug_renderer", feature = "capture"))]
