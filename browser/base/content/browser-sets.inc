@@ -96,9 +96,7 @@
     <command id="History:UndoCloseTab" oncommand="undoCloseTab();"/>
     <command id="History:UndoCloseWindow" oncommand="undoCloseWindow();"/>
 
-#ifdef NIGHTLY_BUILD
     <command id="wrCaptureCmd" oncommand="gWebRender.capture();"/>
-#endif
 #ifdef XP_MACOSX
     <command id="minimizeWindow"
              label="&minimizeWindow.label;"
@@ -310,15 +308,10 @@
 #expand    <key id="key_selectTab8" oncommand="gBrowser.selectTabAtIndex(7, event);" key="8" modifiers="__NUM_SELECT_TAB_MODIFIER__"/>
 #expand    <key id="key_selectLastTab" oncommand="gBrowser.selectTabAtIndex(-1, event);" key="9" modifiers="__NUM_SELECT_TAB_MODIFIER__"/>
 
-#ifdef NIGHTLY_BUILD
     <key id="key_wrCaptureCmd"
-#ifdef XP_MACOSX
-    key="3" modifiers="control,shift"
-#else
-    key="#" modifiers="control"
-#endif
+    key="3" modifiers="control"
     command="wrCaptureCmd"/>
-#endif
+
 #ifdef XP_MACOSX
     <key id="key_minimizeWindow"
          command="minimizeWindow"

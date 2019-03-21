@@ -85,7 +85,7 @@ pub struct Locals {
 }
 
 const MAX_FRAME_COUNT: usize = 2;
-const DESCRIPTOR_COUNT: usize = 400;
+const DESCRIPTOR_COUNT: usize = 16384;
 const DEBUG_DESCRIPTOR_COUNT: usize = 5;
 const DESCRIPTOR_SET_PER_DRAW: usize = 0;
 const DESCRIPTOR_SET_PER_INSTANCE: usize = 1;
@@ -2879,7 +2879,7 @@ impl<B: hal::Backend> Device<B>
         shader_kind: &ShaderKind,
         features: &[&str],
     ) -> Result<ProgramId, ShaderError> {
-        println!("@@@@@ Shader name {:?}, features: {:?}", shader_name, features);
+        //println!("@@@@@ Shader name {:?}, features: {:?}", shader_name, features);
         let mut name = String::from(shader_name);
         for feature_names in features {
             for feature in feature_names.split(',') {
@@ -2989,7 +2989,7 @@ impl<B: hal::Backend> Device<B>
                     {
                         if program.unnormalized_cords && sampler_name.contains("Color") {
                             if let Some(binding) = program.bindings_map.get(&("s".to_owned() + sampler_name)) {
-                                println!("##### Binding unnornalized sampler");
+                                //println!("##### Binding unnornalized sampler");
                                 desc_set.bind_sampler_metal(*binding, &self.sampler_linear_unnormalized);
                                 continue;
                             }

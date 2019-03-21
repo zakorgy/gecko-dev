@@ -129,14 +129,9 @@ wr::WrExternalImage RenderMacIOSurfaceTextureHostOGL::Lock(
     return InvalidToWrExternalImage();
   }
 
-  //gfxCriticalNote << "mDataSurface info [stride:" << mMap.mStride << " size-width:" << mDataSurface->GetSize().width << " size-height:" << mDataSurface->GetSize().height << "]";
-  //gfxCriticalNote << " surface format: " << mSurface->GetFormat() << " planeCount: " << mSurface->GetPlaneCount();
-
   size_t dataWidth = mDataSurface->GetSize().width;
   size_t dataHeight = mDataSurface->GetSize().height;
-  auto bytesPerPixel = gfx::BytesPerPixel(mDataSurface->GetFormat());
-
-  gfxCriticalNote << "!!!!! mDataSurface info format: " << mDataSurface->GetFormat() << " bpp: " << bytesPerPixel << "\n";
+  size_t bytesPerPixel = gfx::BytesPerPixel(mDataSurface->GetFormat());
 
   size_t bytesPerRow = mMap.mStride;
   mData = UniquePtr<uint8_t[]>(new (fallible) uint8_t[4 * dataWidth * dataHeight]);
