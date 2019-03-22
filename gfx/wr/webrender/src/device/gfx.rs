@@ -2035,15 +2035,12 @@ impl<B: hal::Backend> CommandPool<B> {
 
 pub trait DeviceHelper {
     #[cfg(feature = "metal")]
-   fn make_sampler_descriptor_metal(&self) -> back::Sampler;
-
-    //#[cfg(feature = "metal")]
-   //fn bind_sampler_metal<B: hal::Backend>(&self, binding: u32, set: &back::DescriptorSet, sampler: &back::Sampler);
+   fn make_sampler_descriptor_metal(&self) -> <back::Backend as hal::Backend>::Sampler;
 }
 
 impl DeviceHelper for back::Device {
     #[cfg(feature = "metal")]
-    fn make_sampler_descriptor_metal(&self) -> back::Sampler {
+    fn make_sampler_descriptor_metal(&self) -> <back::Backend as hal::Backend>::Sampler {
         let descriptor = self.make_sampler_descriptor(hal::image::SamplerInfo::new(
             hal::image::Filter::Linear,
             hal::image::WrapMode::Clamp,
@@ -2055,52 +2052,13 @@ impl DeviceHelper for back::Device {
 
 pub trait DescriptorSetHelper {
     #[cfg(feature = "metal")]
-   fn bind_sampler_metal(&self, binding: u32, sampler: &back::Sampler);
+   fn bind_sampler_metal(&self, binding: u32, sampler: &<back::Backend as hal::Backend>::Sampler);
 }
 
-impl DescriptorSetHelper for back::DescriptorSet {
+impl DescriptorSetHelper for <back::Backend as hal::Backend>::DescriptorSet {
     #[cfg(feature = "metal")]
-    fn bind_sampler_metal(&self, binding: u32, sampler: &back::Sampler) {
-        match self {
-            back::DescriptorSet::Emulated {
-                ref pool,
-                ref layouts,
-                ref resources,
-            } => {
-                let mut counters = resources.map(|r| r.start);
-                let mut start = None; //TODO: can pre-compute this
-                for (i, layout) in layouts.iter().enumerate() {
-                    if layout.binding == binding
-                        && layout.array_index == 0
-                    {
-                        start = Some(i);
-                        break;
-                    }
-                    counters.add(layout.content);
-                }
-                let mut data = pool.write();
-
-                for layout in layouts[start.unwrap()..].iter()
-                {
-                    /*debug_assert!(!layout
-                        .content
-                        .contains(n::DescriptorContent::IMMUTABLE_SAMPLER));*/
-                    data.samplers[counters.samplers as usize] =
-                        Some(back::AsNative::from(sampler.0.as_ref()));
-                    counters.add(layout.content);
-                }
-            }
-            back::DescriptorSet::ArgumentBuffer {
-                ref raw,
-                offset,
-                ref encoder,
-                ..
-            } => {
-                //debug_assert!(self.shared.private_caps.argument_buffers);
-                encoder.set_argument_buffer(raw, *offset);
-                encoder.set_sampler_states(&[&sampler.0], binding as _);
-            }
-        }
+    fn bind_sampler_metal(&self, binding: u32, sampler: &<back::Backend as hal::Backend>::Sampler) {
+        self.bind_sampler(binding, sampler);
     }
 }
 
@@ -2125,7 +2083,7 @@ pub struct Device<B: hal::Backend> {
     pub viewport: hal::pso::Viewport,
     pub sampler_linear: B::Sampler,
     #[cfg(feature = "metal")]
-    pub sampler_linear_unnormalized: back::Sampler,
+    pub sampler_linear_unnormalized: <back::Backend as hal::Backend>::Sampler,
     pub sampler_nearest: B::Sampler,
     pub current_frame_id: usize,
     current_blend_state: Cell<BlendState>,
