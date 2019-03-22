@@ -1180,7 +1180,7 @@ dependencies = [
  "parking_lot 0.6.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "range-alloc 0.1.0",
  "smallvec 0.6.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "spirv_cross 0.12.1 (git+https://github.com/zakorgy/spirv_cross?branch=metal_for_gecko2)",
+ "spirv_cross 0.12.1 (git+https://github.com/zakorgy/spirv_cross?branch=metal_for_gecko)",
  "storage-map 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "winit 0.18.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -1561,7 +1561,7 @@ name = "line_drawing"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
- "num-traits 0.1.43 (registry+https://github.com/rust-lang/crates.io-index)",
+ "num-traits 0.2.6 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -2776,7 +2776,7 @@ dependencies = [
 [[package]]
 name = "spirv_cross"
 version = "0.12.1"
-source = "git+https://github.com/zakorgy/spirv_cross?branch=metal_for_gecko2#f9f682643c0a595d67dbb6c54b7bd9359ceb94cc"
+source = "git+https://github.com/zakorgy/spirv_cross?branch=metal_for_gecko#9c252289a9082dc90ddf4cea18eb09aef1b7898d"
 dependencies = [
  "cc 1.0.23 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -3997,7 +3997,7 @@ dependencies = [
 "checksum smallbitvec 2.3.0 (registry+https://github.com/rust-lang/crates.io-index)" = "1764fe2b30ee783bfe3b9b37b2649d8d590b3148bb12e0079715d4d5c673562e"
 "checksum smallvec 0.6.6 (registry+https://github.com/rust-lang/crates.io-index)" = "622df2d454c29a4d89b30dc3b27b42d7d90d6b9e587dbf8f67652eb7514da484"
 "checksum smithay-client-toolkit 0.4.5 (registry+https://github.com/rust-lang/crates.io-index)" = "aa4899558362a65589b53313935099835acf999740915e134dff20cca7c6a28b"
-"checksum spirv_cross 0.12.1 (git+https://github.com/zakorgy/spirv_cross?branch=metal_for_gecko2)" = "<none>"
+"checksum spirv_cross 0.12.1 (git+https://github.com/zakorgy/spirv_cross?branch=metal_for_gecko)" = "<none>"
 "checksum stable_deref_trait 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)" = "15132e0e364248108c5e2c02e3ab539be8d6f5d52a01ca9bbf27ed657316f02b"
 "checksum stb_truetype 0.2.6 (registry+https://github.com/rust-lang/crates.io-index)" = "69b7df505db8e81d54ff8be4693421e5b543e08214bd8d99eb761fcb4d5668ba"
 "checksum storage-map 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)" = "cb94f167ccba0941876c8e722e888be8b4c05511ffdacc8cfcd4c647adfd424d"
