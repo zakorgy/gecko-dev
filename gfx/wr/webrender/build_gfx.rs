@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use gfx_hal::pso::{AttributeDesc, DescriptorRangeDesc, DescriptorSetLayoutBinding};
-use gfx_hal::pso::{DescriptorType, Element, ShaderStageFlags, VertexBufferDesc};
+use gfx_hal::pso::{DescriptorType, Element, ShaderStageFlags, VertexInputRate, VertexBufferDesc};
 use gfx_hal::format::Format;
 use ron::de::from_str;
 use ron::ser::{to_string_pretty, PrettyConfig};
@@ -500,12 +500,12 @@ fn add_attribute_descriptors(
     let def = split_code(line);
     let var_name = def[2].trim_end_matches(';');
     let (format, offset) = match def[1] {
-        "float" => (Format::Rg32Float, 4),
-        "int" => (Format::R32Int, 4),
-        "ivec4" => (Format::Rgba32Int, 16),
-        "vec2" => (Format::Rg32Float, 8),
-        "vec3" => (Format::Rgb32Float, 12),
-        "vec4" => (Format::Rgba32Float, 16),
+        "float" => (Format::Rg32Sfloat, 4),
+        "int" => (Format::R32Sint, 4),
+        "ivec4" => (Format::Rgba32Sint, 16),
+        "vec2" => (Format::Rg32Sfloat, 8),
+        "vec3" => (Format::Rgb32Sfloat, 12),
+        "vec4" => (Format::Rgba32Sfloat, 16),
         x => unimplemented!("Case: {} is missing!", x),
     };
     match var_name {
@@ -563,7 +563,7 @@ fn create_vertex_buffer_descriptors(file_name: &str) -> Vec<VertexBufferDesc> {
         VertexBufferDesc {
             binding: 0,
             stride: mem::size_of::<Vertex>() as _,
-            rate: 0,
+            rate: VertexInputRate::Vertex,
         }
     ];
     if file_name.starts_with("cs_blur") {
@@ -571,7 +571,7 @@ fn create_vertex_buffer_descriptors(file_name: &str) -> Vec<VertexBufferDesc> {
             VertexBufferDesc {
                 binding: 1,
                 stride: mem::size_of::<BlurInstance>() as _,
-                rate: 1,
+                rate: VertexInputRate::Instance(1),
             }
         );
     } else if file_name.starts_with("cs_border") {
@@ -579,7 +579,7 @@ fn create_vertex_buffer_descriptors(file_name: &str) -> Vec<VertexBufferDesc> {
             VertexBufferDesc {
                 binding: 1,
                 stride: mem::size_of::<BorderInstance>() as _,
-                rate: 1,
+                rate: VertexInputRate::Instance(1),
             }
         );
     } else if file_name.starts_with("cs_clip") {
@@ -587,7 +587,7 @@ fn create_vertex_buffer_descriptors(file_name: &str) -> Vec<VertexBufferDesc> {
             VertexBufferDesc {
                 binding: 1,
                 stride: mem::size_of::<ClipMaskInstance>() as _,
-                rate: 1,
+                rate: VertexInputRate::Instance(1),
             }
         );
     } else if file_name.starts_with("cs_scale") {
@@ -595,7 +595,7 @@ fn create_vertex_buffer_descriptors(file_name: &str) -> Vec<VertexBufferDesc> {
             VertexBufferDesc {
                 binding: 1,
                 stride: mem::size_of::<ScalingInstance>() as _,
-                rate: 1,
+                rate: VertexInputRate::Instance(1),
             }
         );
     } else if file_name.starts_with("cs_line") {
@@ -603,7 +603,7 @@ fn create_vertex_buffer_descriptors(file_name: &str) -> Vec<VertexBufferDesc> {
             VertexBufferDesc {
                 binding: 1,
                 stride: mem::size_of::<LineDecorationInstance>() as _,
-                rate: 1,
+                rate: VertexInputRate::Instance(1),
             }
         );
     } else if file_name.starts_with("debug_color") {
@@ -611,7 +611,7 @@ fn create_vertex_buffer_descriptors(file_name: &str) -> Vec<VertexBufferDesc> {
             VertexBufferDesc {
                 binding: 0,
                 stride: mem::size_of::<DebugColorVertex>() as _,
-                rate: 0,
+                rate: VertexInputRate::Vertex,
             },
         ];
     } else if file_name.starts_with("debug_font") {
@@ -619,7 +619,7 @@ fn create_vertex_buffer_descriptors(file_name: &str) -> Vec<VertexBufferDesc> {
             VertexBufferDesc {
                 binding: 0,
                 stride: mem::size_of::<DebugFontVertex>() as _,
-                rate: 0,
+                rate: VertexInputRate::Vertex,
             },
         ];
         // Primitive and brush shaders
@@ -628,7 +628,7 @@ fn create_vertex_buffer_descriptors(file_name: &str) -> Vec<VertexBufferDesc> {
             VertexBufferDesc {
                 binding: 1,
                 stride: mem::size_of::<PrimitiveInstanceData>() as _,
-                rate: 1,
+                rate: VertexInputRate::Instance(1),
             }
         );
     }
