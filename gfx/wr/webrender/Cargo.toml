@@ -37,6 +37,7 @@ bincode = "1.0"
 bitflags = "1.0"
 byteorder = "1.0"
 cfg-if = "0.1.2"
+dirs = "1.0"
 fxhash = "0.2.1"
 gfx-hal = { git = "https://github.com/gfx-rs/gfx.git", features = ["serde"], rev = "dea8caac9c09e907eeeb7a1d3d18fdd3e42062cb" }
 gfx-backend-empty = { git = "https://github.com/gfx-rs/gfx.git", rev = "dea8caac9c09e907eeeb7a1d3d18fdd3e42062cb" }

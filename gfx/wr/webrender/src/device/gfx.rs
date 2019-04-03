@@ -2368,14 +2368,14 @@ impl<B: hal::Backend> Device<B> {
         let mut file = match File::open(path) {
             Ok(file) => file,
             Err(_) => {
-                warn!("File not found: {:?}", path);
+                //warn!("File not found: {:?}", path);
                 return None;
             }
         };
         let mut bytes = Vec::new();
         match file.read_to_end(&mut bytes) {
             Err(_) => {
-                warn!("Failed to read file: {:?}", path);
+                //warn!("Failed to read file: {:?}", path);
                 return None;
             }
             _ => {}
@@ -2532,7 +2532,7 @@ impl<B: hal::Backend> Device<B> {
         let (swap_chain, backbuffer) =
             unsafe { device.create_swapchain(surface, swap_config, None) }
                 .expect("create_swapchain failed");
-        println!("backbuffer={:?}", backbuffer);
+        //println!("backbuffer={:?}", backbuffer);
         let depth_format = hal::format::Format::D32Sfloat; //maybe d24s8?
         let render_pass = {
             let attachment_r8 = hal::pass::Attachment {
@@ -2758,7 +2758,7 @@ impl<B: hal::Backend> Device<B> {
     }
 
     pub fn update_program_cache(&mut self, _cached_programs: Rc<ProgramCache>) {
-        warn!("Program cache is not supported!");
+        //warn!("Program cache is not supported!");
     }
 
     /// Ensures that the maximum texture size is less than or equal to the
@@ -2823,7 +2823,7 @@ impl<B: hal::Backend> Device<B> {
         _program: ProgramId,
         _descriptor: &VertexDescriptor,
     ) -> Result<(), ShaderError> {
-        warn!("link_program is not implemented with gfx backend");
+        //warn!("link_program is not implemented with gfx backend");
         Ok(())
     }
 
@@ -2951,7 +2951,7 @@ impl<B: hal::Backend> Device<B> {
         if let Some(ref mut index_buffer) = program.index_buffer {
             index_buffer[self.next_id].update(&self.device, indices, &mut self.heaps);
         } else {
-            warn!("This function is for debug shaders only!");
+            //warn!("This function is for debug shaders only!");
         }
     }
 
@@ -2966,7 +2966,7 @@ impl<B: hal::Backend> Device<B> {
         if program.shader_name.contains("debug") {
             program.vertex_buffer[self.next_id].update(&self.device, vertices, &mut self.heaps);
         } else {
-            warn!("This function is for debug shaders only!");
+            //warn!("This function is for debug shaders only!");
         }
     }
 
@@ -3186,7 +3186,7 @@ impl<B: hal::Backend> Device<B> {
     }
 
     pub fn create_fbo_for_external_texture(&mut self, _texture_id: u32) -> FBOId {
-        warn!("External texture creation is missing");
+        //warn!("External texture creation is missing");
         FBOId(0)
     }
 
@@ -3195,7 +3195,7 @@ impl<B: hal::Backend> Device<B> {
     }
 
     pub fn delete_fbo(&mut self, _fbo: FBOId) {
-        warn!("delete fbo is missing");
+        //warn!("delete fbo is missing");
     }
 
     pub fn bind_external_draw_target(&mut self, fbo_id: FBOId) {
@@ -3808,7 +3808,7 @@ impl<B: hal::Backend> Device<B> {
     /// FIXME(bholley): We could/should invalidate the depth targets earlier
     /// than the color targets, i.e. immediately after each pass.
     pub fn invalidate_render_target(&mut self, _texture: &Texture) {
-        warn!("invalidate_render_target not implemented!");
+        //warn!("invalidate_render_target not implemented!");
     }
 
     /// Notifies the device that a render target is about to be reused.
@@ -3886,7 +3886,7 @@ impl<B: hal::Backend> Device<B> {
 
     #[cfg(feature = "replay")]
     pub fn delete_external_texture(&mut self, mut external: ExternalTexture) {
-        warn!("delete external texture is missing");
+        //warn!("delete external texture is missing");
         external.id = 0;
     }
 
@@ -4150,7 +4150,7 @@ impl<B: hal::Backend> Device<B> {
         _format: ImageFormat,
         _output: &mut [u8],
     ) {
-        println!("get_tex_image_into is missing");
+        //println!("get_tex_image_into is missing");
     }
 
     /// Attaches the provided texture to the current Read FBO binding.
@@ -4166,7 +4166,7 @@ impl<B: hal::Backend> Device<B> {
         _target: TextureTarget,
         _layer_id: i32,
     ) {
-        println!("attach_read_texture_external is missing");
+        //println!("attach_read_texture_external is missing");
     }
 
     #[cfg(any(feature = "debug_renderer", feature = "capture"))]
@@ -4528,7 +4528,7 @@ impl<B: hal::Backend> Device<B> {
     }
 
     pub fn disable_stencil(&self) {
-        warn!("disable stencil is missing")
+        //warn!("disable stencil is missing")
     }
 
     pub fn set_scissor_rect(&mut self, rect: DeviceIntRect) {
@@ -4584,7 +4584,7 @@ impl<B: hal::Backend> Device<B> {
     }
 
     pub fn echo_driver_messages(&self) {
-        warn!("echo_driver_messages is unimplemeneted");
+        //warn!("echo_driver_messages is unimplemeneted");
     }
 
     pub fn set_next_frame_id(&mut self) -> bool {
