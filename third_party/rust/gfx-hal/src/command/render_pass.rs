@@ -7,9 +7,9 @@ use super::{
     CommandBufferInheritanceInfo, DescriptorSetOffset, IntoRawCommandBuffer, MultiShot, OneShot,
     Primary, RawCommandBuffer, Secondary, Shot, Submittable,
 };
-use queue::{Capability, Graphics, Supports};
-use {buffer, pass, pso, query};
-use {Backend, DrawCount, IndexCount, InstanceCount, VertexCount, VertexOffset};
+use crate::queue::{Capability, Graphics, Supports};
+use crate::{buffer, pass, pso, query};
+use crate::{Backend, DrawCount, IndexCount, InstanceCount, VertexCount, VertexOffset};
 
 /// Specifies how commands for the following renderpasses will be recorded.
 pub enum SubpassContents {
@@ -99,7 +99,7 @@ impl<B: Backend, C: BorrowMut<B::CommandBuffer>> RenderSubpassCommon<B, C> {
     }
 
     ///
-    pub unsafe fn bind_vertex_buffers<I, T>(&mut self, first_binding: u32, buffers: I)
+    pub unsafe fn bind_vertex_buffers<I, T>(&mut self, first_binding: pso::BufferIndex, buffers: I)
     where
         I: IntoIterator<Item = (T, buffer::Offset)>,
         T: Borrow<B::Buffer>,

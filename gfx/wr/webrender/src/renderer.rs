@@ -1332,14 +1332,16 @@ impl Renderer {
             };
             ( adapter, surface, instance)
         };
+        let cache_dir = dirs::cache_dir().expect("User's cache directory not found");
+        let cache_path = Some(PathBuf::from(&cache_dir).join("pipeline_cache.bin"));
         let init = DeviceInit {
             instance: Box::new(instance),
             adapter: adapter,
             surface: surface,
             window_size: (width, height),
             descriptor_count: None,
-            cache_path: None,
-            save_cache: false,
+            cache_path,
+            save_cache: true,
         };
         Self::init(init, notifier, options, shaders)
     }

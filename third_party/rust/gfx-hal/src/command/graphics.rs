@@ -6,9 +6,9 @@ use super::{
     ClearColorRaw, ClearDepthStencilRaw, ClearValueRaw, CommandBuffer, DescriptorSetOffset, Level,
     Primary, RawCommandBuffer, RenderPassInlineEncoder, RenderPassSecondaryEncoder, Shot,
 };
-use queue::capability::{Graphics, GraphicsOrCompute, Supports};
-use Backend;
-use {buffer, image, pso, query};
+use crate::queue::capability::{Graphics, GraphicsOrCompute, Supports};
+use crate::Backend;
+use crate::{buffer, image, pso, query};
 
 /// A universal clear color supporting integer formats
 /// as well as the standard floating-point.
@@ -191,7 +191,7 @@ impl<B: Backend, C: Supports<Graphics>, S: Shot, L: Level> CommandBuffer<B, C, S
     }
 
     /// Identical to the `RawCommandBuffer` method of the same name.
-    pub unsafe fn bind_vertex_buffers<I, T>(&mut self, first_binding: u32, buffers: I)
+    pub unsafe fn bind_vertex_buffers<I, T>(&mut self, first_binding: pso::BufferIndex, buffers: I)
     where
         I: IntoIterator<Item = (T, buffer::Offset)>,
         T: Borrow<B::Buffer>,

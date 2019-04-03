@@ -16,15 +16,16 @@ use std::borrow::Borrow;
 use std::ops::Range;
 use std::{iter, mem, slice};
 
-use {buffer, format, image, mapping, pass, pso, query};
-use {Backend, MemoryTypeId};
+use crate::{buffer, format, image, mapping, pass, pso, query};
+use crate::{Backend, MemoryTypeId};
 
-use error::HostExecutionError;
-use memory::Requirements;
-use pool::{CommandPool, CommandPoolCreateFlags};
-use queue::{QueueFamilyId, QueueGroup};
-use range::RangeArg;
-use window::{self, Backbuffer, SwapchainConfig};
+use crate::error::HostExecutionError;
+use crate::memory::Requirements;
+use crate::pool::{CommandPool, CommandPoolCreateFlags};
+use crate::pso::DescriptorPoolCreateFlags;
+use crate::queue::{QueueFamilyId, QueueGroup};
+use crate::range::RangeArg;
+use crate::window::{self, Backbuffer, SwapchainConfig};
 
 /// Error occurred caused device to be lost.
 #[derive(Clone, Copy, Debug, Fail, PartialEq, Eq)]
@@ -483,6 +484,7 @@ pub trait Device<B: Backend>: Any + Send + Sync {
         &self,
         max_sets: usize,
         descriptor_ranges: I,
+        flags: DescriptorPoolCreateFlags,
     ) -> Result<B::DescriptorPool, OutOfMemory>
     where
         I: IntoIterator,

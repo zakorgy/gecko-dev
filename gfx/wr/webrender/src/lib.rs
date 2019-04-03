@@ -178,6 +178,7 @@ extern crate dwrote;
 extern crate app_units;
 extern crate bincode;
 extern crate byteorder;
+extern crate dirs;
 extern crate fxhash;
 #[cfg(feature = "gleam")]
 extern crate gleam;

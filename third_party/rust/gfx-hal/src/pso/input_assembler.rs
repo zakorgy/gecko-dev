@@ -1,8 +1,8 @@
 //! Input Assembler (IA) stage description.
 //! The input assembler collects raw vertex and index data.
 
-use format;
-use Primitive;
+use crate::format;
+use crate::Primitive;
 
 /// Shader binding location.
 pub type Location = u32;
@@ -12,8 +12,28 @@ pub type BufferIndex = u32;
 pub type ElemOffset = u32;
 /// Offset between attribute values, in bytes
 pub type ElemStride = u32;
-/// The number of instances between each subsequent attribute value
+/// Number of instances between each advancement of the vertex buffer.
 pub type InstanceRate = u8;
+
+/// The rate at which to advance input data to shaders for the given buffer
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum VertexInputRate {
+    /// Advance the buffer after every vertex
+    Vertex,
+    /// Advance the buffer after every instance
+    Instance(InstanceRate),
+}
+
+impl VertexInputRate {
+    /// Get the numeric representation of the rate
+    pub fn as_uint(&self) -> u8 {
+        match *self {
+            VertexInputRate::Vertex => 0,
+            VertexInputRate::Instance(divisor) => divisor,
+        }
+    }
+}
 
 /// A struct element descriptor.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
@@ -25,26 +45,36 @@ pub struct Element<F> {
     pub offset: ElemOffset,
 }
 
-/// Vertex buffer descriptor
+/// Vertex buffer description. Notably, completely separate from resource `Descriptor`s
+/// used in `DescriptorSet`s.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct VertexBufferDesc {
-    /// Binding number of this vertex buffer descriptor.
+    /// Binding number of this vertex buffer. This binding number is
+    /// used only for vertex buffers, and is completely separate from
+    /// `Descriptor` and `DescriptorSet` bind points.
     pub binding: BufferIndex,
     /// Total container size, in bytes.
     /// Specifies the byte distance between two consecutive elements.
     pub stride: ElemStride,
-    /// Rate of the input for the given buffer
-    pub rate: InstanceRate,
+    /// The rate at which to advance data for the given buffer
+    ///
+    /// i.e. the rate at which data passed to shaders will get advanced by
+    /// `stride` bytes
+    pub rate: VertexInputRate,
 }
 
-/// PSO vertex attribute descriptor
+/// Vertex attribute description. Notably, completely separate from resource `Descriptor`s
+/// used in `DescriptorSet`s.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct AttributeDesc {
-    /// Attribute binding location in the shader.
+    /// Attribute binding location in the shader. Attribute locations are
+    /// shared between all vertex buffers in a pipeline, meaning that even if the
+    /// data for this attribute comes from a different vertex buffer, it still cannot
+    /// share the same location with another attribute.
     pub location: Location,
-    /// Binding number of the associated vertex buffer descriptor.
+    /// Binding number of the associated vertex buffer.
     pub binding: BufferIndex,
     /// Attribute element description.
     pub element: Element<format::Format>,

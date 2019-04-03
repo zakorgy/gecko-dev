@@ -5,8 +5,8 @@ extern crate gfx_hal as hal;
 #[cfg(feature = "winit")]
 extern crate winit;
 
-use hal::range::RangeArg;
-use hal::{
+use crate::hal::range::RangeArg;
+use crate::hal::{
     buffer, command, device, error, format, image, mapping, memory, pass, pool, pso, query, queue,
 };
 use std::borrow::Borrow;
@@ -290,6 +290,7 @@ impl hal::Device<Backend> for Device {
         &self,
         _: usize,
         _: I,
+        _: pso::DescriptorPoolCreateFlags,
     ) -> Result<DescriptorPool, device::OutOfMemory>
     where
         I: IntoIterator,
@@ -836,7 +837,6 @@ impl hal::Surface<Backend> for Surface {
         hal::SurfaceCapabilities,
         Option<Vec<format::Format>>,
         Vec<hal::PresentMode>,
-        Vec<hal::CompositeAlpha>,
     ) {
         unimplemented!()
     }

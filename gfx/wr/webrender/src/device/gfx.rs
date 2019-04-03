@@ -720,7 +720,7 @@ impl<B: hal::Backend> Buffer<B> {
             requirements.type_mask as u32,
             memory_usage,
             requirements.size,
-            std::cmp::max(requirements.alignment, (alignment_mask + 1) as u64)
+            std::cmp::max(requirements.alignment, (alignment_mask + 1) as u64),
         ).expect("Allocate memory failed");
 
         unsafe { device.bind_buffer_memory(&memory_block.memory(), memory_block.range().start, &mut buffer) }
@@ -737,12 +737,11 @@ impl<B: hal::Backend> Buffer<B> {
     }
 
     pub fn update_all<T: Copy>(&mut self, device: &B::Device, data: &[T]) {
-        let offset = self.memory_block.range().start;
-        let length = (data.len() * std::mem::size_of::<T>()) as u64;
-        let range = offset .. offset + length;
+        let size = (data.len() * std::mem::size_of::<T>()) as u64;
+        let range = 0 ..  size;
         unsafe {
-            let mut mapped = self.memory_block.map(device, range).expect("Mapping memory block failed");
-            mapped.write(device, 0 .. length).expect("Writer creation failed").write(&data);
+            let mut mapped = self.memory_block.map(device, range.clone()).expect("Mapping memory block failed");
+            mapped.write(device, range).expect("Writer creation failed").write(&data);
         }
         self.memory_block.unmap(device);
     }
@@ -753,7 +752,7 @@ impl<B: hal::Backend> Buffer<B> {
         data: &[T],
         offset: usize,
     ) -> usize {
-        let offset = self.memory_block.range().start + (offset * self.stride) as u64;
+        let offset = (offset * self.stride) as u64;
         let size = (data.len() * self.stride) as u64;
         let range = offset .. offset + size;
         unsafe {
@@ -2138,14 +2137,18 @@ impl<B: hal::Backend> Device<B> {
                         },
                         dynamic: Some(DynamicConfig {
                             max_block_size: min(
-                                32 * 1024 * 1024,
+                                256 * 1024,
                                 memory_properties.memory_heaps[mt.heap_index as usize] / 8,
                             ),
                             block_size_granularity: min(
                                 256,
                                 memory_properties.memory_heaps[mt.heap_index as usize] / 1024,
                             ),
-                            blocks_per_chunk: 64,
+                            blocks_per_chunk: 256,
+                            max_chunk_size: min(
+                                32 * 1024 * 1024,
+                                memory_properties.memory_heaps[mt.heap_index as usize] / 8,
+                            ),
                         }),
                     };
                     (mt.properties, mt.heap_index as u32, config)
