@@ -86,7 +86,7 @@ pub struct Locals {
     uMode: i32,
 }
 
-const DESCRIPTOR_COUNT: usize = 400;
+const DESCRIPTOR_COUNT: usize = 1600;
 const DEBUG_DESCRIPTOR_COUNT: usize = 5;
 const DESCRIPTOR_SET_PER_DRAW: usize = 0;
 const DESCRIPTOR_SET_PER_INSTANCE: usize = 1;
@@ -2122,7 +2122,7 @@ impl<B: hal::Backend> Device<B> {
                 .iter()
                 .map(|ref mt| {
                     let config = HeapsConfig {
-                        linear: if mt
+                        linear: None,/*if mt
                             .properties
                             .contains(gfx_hal::memory::Properties::CPU_VISIBLE)
                         {
@@ -2134,8 +2134,8 @@ impl<B: hal::Backend> Device<B> {
                             })
                         } else {
                             None
-                        },
-                        dynamic: Some(DynamicConfig {
+                        },*/
+                        dynamic: None,/*Some(DynamicConfig {
                             max_block_size: min(
                                 256 * 1024,
                                 memory_properties.memory_heaps[mt.heap_index as usize] / 8,
@@ -2149,7 +2149,7 @@ impl<B: hal::Backend> Device<B> {
                                 32 * 1024 * 1024,
                                 memory_properties.memory_heaps[mt.heap_index as usize] / 8,
                             ),
-                        }),
+                        }),*/
                     };
                     (mt.properties, mt.heap_index as u32, config)
                 });
@@ -4603,9 +4603,7 @@ impl<B: hal::Backend> Device<B> {
     }
 
     pub fn submit_to_gpu(&mut self) -> bool {
-        if self.frame_id.0 % 20 == 0 {      
-            println!("#### Gfx submit");                    
-        }
+        //println!("#### Gfx submit");
         {
             let cmd_buffer = self.command_pool[self.next_id].acquire_command_buffer();
             let image = &self.frame_images[self.current_frame_id];
