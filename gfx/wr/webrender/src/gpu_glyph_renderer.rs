@@ -23,7 +23,7 @@ use renderer::{Renderer, RendererError, RendererStats};
 use shade::LazilyCompiledShader;
 use tiling::GlyphJob;
 #[cfg(not(feature = "gleam"))]
-use vertex_types::{VectorStencilInstance, VectorCoverInstance};
+use device::vertex_types::{VectorStencilInstance, VectorCoverInstance};
 
 // The area lookup table in uncompressed grayscale TGA format (TGA image format 3).
 #[cfg(feature = "gleam")]

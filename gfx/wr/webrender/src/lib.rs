@@ -129,8 +129,6 @@ mod texture_allocator;
 mod texture_cache;
 mod tiling;
 mod util;
-#[cfg(not(feature = "gleam"))]
-mod vertex_types;
 
 mod shader_source {
     include!(concat!(env!("OUT_DIR"), "/shaders.rs"));
