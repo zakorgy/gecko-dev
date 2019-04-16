@@ -1,9 +1,9 @@
 //! Queue family and groups.
 
-use backend::RawQueueGroup;
-use queue::capability::{Capability, Compute, Graphics, Transfer};
-use queue::{CommandQueue, QueueType};
-use Backend;
+use crate::backend::RawQueueGroup;
+use crate::queue::capability::{Capability, Compute, Graphics, Transfer};
+use crate::queue::{CommandQueue, QueueType};
+use crate::Backend;
 
 use std::any::Any;
 use std::fmt::Debug;
@@ -34,6 +34,7 @@ pub trait QueueFamily: Debug + Any + Send + Sync {
 
 /// Identifier for a queue family of a physical device.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct QueueFamilyId(pub usize);
 
 /// Strong-typed group of queues of the same queue family.

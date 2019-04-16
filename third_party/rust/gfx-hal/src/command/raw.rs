@@ -7,11 +7,11 @@ use super::{
     AttachmentClear, BufferCopy, BufferImageCopy, ImageBlit, ImageCopy, ImageResolve,
     SubpassContents,
 };
-use image::{Filter, Layout, SubresourceRange};
-use memory::{Barrier, Dependencies};
-use range::RangeArg;
-use {buffer, pass, pso, query};
-use {Backend, DrawCount, IndexCount, InstanceCount, VertexCount, VertexOffset, WorkGroupCount};
+use crate::image::{Filter, Layout, SubresourceRange};
+use crate::memory::{Barrier, Dependencies};
+use crate::range::RangeArg;
+use crate::{buffer, pass, pso, query};
+use crate::{Backend, DrawCount, IndexCount, InstanceCount, VertexCount, VertexOffset, WorkGroupCount};
 
 /// Unsafe variant of `ClearColor`.
 #[repr(C)]
@@ -209,8 +209,19 @@ pub trait RawCommandBuffer<B: Backend>: Any + Send + Sync {
     /// will operate on.
     ///
     /// Each buffer passed corresponds to the vertex input binding with the same index,
-    /// starting from an offset index `first_binding`.
-    unsafe fn bind_vertex_buffers<I, T>(&mut self, first_binding: u32, buffers: I)
+    /// starting from an offset index `first_binding`. For example an iterator with
+    /// two items and `first_binding` of 1 would fill vertex buffer binding numbers
+    /// 1 and 2.
+    ///
+    /// This binding number refers only to binding points for vertex buffers and is
+    /// completely separate from the binding numbers of `Descriptor`s in `DescriptorSet`s.
+    /// It needs to match with the `VertexBufferDesc` and `AttributeDesc`s to which the
+    /// data from each bound vertex buffer should flow.
+    ///
+    /// The `buffers` iterator should yield the `Buffer` to bind, as well as an
+    /// offset, in bytes, into that buffer where the vertex data that should be bound
+    /// starts.
+    unsafe fn bind_vertex_buffers<I, T>(&mut self, first_binding: pso::BufferIndex, buffers: I)
     where
         I: IntoIterator<Item = (T, buffer::Offset)>,
         T: Borrow<B::Buffer>;
@@ -370,7 +381,7 @@ pub trait RawCommandBuffer<B: Backend>: Any + Send + Sync {
     /// - A compute pipeline must be bound using `bind_compute_pipeline`.
     /// - Only queues with compute capability support this function.
     /// - This function must be called outside of a render pass.
-    /// - `count` must be less than or equal to `Limits::max_compute_group_count`
+    /// - `count` must be less than or equal to `Limits::max_compute_work_group_count`
     ///
     /// TODO:
     unsafe fn dispatch(&mut self, count: WorkGroupCount);

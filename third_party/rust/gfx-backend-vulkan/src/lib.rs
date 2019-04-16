@@ -33,7 +33,7 @@ use hal::pso::PipelineStage;
 use hal::{format, image, memory, queue};
 use hal::{Features, Limits, PatchSize, QueueType, SwapImageIndex};
 
-use std::borrow::Borrow;
+use std::borrow::{Borrow, Cow};
 use std::ffi::{CStr, CString};
 use std::sync::Arc;
 use std::{fmt, mem, ptr, slice};
@@ -206,30 +206,39 @@ unsafe extern "system" fn debug_utils_messenger_callback(
         _ => log::Level::Warn,
     };
     let message_type = &format!("{}", message_type);
-
-    let message_id_name = CStr::from_ptr(callback_data.p_message_id_name).to_string_lossy();
     let message_id_number: i32 = callback_data.message_id_number as i32;
-    let message = CStr::from_ptr(callback_data.p_message).to_string_lossy();
+
+    let message_id_name = if callback_data.p_message_id_name.is_null() {
+        Cow::from("")
+    } else {
+        CStr::from_ptr(callback_data.p_message_id_name).to_string_lossy()
+    };
+
+    let message = if callback_data.p_message.is_null() {
+        Cow::from("")
+    } else {
+        CStr::from_ptr(callback_data.p_message).to_string_lossy()
+    };
 
     let additional_info: [(&str, Option<String>); 3] = [
         (
             "queue info",
             display_debug_utils_label_ext(
-                callback_data.p_queue_labels,
+                callback_data.p_queue_labels as *mut _,
                 callback_data.queue_label_count as usize,
             ),
         ),
         (
             "cmd buf info",
             display_debug_utils_label_ext(
-                callback_data.p_cmd_buf_labels,
+                callback_data.p_cmd_buf_labels as *mut _,
                 callback_data.cmd_buf_label_count as usize,
             ),
         ),
         (
             "object info",
             display_debug_utils_object_name_info_ext(
-                callback_data.p_objects,
+                callback_data.p_objects as *mut _,
                 callback_data.object_count as usize,
             ),
         ),
@@ -375,7 +384,7 @@ impl hal::Instance for Instance {
     type Backend = Backend;
 
     fn enumerate_adapters(&self) -> Vec<hal::Adapter<Backend>> {
-        let mut devices = unsafe { self.raw.0.enumerate_physical_devices() }
+        let devices = unsafe { self.raw.0.enumerate_physical_devices() }
             .expect("Unable to enumerate adapters");
 
         devices
@@ -500,16 +509,14 @@ impl hal::PhysicalDevice<Backend> for PhysicalDevice {
                 p_enabled_features: &enabled_features,
             };
 
-            unsafe {
-                self.instance
-                    .0
-                    .create_device(self.handle, &info, None)
-                    .map_err(Into::<result::Error>::into)
-                    .map_err(Into::<DeviceCreationError>::into)?
-            }
+            self.instance
+                .0
+                .create_device(self.handle, &info, None)
+                .map_err(Into::<result::Error>::into)
+                .map_err(Into::<DeviceCreationError>::into)?
         };
 
-        let swapchain_fn = vk::KhrSwapchainFn::load(|name| unsafe {
+        let swapchain_fn = vk::KhrSwapchainFn::load(|name| {
             mem::transmute(
                 self.instance
                     .0
@@ -528,7 +535,7 @@ impl hal::PhysicalDevice<Backend> for PhysicalDevice {
                 let family_index = family.index;
                 let mut family_raw = hal::backend::RawQueueGroup::new(family.clone());
                 for id in 0..priorities.len() {
-                    let queue_raw = unsafe { device_arc.0.get_device_queue(family_index, id as _) };
+                    let queue_raw = device_arc.0.get_device_queue(family_index, id as _);
                     family_raw.add_queue(CommandQueue {
                         raw: Arc::new(queue_raw),
                         device: device_arc.clone(),
@@ -674,7 +681,9 @@ impl hal::PhysicalDevice<Backend> for PhysicalDevice {
                     == info::intel::DEVICE_SKY_LAKE_MASK);
 
         let features = unsafe { self.instance.0.get_physical_device_features(self.handle) };
-        let mut bits = Features::empty();
+        let mut bits = Features::TRIANGLE_FAN |
+            Features::SEPARATE_STENCIL_REF_VALUES |
+            Features::SAMPLER_MIP_LOD_BIAS;
 
         if features.robust_buffer_access != 0 {
             bits |= Features::ROBUST_BUFFER_ACCESS;
@@ -765,16 +774,19 @@ impl hal::PhysicalDevice<Backend> for PhysicalDevice {
         let max_group_size = limits.max_compute_work_group_size;
 
         Limits {
-            max_texture_size: limits.max_image_dimension3_d as _,
+            max_image_1d_size: limits.max_image_dimension1_d as _,
+            max_image_2d_size: limits.max_image_dimension2_d as _,
+            max_image_3d_size: limits.max_image_dimension3_d as _,
+            max_image_cube_size: limits.max_image_dimension_cube as _,
             max_texel_elements: limits.max_texel_buffer_elements as _,
             max_patch_size: limits.max_tessellation_patch_size as PatchSize,
             max_viewports: limits.max_viewports as _,
-            max_compute_group_count: [
+            max_compute_work_group_count: [
                 max_group_count[0] as _,
                 max_group_count[1] as _,
                 max_group_count[2] as _,
             ],
-            max_compute_group_size: [
+            max_compute_work_group_size: [
                 max_group_size[0] as _,
                 max_group_size[1] as _,
                 max_group_size[2] as _,
@@ -784,8 +796,8 @@ impl hal::PhysicalDevice<Backend> for PhysicalDevice {
             max_vertex_input_attribute_offset: limits.max_vertex_input_attribute_offset as _,
             max_vertex_input_binding_stride: limits.max_vertex_input_binding_stride as _,
             max_vertex_output_components: limits.max_vertex_output_components as _,
-            min_buffer_copy_offset_alignment: limits.optimal_buffer_copy_offset_alignment as _,
-            min_buffer_copy_pitch_alignment: limits.optimal_buffer_copy_row_pitch_alignment as _,
+            optimal_buffer_copy_offset_alignment: limits.optimal_buffer_copy_offset_alignment as _,
+            optimal_buffer_copy_pitch_alignment: limits.optimal_buffer_copy_row_pitch_alignment as _,
             min_texel_buffer_offset_alignment: limits.min_texel_buffer_offset_alignment as _,
             min_uniform_buffer_offset_alignment: limits.min_uniform_buffer_offset_alignment as _,
             min_storage_buffer_offset_alignment: limits.min_storage_buffer_offset_alignment as _,
@@ -796,6 +808,8 @@ impl hal::PhysicalDevice<Backend> for PhysicalDevice {
             max_color_attachments: limits.max_color_attachments as _,
             non_coherent_atom_size: limits.non_coherent_atom_size as _,
             max_sampler_anisotropy: limits.max_sampler_anisotropy,
+            min_vertex_input_binding_stride_alignment: 1,
+            .. Limits::default() //TODO: please halp
         }
     }
 
@@ -848,8 +862,8 @@ impl hal::PhysicalDevice<Backend> for PhysicalDevice {
 #[doc(hidden)]
 pub struct RawDevice(pub ash::Device, Features);
 impl fmt::Debug for RawDevice {
-    fn fmt(&self, _formatter: &mut fmt::Formatter) -> fmt::Result {
-        unimplemented!()
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "RawDevice") // TODO: Real Debug impl
     }
 }
 impl Drop for RawDevice {
@@ -957,7 +971,7 @@ impl hal::queue::RawCommandQueue<Backend> for CommandQueue {
             p_results: ptr::null_mut(),
         };
 
-        match unsafe { self.swapchain_fn.queue_present_khr(*self.raw, &info) } {
+        match self.swapchain_fn.queue_present_khr(*self.raw, &info) {
             vk::Result::SUCCESS => Ok(()),
             vk::Result::SUBOPTIMAL_KHR | vk::Result::ERROR_OUT_OF_DATE_KHR => Err(()),
             _ => panic!("Failed to present frame"),

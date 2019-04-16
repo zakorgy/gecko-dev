@@ -20,10 +20,10 @@ use std::borrow::Borrow;
 use std::fmt;
 use std::ops::Range;
 
-use buffer::Offset;
-use image::Layout;
-use pso::ShaderStageFlags;
-use Backend;
+use crate::buffer::Offset;
+use crate::image::Layout;
+use crate::pso::ShaderStageFlags;
+use crate::Backend;
 
 ///
 pub type DescriptorSetIndex = u16;
@@ -242,4 +242,13 @@ pub struct DescriptorSetCopy<'a, B: Backend> {
     pub dst_binding: DescriptorBinding,
     pub dst_array_offset: DescriptorArrayIndex,
     pub count: usize,
+}
+
+bitflags! {
+    /// Descriptor pool creation flags.
+    pub struct DescriptorPoolCreateFlags: u32 {
+        /// Specifies that descriptor sets are allowed to be freed from the pool
+        /// individually.
+        const FREE_DESCRIPTOR_SET = 0x1;
+    }
 }

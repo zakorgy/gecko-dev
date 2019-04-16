@@ -7,6 +7,7 @@ use hal;
 use hal::error::HostExecutionError;
 use hal::memory::Requirements;
 use hal::pool::CommandPoolCreateFlags;
+use hal::pso::VertexInputRate;
 use hal::range::RangeArg;
 use hal::{buffer, device as d, format, image, mapping, pass, pso, query, queue};
 use hal::{Backbuffer, Features, MemoryTypeId, SwapchainConfig};
@@ -34,7 +35,7 @@ impl d::Device<B> for Device {
             memory_type_index: mem_type.0 as _,
         };
 
-        let result = unsafe { self.raw.0.allocate_memory(&info, None) };
+        let result = self.raw.0.allocate_memory(&info, None);
 
         match result {
             Ok(memory) => Ok(n::Memory { raw: memory }),
@@ -69,7 +70,7 @@ impl d::Device<B> for Device {
             queue_family_index: family.0 as _,
         };
 
-        let result = unsafe { self.raw.0.create_command_pool(&info, None) };
+        let result = self.raw.0.create_command_pool(&info, None);
 
         match result {
             Ok(pool) => Ok(RawCommandPool {
@@ -83,7 +84,7 @@ impl d::Device<B> for Device {
     }
 
     unsafe fn destroy_command_pool(&self, pool: RawCommandPool) {
-        unsafe { self.raw.0.destroy_command_pool(pool.raw, None) };
+        self.raw.0.destroy_command_pool(pool.raw, None);
     }
 
     unsafe fn create_render_pass<'a, IA, IS, ID>(
@@ -218,7 +219,7 @@ impl d::Device<B> for Device {
             p_dependencies: dependencies.as_ptr(),
         };
 
-        let result = unsafe { self.raw.0.create_render_pass(&info, None) };
+        let result = self.raw.0.create_render_pass(&info, None);
 
         match result {
             Ok(renderpass) => Ok(n::RenderPass {
@@ -271,7 +272,7 @@ impl d::Device<B> for Device {
             p_push_constant_ranges: push_constant_ranges.as_ptr(),
         };
 
-        let result = unsafe { self.raw.0.create_pipeline_layout(&info, None) };
+        let result = self.raw.0.create_pipeline_layout(&info, None);
 
         match result {
             Ok(raw) => Ok(n::PipelineLayout { raw }),
@@ -299,7 +300,7 @@ impl d::Device<B> for Device {
             p_initial_data: data as _,
         };
 
-        let result = unsafe { self.raw.0.create_pipeline_cache(&info, None) };
+        let result = self.raw.0.create_pipeline_cache(&info, None);
 
         match result {
             Ok(raw) => Ok(n::PipelineCache { raw }),
@@ -313,7 +314,7 @@ impl d::Device<B> for Device {
         &self,
         cache: &n::PipelineCache,
     ) -> Result<Vec<u8>, d::OutOfMemory> {
-        let result = unsafe { self.raw.0.get_pipeline_cache_data(cache.raw) };
+        let result = self.raw.0.get_pipeline_cache_data(cache.raw);
 
         match result {
             Ok(data) => Ok(data),
@@ -324,7 +325,7 @@ impl d::Device<B> for Device {
     }
 
     unsafe fn destroy_pipeline_cache(&self, cache: n::PipelineCache) {
-        unsafe { self.raw.0.destroy_pipeline_cache(cache.raw, None) };
+        self.raw.0.destroy_pipeline_cache(cache.raw, None);
     }
 
     unsafe fn merge_pipeline_caches<I>(
@@ -340,14 +341,12 @@ impl d::Device<B> for Device {
             .into_iter()
             .map(|s| s.borrow().raw)
             .collect::<Vec<_>>();
-        let result = unsafe {
-            self.raw.0.fp_v1_0().merge_pipeline_caches(
-                self.raw.0.handle(),
-                target.raw,
-                caches.len() as u32,
-                caches.as_ptr(),
-            )
-        };
+        let result = self.raw.0.fp_v1_0().merge_pipeline_caches(
+            self.raw.0.handle(),
+            target.raw,
+            caches.len() as u32,
+            caches.as_ptr(),
+        );
 
         match result {
             vk::Result::SUCCESS => Ok(()),
@@ -479,10 +478,12 @@ impl d::Device<B> for Device {
                         vertex_bindings.push(vk::VertexInputBindingDescription {
                             binding: vbuf.binding,
                             stride: vbuf.stride as u32,
-                            input_rate: if vbuf.rate == 0 {
-                                vk::VertexInputRate::VERTEX
-                            } else {
-                                vk::VertexInputRate::INSTANCE
+                            input_rate: match vbuf.rate {
+                                VertexInputRate::Vertex => vk::VertexInputRate::VERTEX,
+                                VertexInputRate::Instance(divisor) => {
+                                    debug_assert_eq!(divisor, 1, "Custom vertex rate divisors not supported in Vulkan backend without extension");
+                                    vk::VertexInputRate::INSTANCE
+                                },
                             },
                         });
                     }
@@ -542,10 +543,9 @@ impl d::Device<B> for Device {
                     } else {
                         vk::FALSE
                     },
-                    rasterizer_discard_enable: if desc.shaders.fragment.is_none() {
-                        vk::TRUE
-                    } else {
-                        vk::FALSE
+                    rasterizer_discard_enable: match (&desc.shaders.fragment, &desc.depth_stencil.depth, &desc.depth_stencil.stencil) {
+                        (None, pso::DepthTest::Off, pso::StencilTest::Off) => vk::TRUE,
+                                                                         _ => vk::FALSE,
                     },
                     polygon_mode,
                     cull_mode: conv::map_cull_face(desc.rasterizer.cull_face),
@@ -561,13 +561,13 @@ impl d::Device<B> for Device {
                     line_width,
                 });
 
-                let is_tessellated = desc.shaders.hull.is_some() && desc.shaders.domain.is_some();
-                if is_tessellated {
+                use hal::Primitive::PatchList;
+                if let PatchList(patch_control_points) = desc.input_assembler.primitive {
                     info_tessellation_states.push(vk::PipelineTessellationStateCreateInfo {
                         s_type: vk::StructureType::PIPELINE_TESSELLATION_STATE_CREATE_INFO,
                         p_next: ptr::null(),
                         flags: vk::PipelineTessellationStateCreateFlags::empty(),
-                        patch_control_points: 1, // TODO: 0 < control_points <= VkPhysicalDeviceLimits::maxTessellationPatchSize
+                        patch_control_points: patch_control_points as u32,
                     });
                 }
 
@@ -655,7 +655,7 @@ impl d::Device<B> for Device {
                         conv::map_stencil_side(front),
                         conv::map_stencil_side(back),
                     ),
-                    pso::StencilTest::Off => unsafe { mem::zeroed() },
+                    pso::StencilTest::Off => mem::zeroed(),
                 };
                 let (min_depth_bounds, max_depth_bounds) = match desc.baked_states.depth_bounds {
                     Some(ref range) => (range.start, range.end),
@@ -712,7 +712,7 @@ impl d::Device<B> for Device {
                             }
                             pso::BlendState::Off => vk::PipelineColorBlendAttachmentState {
                                 color_write_mask,
-                                ..unsafe { mem::zeroed() }
+                                ..mem::zeroed()
                             },
                         }
                     })
@@ -741,9 +741,7 @@ impl d::Device<B> for Device {
                     p_next: ptr::null(),
                     flags: vk::PipelineDynamicStateCreateFlags::empty(),
                     dynamic_state_count: (dynamic_states.len() - dynamic_state_base) as _,
-                    p_dynamic_states: unsafe {
-                        dynamic_states.as_ptr().offset(dynamic_state_base as _)
-                    },
+                    p_dynamic_states: dynamic_states.as_ptr().offset(dynamic_state_base as _),
                 });
 
                 let (base_handle, base_index) = match desc.parent {
@@ -781,10 +779,9 @@ impl d::Device<B> for Device {
                     p_vertex_input_state: info_vertex_input_states.last().unwrap(),
                     p_input_assembly_state: info_input_assembly_states.last().unwrap(),
                     p_rasterization_state: info_rasterization_states.last().unwrap(),
-                    p_tessellation_state: if is_tessellated {
-                        info_tessellation_states.last().unwrap()
-                    } else {
-                        ptr::null()
+                    p_tessellation_state: match desc.input_assembler.primitive {
+                        PatchList(_) => info_tessellation_states.last().unwrap(),
+                        _            => ptr::null(),
                     },
                     p_viewport_state: info_viewport_states.last().unwrap(),
                     p_multisample_state: info_multisample_states.last().unwrap(),
@@ -807,16 +804,14 @@ impl d::Device<B> for Device {
         let result = if valid_infos.is_empty() {
             Ok(Vec::new())
         } else {
-            unsafe {
-                self.raw.0.create_graphics_pipelines(
-                    match cache {
-                        Some(cache) => cache.raw,
-                        None => vk::PipelineCache::null(),
-                    },
-                    &valid_infos,
-                    None,
-                )
-            }
+            self.raw.0.create_graphics_pipelines(
+                match cache {
+                    Some(cache) => cache.raw,
+                    None => vk::PipelineCache::null(),
+                },
+                &valid_infos,
+                None,
+            )
         };
 
         let (pipelines, error) = match result {
@@ -948,16 +943,14 @@ impl d::Device<B> for Device {
         let result = if valid_infos.is_empty() {
             Ok(Vec::new())
         } else {
-            unsafe {
-                self.raw.0.create_compute_pipelines(
-                    match cache {
-                        Some(cache) => cache.raw,
-                        None => vk::PipelineCache::null(),
-                    },
-                    &valid_infos,
-                    None,
-                )
-            }
+            self.raw.0.create_compute_pipelines(
+                match cache {
+                    Some(cache) => cache.raw,
+                    None => vk::PipelineCache::null(),
+                },
+                &valid_infos,
+                None,
+            )
         };
 
         let (pipelines, error) = match result {
@@ -1016,7 +1009,7 @@ impl d::Device<B> for Device {
             layers: extent.depth,
         };
 
-        let result = unsafe { self.raw.0.create_framebuffer(&info, None) };
+        let result = self.raw.0.create_framebuffer(&info, None);
 
         match result {
             Ok(raw) => Ok(n::Framebuffer { raw }),
@@ -1041,7 +1034,7 @@ impl d::Device<B> for Device {
             p_code: spirv_data as *const _ as *const u32,
         };
 
-        let module = unsafe { self.raw.0.create_shader_module(&info, None) };
+        let module = self.raw.0.create_shader_module(&info, None);
 
         match module {
             Ok(raw) => Ok(n::ShaderModule { raw }),
@@ -1108,7 +1101,7 @@ impl d::Device<B> for Device {
             unnormalized_coordinates: vk::FALSE,
         };
 
-        let result = unsafe { self.raw.0.create_sampler(&info, None) };
+        let result = self.raw.0.create_sampler(&info, None);
 
         match result {
             Ok(sampler) => Ok(n::Sampler(sampler)),
@@ -1140,7 +1133,7 @@ impl d::Device<B> for Device {
             p_queue_family_indices: ptr::null(),
         };
 
-        let result = unsafe { self.raw.0.create_buffer(&info, None) };
+        let result = self.raw.0.create_buffer(&info, None);
 
         match result {
             Ok(raw) => Ok(n::Buffer { raw }),
@@ -1170,11 +1163,10 @@ impl d::Device<B> for Device {
         offset: u64,
         buffer: &mut n::Buffer,
     ) -> Result<(), d::BindError> {
-        let result = unsafe {
-            self.raw
-                .0
-                .bind_buffer_memory(buffer.raw, memory.raw, offset)
-        };
+        let result = self
+            .raw
+            .0
+            .bind_buffer_memory(buffer.raw, memory.raw, offset);
 
         match result {
             Ok(()) => Ok(()),
@@ -1205,7 +1197,7 @@ impl d::Device<B> for Device {
             range: size,
         };
 
-        let result = unsafe { self.raw.0.create_buffer_view(&info, None) };
+        let result = self.raw.0.create_buffer_view(&info, None);
 
         match result {
             Ok(raw) => Ok(n::BufferView { raw }),
@@ -1256,7 +1248,7 @@ impl d::Device<B> for Device {
             initial_layout: vk::ImageLayout::UNDEFINED,
         };
 
-        let result = unsafe { self.raw.0.create_image(&info, None) };
+        let result = self.raw.0.create_image(&info, None);
 
         match result {
             Ok(raw) => Ok(n::Image {
@@ -1309,7 +1301,7 @@ impl d::Device<B> for Device {
     ) -> Result<(), d::BindError> {
         // TODO: error handling
         // TODO: check required type
-        let result = unsafe { self.raw.0.bind_image_memory(image.raw, memory.raw, offset) };
+        let result = self.raw.0.bind_image_memory(image.raw, memory.raw, offset);
 
         match result {
             Ok(()) => Ok(()),
@@ -1348,7 +1340,7 @@ impl d::Device<B> for Device {
             subresource_range: conv::map_subresource_range(&range),
         };
 
-        let result = unsafe { self.raw.0.create_image_view(&info, None) };
+        let result = self.raw.0.create_image_view(&info, None);
 
         match result {
             Ok(view) => Ok(n::ImageView {
@@ -1370,6 +1362,7 @@ impl d::Device<B> for Device {
         &self,
         max_sets: usize,
         descriptor_pools: T,
+        flags: pso::DescriptorPoolCreateFlags,
     ) -> Result<n::DescriptorPool, d::OutOfMemory>
     where
         T: IntoIterator,
@@ -1389,13 +1382,13 @@ impl d::Device<B> for Device {
         let info = vk::DescriptorPoolCreateInfo {
             s_type: vk::StructureType::DESCRIPTOR_POOL_CREATE_INFO,
             p_next: ptr::null(),
-            flags: vk::DescriptorPoolCreateFlags::empty(), // disallow individual freeing
+            flags: conv::map_descriptor_pool_create_flags(flags),
             max_sets: max_sets as u32,
             pool_size_count: pools.len() as u32,
             p_pool_sizes: pools.as_ptr(),
         };
 
-        let result = unsafe { self.raw.0.create_descriptor_pool(&info, None) };
+        let result = self.raw.0.create_descriptor_pool(&info, None);
 
         match result {
             Ok(pool) => Ok(n::DescriptorPool {
@@ -1464,7 +1457,7 @@ impl d::Device<B> for Device {
             p_bindings: raw_bindings.as_ptr(),
         };
 
-        let result = unsafe { self.raw.0.create_descriptor_set_layout(&info, None) };
+        let result = self.raw.0.create_descriptor_set_layout(&info, None);
 
         match result {
             Ok(layout) => Ok(n::DescriptorSetLayout {
@@ -1619,9 +1612,7 @@ impl d::Device<B> for Device {
             })
             .collect::<Vec<_>>();
 
-        unsafe {
-            self.raw.0.update_descriptor_sets(&[], &copies);
-        }
+        self.raw.0.update_descriptor_sets(&[], &copies);
     }
 
     unsafe fn map_memory<R>(&self, memory: &n::Memory, range: R) -> Result<*mut u8, mapping::Error>
@@ -1629,11 +1620,10 @@ impl d::Device<B> for Device {
         R: RangeArg<u64>,
     {
         let (offset, size) = conv::map_range_arg(&range);
-        let result = unsafe {
-            self.raw
-                .0
-                .map_memory(memory.raw, offset, size, vk::MemoryMapFlags::empty())
-        };
+        let result = self
+            .raw
+            .0
+            .map_memory(memory.raw, offset, size, vk::MemoryMapFlags::empty());
 
         match result {
             Ok(ptr) => Ok(ptr as *mut _),
@@ -1649,7 +1639,7 @@ impl d::Device<B> for Device {
     }
 
     unsafe fn unmap_memory(&self, memory: &n::Memory) {
-        unsafe { self.raw.0.unmap_memory(memory.raw) }
+        self.raw.0.unmap_memory(memory.raw)
     }
 
     unsafe fn flush_mapped_memory_ranges<'a, I, R>(&self, ranges: I) -> Result<(), d::OutOfMemory>
@@ -1659,7 +1649,7 @@ impl d::Device<B> for Device {
         R: RangeArg<u64>,
     {
         let ranges = conv::map_memory_ranges(ranges);
-        let result = unsafe { self.raw.0.flush_mapped_memory_ranges(&ranges) };
+        let result = self.raw.0.flush_mapped_memory_ranges(&ranges);
 
         match result {
             Ok(()) => Ok(()),
@@ -1683,7 +1673,7 @@ impl d::Device<B> for Device {
         R: RangeArg<u64>,
     {
         let ranges = conv::map_memory_ranges(ranges);
-        let result = unsafe { self.raw.0.invalidate_mapped_memory_ranges(&ranges) };
+        let result = self.raw.0.invalidate_mapped_memory_ranges(&ranges);
 
         match result {
             Ok(()) => Ok(()),
@@ -1752,7 +1742,7 @@ impl d::Device<B> for Device {
             .into_iter()
             .map(|fence| fence.borrow().0)
             .collect::<Vec<_>>();
-        let result = unsafe { self.raw.0.reset_fences(&fences) };
+        let result = self.raw.0.reset_fences(&fences);
 
         match result {
             Ok(()) => Ok(()),
@@ -1784,7 +1774,7 @@ impl d::Device<B> for Device {
             d::WaitFor::Any => false,
             d::WaitFor::All => true,
         };
-        let result = unsafe { self.raw.0.wait_for_fences(&fences, all, timeout_ns) };
+        let result = self.raw.0.wait_for_fences(&fences, all, timeout_ns);
         match result {
             Ok(()) => Ok(true),
             Err(vk::Result::TIMEOUT) => Ok(false),
@@ -1800,7 +1790,7 @@ impl d::Device<B> for Device {
     }
 
     unsafe fn get_fence_status(&self, fence: &n::Fence) -> Result<bool, d::DeviceLost> {
-        let result = unsafe { self.raw.0.get_fence_status(fence.0) };
+        let result = self.raw.0.get_fence_status(fence.0);
         match result {
             Ok(()) => Ok(true),
             Err(vk::Result::NOT_READY) => Ok(false),
@@ -1810,9 +1800,7 @@ impl d::Device<B> for Device {
     }
 
     unsafe fn free_memory(&self, memory: n::Memory) {
-        unsafe {
-            self.raw.0.free_memory(memory.raw, None);
-        }
+        self.raw.0.free_memory(memory.raw, None);
     }
 
     unsafe fn create_query_pool(
@@ -1844,7 +1832,7 @@ impl d::Device<B> for Device {
             pipeline_statistics,
         };
 
-        let result = unsafe { self.raw.0.create_query_pool(&info, None) };
+        let result = self.raw.0.create_query_pool(&info, None);
 
         match result {
             Ok(pool) => Ok(n::QueryPool(pool)),
@@ -1866,18 +1854,16 @@ impl d::Device<B> for Device {
         stride: buffer::Offset,
         flags: query::ResultFlags,
     ) -> Result<bool, d::OomOrDeviceLost> {
-        let result = unsafe {
-            self.raw.0.fp_v1_0().get_query_pool_results(
-                self.raw.0.handle(),
-                pool.0,
-                queries.start,
-                queries.end - queries.start,
-                data.len(),
-                data.as_mut_ptr() as *mut _,
-                stride,
-                conv::map_query_result_flags(flags),
-            )
-        };
+        let result = self.raw.0.fp_v1_0().get_query_pool_results(
+            self.raw.0.handle(),
+            pool.0,
+            queries.start,
+            queries.end - queries.start,
+            data.len(),
+            data.as_mut_ptr() as *mut _,
+            stride,
+            conv::map_query_result_flags(flags),
+        );
 
         match result {
             vk::Result::SUCCESS => Ok(true),
@@ -1923,18 +1909,16 @@ impl d::Device<B> for Device {
             queue_family_index_count: 0,
             p_queue_family_indices: ptr::null(),
             pre_transform: vk::SurfaceTransformFlagsKHR::IDENTITY,
-            composite_alpha: vk::CompositeAlphaFlagsKHR::from_raw(
-                1 << config.composite_alpha as u32,
-            ),
-            present_mode: unsafe { mem::transmute(config.present_mode) },
+            composite_alpha: conv::map_composite_alpha(config.composite_alpha),
+            present_mode: conv::map_present_mode(config.present_mode),
             clipped: 1,
             old_swapchain,
         };
 
-        let result = unsafe { functor.create_swapchain(&info, None) };
+        let result = functor.create_swapchain(&info, None);
 
         if old_swapchain != vk::SwapchainKHR::null() {
-            unsafe { functor.destroy_swapchain(old_swapchain, None) }
+            functor.destroy_swapchain(old_swapchain, None)
         }
 
         let swapchain_raw = match result {
@@ -1987,105 +1971,71 @@ impl d::Device<B> for Device {
     }
 
     unsafe fn destroy_swapchain(&self, swapchain: w::Swapchain) {
-        unsafe {
-            swapchain.functor.destroy_swapchain(swapchain.raw, None);
-        }
+        swapchain.functor.destroy_swapchain(swapchain.raw, None);
     }
 
     unsafe fn destroy_query_pool(&self, pool: n::QueryPool) {
-        unsafe {
-            self.raw.0.destroy_query_pool(pool.0, None);
-        }
+        self.raw.0.destroy_query_pool(pool.0, None);
     }
 
     unsafe fn destroy_shader_module(&self, module: n::ShaderModule) {
-        unsafe {
-            self.raw.0.destroy_shader_module(module.raw, None);
-        }
+        self.raw.0.destroy_shader_module(module.raw, None);
     }
 
     unsafe fn destroy_render_pass(&self, rp: n::RenderPass) {
-        unsafe {
-            self.raw.0.destroy_render_pass(rp.raw, None);
-        }
+        self.raw.0.destroy_render_pass(rp.raw, None);
     }
 
     unsafe fn destroy_pipeline_layout(&self, pl: n::PipelineLayout) {
-        unsafe {
-            self.raw.0.destroy_pipeline_layout(pl.raw, None);
-        }
+        self.raw.0.destroy_pipeline_layout(pl.raw, None);
     }
 
     unsafe fn destroy_graphics_pipeline(&self, pipeline: n::GraphicsPipeline) {
-        unsafe {
-            self.raw.0.destroy_pipeline(pipeline.0, None);
-        }
+        self.raw.0.destroy_pipeline(pipeline.0, None);
     }
 
     unsafe fn destroy_compute_pipeline(&self, pipeline: n::ComputePipeline) {
-        unsafe {
-            self.raw.0.destroy_pipeline(pipeline.0, None);
-        }
+        self.raw.0.destroy_pipeline(pipeline.0, None);
     }
 
     unsafe fn destroy_framebuffer(&self, fb: n::Framebuffer) {
-        unsafe {
-            self.raw.0.destroy_framebuffer(fb.raw, None);
-        }
+        self.raw.0.destroy_framebuffer(fb.raw, None);
     }
 
     unsafe fn destroy_buffer(&self, buffer: n::Buffer) {
-        unsafe {
-            self.raw.0.destroy_buffer(buffer.raw, None);
-        }
+        self.raw.0.destroy_buffer(buffer.raw, None);
     }
 
     unsafe fn destroy_buffer_view(&self, view: n::BufferView) {
-        unsafe {
-            self.raw.0.destroy_buffer_view(view.raw, None);
-        }
+        self.raw.0.destroy_buffer_view(view.raw, None);
     }
 
     unsafe fn destroy_image(&self, image: n::Image) {
-        unsafe {
-            self.raw.0.destroy_image(image.raw, None);
-        }
+        self.raw.0.destroy_image(image.raw, None);
     }
 
     unsafe fn destroy_image_view(&self, view: n::ImageView) {
-        unsafe {
-            self.raw.0.destroy_image_view(view.view, None);
-        }
+        self.raw.0.destroy_image_view(view.view, None);
     }
 
     unsafe fn destroy_sampler(&self, sampler: n::Sampler) {
-        unsafe {
-            self.raw.0.destroy_sampler(sampler.0, None);
-        }
+        self.raw.0.destroy_sampler(sampler.0, None);
     }
 
     unsafe fn destroy_descriptor_pool(&self, pool: n::DescriptorPool) {
-        unsafe {
-            self.raw.0.destroy_descriptor_pool(pool.raw, None);
-        }
+        self.raw.0.destroy_descriptor_pool(pool.raw, None);
     }
 
     unsafe fn destroy_descriptor_set_layout(&self, layout: n::DescriptorSetLayout) {
-        unsafe {
-            self.raw.0.destroy_descriptor_set_layout(layout.raw, None);
-        }
+        self.raw.0.destroy_descriptor_set_layout(layout.raw, None);
     }
 
     unsafe fn destroy_fence(&self, fence: n::Fence) {
-        unsafe {
-            self.raw.0.destroy_fence(fence.0, None);
-        }
+        self.raw.0.destroy_fence(fence.0, None);
     }
 
     unsafe fn destroy_semaphore(&self, semaphore: n::Semaphore) {
-        unsafe {
-            self.raw.0.destroy_semaphore(semaphore.0, None);
-        }
+        self.raw.0.destroy_semaphore(semaphore.0, None);
     }
 
     fn wait_idle(&self) -> Result<(), HostExecutionError> {
