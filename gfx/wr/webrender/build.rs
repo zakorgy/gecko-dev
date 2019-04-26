@@ -12,7 +12,7 @@ cfg_if! {
         #[macro_use]
         extern crate serde;
         extern crate gfx_hal;
-        #[path = "src/vertex_types.rs"]
+        #[path = "src/device/gfx/vertex_types.rs"]
         mod vertex_types;
         mod build_gfx;
         use build_gfx::gfx_main;
