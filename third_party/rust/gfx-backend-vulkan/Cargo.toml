@@ -1,0 +1,36 @@
+[package]
+name = "gfx-backend-vulkan"
+version = "0.1.0"
+description = "Vulkan API backend for gfx-rs"
+homepage = "https://github.com/gfx-rs/gfx"
+repository = "https://github.com/gfx-rs/gfx"
+keywords = ["graphics", "gamedev"]
+license = "MIT OR Apache-2.0"
+authors = ["The Gfx-rs Developers"]
+readme = "README.md"
+documentation = "https://docs.rs/gfx-backend-vulkan"
+workspace = "../../.."
+
+[features]
+default = ["winit"]
+use-rtld-next = ["shared_library"]
+
+[lib]
+name = "gfx_backend_vulkan"
+
+[dependencies]
+byteorder = "1"
+log = { version = "0.4" }
+lazy_static = "1"
+shared_library = { version = "0.1.9", optional = true }
+ash = "0.28.0"
+gfx-hal = { path = "../../hal", version = "0.1" }
+smallvec = "0.6"
+winit = { version = "0.18", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["libloaderapi", "windef", "winuser"] }
+
+[target.'cfg(all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android")))'.dependencies]
+x11 = { version = "2.15", features = ["xlib"]}
+xcb = { version = "0.8" }
