@@ -78,6 +78,7 @@ use scene_builder::{SceneBuilder, LowPrioritySceneBuilder};
 use shade::{Shaders, WrShaders};
 use smallvec::SmallVec;
 use render_task::{RenderTask, RenderTaskKind, RenderTaskTree};
+use rendy_memory::{DynamicConfig, HeapsConfig, LinearConfig};
 use resource_cache::ResourceCache;
 use util::drain_filter;
 
@@ -1167,7 +1168,6 @@ pub struct Renderer {
     result_rx: Receiver<ResultMsg>,
     debug_server: DebugServer,
     pub device: Device<back::Backend>,
-    _instance: back::Instance,
     pending_texture_updates: Vec<TextureUpdateList>,
     pending_gpu_cache_updates: Vec<GpuCacheUpdateList>,
     pending_gpu_cache_clear: bool,
@@ -1298,12 +1298,11 @@ impl Renderer {
     #[cfg(not(feature = "gecko"))]
     pub fn new(
         init: DeviceInit<back::Backend>,
-        instance: back::Instance,
         notifier: Box<RenderNotifier>,
         options: RendererOptions,
         shaders: Option<&mut WrShaders>
     ) -> Result<(Self, RenderApiSender), RendererError> {
-        Self::init(init, instance, notifier, options, shaders)
+        Self::init(init, notifier, options, shaders)
     }
 
     #[cfg(all(feature = "gecko", not(feature = "gleam")))]
@@ -1334,15 +1333,15 @@ impl Renderer {
             ( adapter, surface, instance)
         };
         let init = DeviceInit {
+            instance: Box::new(instance),
             adapter: adapter,
-            surface: surface,
+            surface: Some(surface),
             window_size: (width, height),
-            frame_count: None,
             descriptor_count: None,
             cache_path: None,
             save_cache: false,
         };
-        Self::init(init, instance, notifier, options, shaders)
+        Self::init(init, notifier, options, shaders)
     }
 
     /// Initializes WebRender and creates a `Renderer` and `RenderApiSender`.
@@ -1364,7 +1363,6 @@ impl Renderer {
     /// [rendereroptions]: struct.RendererOptions.html
     pub fn init(
         init: DeviceInit<back::Backend>,
-        _instance: back::Instance,
         notifier: Box<RenderNotifier>,
         mut options: RendererOptions,
         shaders: Option<&mut WrShaders>
@@ -1384,6 +1382,19 @@ impl Renderer {
             options.resource_override_path.clone(),
             options.upload_method.clone(),
             options.cached_programs.take(),
+            HeapsConfig {
+                /*linear: Some(LinearConfig {
+                    linear_size: 128 * 1024 * 1024,
+                }),
+                dynamic: Some(DynamicConfig {
+                    max_block_size: 1024 * 1024,
+                    block_size_granularity: 256,
+                    blocks_per_chunk: 256,
+                    max_chunk_size: 32 * 1024 * 1024,
+                }),*/
+                linear: None,
+                dynamic: None,
+            },
         );
 
         #[cfg(feature = "gleam")]
@@ -1711,7 +1722,6 @@ impl Renderer {
         let mut renderer = Renderer {
             result_rx,
             debug_server,
-            _instance,
             device,
             active_documents: Vec::new(),
             pending_texture_updates: Vec::new(),

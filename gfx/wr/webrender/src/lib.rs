@@ -190,6 +190,7 @@ extern crate pathfinder_partitioner;
 extern crate pathfinder_path_utils;
 extern crate plane_split;
 extern crate rayon;
+extern crate rendy_memory;
 extern crate ron;
 #[cfg(feature = "debugger")]
 extern crate serde_json;

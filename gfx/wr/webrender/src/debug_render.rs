@@ -16,7 +16,7 @@ cfg_if! {
         use device::Program;
     } else {
         use device::{PrimitiveType, ProgramId as Program, ShaderKind};
-        use vertex_types;
+        use device::vertex_types;
     }
 }
 

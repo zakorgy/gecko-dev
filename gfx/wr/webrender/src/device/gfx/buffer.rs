@@ -460,7 +460,7 @@ impl<B: hal::Backend> VertexBufferHandler<B> {
 
     pub(super) fn update<T: Copy>(&mut self, device: &B::Device, data: &[T], heaps: &mut Heaps<B>) {
         let buffer_len = data.len() * self.data_stride;
-        if self.buffer.buffer_len < buffer_len {
+        if self.buffer.buffer_len != buffer_len {
             let old_buffer = mem::replace(
                 &mut self.buffer,
                 Buffer::new(

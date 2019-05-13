@@ -26,7 +26,7 @@ gecko = []
 webrender_build = { version = "0.0.1", path = "../webrender_build" }
 cfg-if = "0.1.2"
 glsl-to-spirv = "0.1"
-gfx-hal = { git = "https://github.com/gfx-rs/gfx.git", rev="dea8caac9c09e907eeeb7a1d3d18fdd3e42062cb" }
+gfx-hal = { git = "https://github.com/gfx-rs/gfx.git", rev="37a177c6ba59a0b073c5ee56eaf9e5ce3b9a3d33" }
 ron = "0.1.7"
 serde = { version = "1.0", features = ["serde_derive"] }
 
@@ -38,8 +38,8 @@ bitflags = "1.0"
 byteorder = "1.0"
 cfg-if = "0.1.2"
 fxhash = "0.2.1"
-gfx-hal = { git = "https://github.com/gfx-rs/gfx.git", features = ["serde"], rev="dea8caac9c09e907eeeb7a1d3d18fdd3e42062cb" }
-gfx-backend-empty = { git = "https://github.com/gfx-rs/gfx.git", rev="dea8caac9c09e907eeeb7a1d3d18fdd3e42062cb" }
+gfx-hal = { git = "https://github.com/gfx-rs/gfx.git", features = ["serde"], rev="37a177c6ba59a0b073c5ee56eaf9e5ce3b9a3d33" }
+gfx-backend-empty = { git = "https://github.com/gfx-rs/gfx.git", rev="37a177c6ba59a0b073c5ee56eaf9e5ce3b9a3d33" }
 gleam = { optional = true, version = "0.6.8" }
 image = { optional = true, version = "0.21" }
 lazy_static = "1"
@@ -50,7 +50,7 @@ plane-split = "0.13.3"
 png = { optional = true, version = "0.14" }
 rand ="0.4"
 rayon = "1"
-rendy-memory = "0.1.0"
+rendy-memory = { git = "https://github.com/zakorgy/rendy.git", branch="memory_for_gecko" }
 ron = "0.1.7"
 serde = { version = "1.0", features = ["serde_derive"] }
 serde_json = { optional = true, version = "1.0" }
@@ -95,15 +95,15 @@ libc = "0.2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 dwrote = "0.8"
-gfx-backend-dx12 = { git = "https://github.com/gfx-rs/gfx.git", optional = true, rev="dea8caac9c09e907eeeb7a1d3d18fdd3e42062cb" }
+gfx-backend-dx12 = { git = "https://github.com/gfx-rs/gfx.git", optional = true, rev="37a177c6ba59a0b073c5ee56eaf9e5ce3b9a3d33" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.6"
 core-graphics = "0.17.1"
 core-text = { version = "13", default-features = false }
-gfx-backend-metal = { git = "https://github.com/gfx-rs/gfx.git", optional = true, rev="dea8caac9c09e907eeeb7a1d3d18fdd3e42062cb" }
+gfx-backend-metal = { git = "https://github.com/gfx-rs/gfx.git", optional = true, rev="37a177c6ba59a0b073c5ee56eaf9e5ce3b9a3d33" }
 
 [target.'cfg(all(any(unix, windows), not(target_os = "macos")))'.dependencies.gfx-backend-vulkan]
 git = "https://github.com/gfx-rs/gfx.git"
 optional = true
-rev="dea8caac9c09e907eeeb7a1d3d18fdd3e42062cb"
+rev="37a177c6ba59a0b073c5ee56eaf9e5ce3b9a3d33"
