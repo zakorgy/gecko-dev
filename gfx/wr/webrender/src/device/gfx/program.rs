@@ -11,7 +11,6 @@ use rendy_memory::Heaps;
 
 use super::buffer::{InstanceBufferHandler, UniformBufferHandler, VertexBufferHandler};
 use super::blend_state::SUBPIXEL_CONSTANT_TEXT_COLOR;
-use super::command::CommandPool;
 use super::descriptor::DescriptorPools;
 use super::image::ImageCore;
 use super::render_pass::RenderPass;
@@ -454,16 +453,31 @@ impl<B: hal::Backend> Program<B> {
         set: &B::DescriptorSet,
         image: &ImageCore<B>,
         binding: &'static str,
+        cmd_buffer: &mut hal::command::CommandBuffer<B, hal::Graphics>,
     ) {
         if let Some(binding) = self.bindings_map.get(&("t".to_owned() + binding)) {
             unsafe {
+                let mut src_stage = Some(hal::pso::PipelineStage::empty());
+                if let Some(barrier) = image.transit(
+                    hal::image::Access::SHADER_READ,
+                    hal::image::Layout::ShaderReadOnlyOptimal,
+                    image.subresource_range.clone(),
+                    src_stage.as_mut(),
+                ) {
+                    cmd_buffer.pipeline_barrier(
+                        src_stage.unwrap()
+                            .. hal::pso::PipelineStage::FRAGMENT_SHADER,
+                        hal::memory::Dependencies::empty(),
+                        &[barrier],
+                    );
+                }
                 device.write_descriptor_sets(Some(hal::pso::DescriptorSetWrite {
                     set,
                     binding: *binding,
                     array_offset: 0,
                     descriptors: Some(hal::pso::Descriptor::Image(
                         &image.view,
-                        image.state.get().1,
+                        hal::image::Layout::ShaderReadOnlyOptimal,
                     )),
                 }));
             }
@@ -491,13 +505,13 @@ impl<B: hal::Backend> Program<B> {
 
     pub(super) fn submit(
         &self,
-        cmd_pool: &mut CommandPool<B>,
+        cmd_buffer: &mut hal::command::CommandBuffer<B, hal::Graphics>,
         viewport: hal::pso::Viewport,
         render_pass: &B::RenderPass,
         frame_buffer: &B::Framebuffer,
         desc_pools: &mut DescriptorPools<B>,
-        desc_pools_global: &DescriptorPools<B>,
-        desc_pools_sampler: &DescriptorPools<B>,
+        desc_pools_global: &mut DescriptorPools<B>,
+        desc_pools_sampler: &mut DescriptorPools<B>,
         clear_values: &[hal::command::ClearValue],
         blend_state: hal::pso::BlendState,
         blend_color: ColorF,
@@ -508,12 +522,10 @@ impl<B: hal::Backend> Program<B> {
         pipeline_requirements: &FastHashMap<String, PipelineRequirements>,
         device: &B::Device,
     ) {
-        let cmd_buffer = cmd_pool.acquire_command_buffer();
         let vertex_buffer = &self.vertex_buffer[next_id];
         let instance_buffer = &self.instance_buffer[next_id];
 
         unsafe {
-            cmd_buffer.begin();
             cmd_buffer.set_viewports(0, &[viewport.clone()]);
             match scissor_rect {
                 Some(r) => cmd_buffer.set_scissors(
@@ -547,6 +559,8 @@ impl<B: hal::Backend> Program<B> {
                 &[],
             );
             desc_pools.next(&self.shader_kind, device, pipeline_requirements);
+            desc_pools_global.next(&self.shader_kind, device, pipeline_requirements);
+            desc_pools_sampler.next(&self.shader_kind, device, pipeline_requirements);
 
             if blend_state == SUBPIXEL_CONSTANT_TEXT_COLOR {
                 cmd_buffer.set_blend_constants(blend_color.to_array());
@@ -599,8 +613,6 @@ impl<B: hal::Backend> Program<B> {
                     }
                 }
             }
-
-            cmd_buffer.finish();
         }
     }
 
