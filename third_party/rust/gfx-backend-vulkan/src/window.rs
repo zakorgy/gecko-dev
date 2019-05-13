@@ -12,12 +12,15 @@ use hal::image::{NumSamples, Size};
 #[cfg(feature = "winit")]
 use winit;
 
-use conv;
+use {conv, native};
 use {Backend, Instance, PhysicalDevice, QueueFamily, RawInstance, VK_ENTRY};
 
+#[derive(Derivative)]
+#[derivative(Debug)]
 pub struct Surface {
     // Vk (EXT) specs [29.2.7 Platform-Independent Information]
     // For vkDestroySurfaceKHR: Host access to surface must be externally synchronized
+    #[derivative(Debug = "ignore")]
     pub(crate) raw: Arc<RawSurface>,
     pub(crate) width: Size,
     pub(crate) height: Size,
@@ -271,7 +274,7 @@ impl Instance {
         }
     }
 
-    fn create_surface_from_vk_surface_khr(
+    pub fn create_surface_from_vk_surface_khr(
         &self,
         surface: vk::SurfaceKHR,
         width: Size,
@@ -403,8 +406,11 @@ impl hal::Surface<Backend> for Surface {
     }
 }
 
+#[derive(Derivative)]
+#[derivative(Debug)]
 pub struct Swapchain {
     pub(crate) raw: vk::SwapchainKHR,
+    #[derivative(Debug = "ignore")]
     pub(crate) functor: khr::Swapchain,
 }
 
@@ -412,12 +418,11 @@ impl hal::Swapchain<Backend> for Swapchain {
     unsafe fn acquire_image(
         &mut self,
         timeout_ns: u64,
-        sync: hal::FrameSync<Backend>,
-    ) -> Result<hal::SwapImageIndex, hal::AcquireError> {
-        let (semaphore, fence) = match sync {
-            hal::FrameSync::Semaphore(semaphore) => (semaphore.0, vk::Fence::null()),
-            hal::FrameSync::Fence(fence) => (vk::Semaphore::null(), fence.0),
-        };
+        semaphore: Option<&native::Semaphore>,
+        fence: Option<&native::Fence>,
+    ) -> Result<(hal::SwapImageIndex, Option<hal::window::Suboptimal>), hal::AcquireError> {
+        let semaphore = semaphore.map_or(vk::Semaphore::null(), |s| s.0);
+        let fence = fence.map_or(vk::Fence::null(), |f| f.0);
 
         // will block if no image is available
         let index = self
@@ -427,18 +432,26 @@ impl hal::Swapchain<Backend> for Swapchain {
         match index {
             Ok((i, suboptimal)) => {
                 if suboptimal {
-                    // The index is still valid in this case but the swapchain no longer matches
-                    Err(hal::AcquireError::OutOfDate)
+                    Ok((i, Some(hal::window::Suboptimal)))
                 } else {
-                    Ok(i)
+                    Ok((i, None))
                 }
             }
             Err(vk::Result::NOT_READY) => Err(hal::AcquireError::NotReady),
-            Err(vk::Result::SUBOPTIMAL_KHR) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
+            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
                 Err(hal::AcquireError::OutOfDate)
             }
             Err(vk::Result::ERROR_SURFACE_LOST_KHR) => {
                 Err(hal::AcquireError::SurfaceLost(hal::device::SurfaceLost))
+            }
+            Err(vk::Result::ERROR_OUT_OF_HOST_MEMORY) => {
+                Err(hal::AcquireError::OutOfMemory(hal::device::OutOfMemory::OutOfHostMemory))
+            }
+            Err(vk::Result::ERROR_OUT_OF_DEVICE_MEMORY) => {
+                Err(hal::AcquireError::OutOfMemory(hal::device::OutOfMemory::OutOfDeviceMemory))
+            }
+            Err(vk::Result::ERROR_DEVICE_LOST) => {
+                Err(hal::AcquireError::DeviceLost(hal::device::DeviceLost))
             }
             _ => panic!("Failed to acquire image."),
         }

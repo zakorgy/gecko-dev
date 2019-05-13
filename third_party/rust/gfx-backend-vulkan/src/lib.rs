@@ -5,6 +5,8 @@ extern crate log;
 #[macro_use]
 extern crate ash;
 extern crate byteorder;
+#[macro_use]
+extern crate derivative;
 extern crate gfx_hal as hal;
 #[macro_use]
 extern crate lazy_static;
@@ -29,8 +31,9 @@ use ash::{Entry, LoadingError};
 
 use hal::adapter::DeviceType;
 use hal::error::{DeviceCreationError, HostExecutionError};
+use hal::device::{DeviceLost, OutOfMemory, SurfaceLost};
 use hal::pso::PipelineStage;
-use hal::{format, image, memory, queue};
+use hal::{format, image, memory, queue, window::{PresentError, Suboptimal}};
 use hal::{Features, Limits, PatchSize, QueueType, SwapImageIndex};
 
 use std::borrow::{Borrow, Cow};
@@ -60,10 +63,15 @@ lazy_static! {
     static ref SURFACE_EXTENSIONS: Vec<&'static CStr> = vec![
         khr::Surface::name(),
         // Platform-specific WSI extensions
+        #[cfg(all(unix, not(target_os = "android")))]
         khr::XlibSurface::name(),
+        #[cfg(all(unix, not(target_os = "android")))]
         khr::XcbSurface::name(),
+        #[cfg(all(unix, not(target_os = "android")))]
         khr::WaylandSurface::name(),
+        #[cfg(target_os = "android")]
         khr::AndroidSurface::name(),
+        #[cfg(target_os = "windows")]
         khr::Win32Surface::name(),
     ];
 }
@@ -91,6 +99,7 @@ pub struct RawInstance(
     pub ash::Instance,
     Option<(ext::DebugUtils, vk::DebugUtilsMessengerEXT)>,
 );
+
 impl Drop for RawInstance {
     fn drop(&mut self) {
         unsafe {
@@ -106,7 +115,10 @@ impl Drop for RawInstance {
     }
 }
 
+#[derive(Derivative)]
+#[derivative(Debug)]
 pub struct Instance {
+    #[derivative(Debug = "ignore")]
     pub raw: Arc<RawInstance>,
 
     /// Supported extensions of this instance.
@@ -173,13 +185,13 @@ unsafe fn display_debug_utils_object_name_info_ext(
 
                 match object_name {
                     Some(name) => format!(
-                        "(type: {}, hndl: {}, name: {})",
+                        "(type: {:?}, hndl: {}, name: {})",
                         obj_info.object_type,
                         &obj_info.object_handle.to_string(),
                         name
                     ),
                     None => format!(
-                        "(type: {}, hndl: {})",
+                        "(type: {:?}, hndl: {})",
                         obj_info.object_type,
                         &obj_info.object_handle.to_string()
                     ),
@@ -205,7 +217,7 @@ unsafe extern "system" fn debug_utils_messenger_callback(
         vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE => log::Level::Trace,
         _ => log::Level::Warn,
     };
-    let message_type = &format!("{}", message_type);
+    let message_type = &format!("{:?}", message_type);
     let message_id_number: i32 = callback_data.message_id_number as i32;
 
     let message_id_name = if callback_data.p_message_id_name.is_null() {
@@ -457,7 +469,10 @@ impl hal::queue::QueueFamily for QueueFamily {
     }
 }
 
+#[derive(Derivative)]
+#[derivative(Debug)]
 pub struct PhysicalDevice {
+    #[derivative(Debug = "ignore")]
     instance: Arc<RawInstance>,
     handle: vk::PhysicalDevice,
     properties: vk::PhysicalDeviceProperties,
@@ -634,6 +649,12 @@ impl hal::PhysicalDevice<Backend> for PhysicalDevice {
                     type_flags |= Properties::DEVICE_LOCAL;
                 }
                 if mem
+                  .property_flags
+                  .intersects(vk::MemoryPropertyFlags::HOST_VISIBLE)
+                {
+                    type_flags |= Properties::CPU_VISIBLE;
+                }
+                if mem
                     .property_flags
                     .intersects(vk::MemoryPropertyFlags::HOST_COHERENT)
                 {
@@ -644,12 +665,6 @@ impl hal::PhysicalDevice<Backend> for PhysicalDevice {
                     .intersects(vk::MemoryPropertyFlags::HOST_CACHED)
                 {
                     type_flags |= Properties::CPU_CACHED;
-                }
-                if mem
-                    .property_flags
-                    .intersects(vk::MemoryPropertyFlags::HOST_VISIBLE)
-                {
-                    type_flags |= Properties::CPU_VISIBLE;
                 }
                 if mem
                     .property_flags
@@ -724,6 +739,9 @@ impl hal::PhysicalDevice<Backend> for PhysicalDevice {
         if features.depth_bias_clamp != 0 {
             bits |= Features::DEPTH_BIAS_CLAMP;
         }
+        if features.fill_mode_non_solid != 0 {
+            bits |= Features::NON_FILL_POLYGON_MODE;
+        }
         if features.depth_bounds != 0 {
             bits |= Features::DEPTH_BOUNDS;
         }
@@ -774,13 +792,20 @@ impl hal::PhysicalDevice<Backend> for PhysicalDevice {
         let max_group_size = limits.max_compute_work_group_size;
 
         Limits {
-            max_image_1d_size: limits.max_image_dimension1_d as _,
-            max_image_2d_size: limits.max_image_dimension2_d as _,
-            max_image_3d_size: limits.max_image_dimension3_d as _,
-            max_image_cube_size: limits.max_image_dimension_cube as _,
+            max_image_1d_size: limits.max_image_dimension1_d,
+            max_image_2d_size: limits.max_image_dimension2_d,
+            max_image_3d_size: limits.max_image_dimension3_d,
+            max_image_cube_size: limits.max_image_dimension_cube,
+            max_image_array_layers: limits.max_image_array_layers as _,
             max_texel_elements: limits.max_texel_buffer_elements as _,
             max_patch_size: limits.max_tessellation_patch_size as PatchSize,
             max_viewports: limits.max_viewports as _,
+            max_viewport_dimensions: limits.max_viewport_dimensions,
+            max_framebuffer_extent: image::Extent {
+                width: limits.max_framebuffer_width,
+                height: limits.max_framebuffer_height,
+                depth: limits.max_framebuffer_layers,
+            },
             max_compute_work_group_count: [
                 max_group_count[0] as _,
                 max_group_count[1] as _,
@@ -806,6 +831,7 @@ impl hal::PhysicalDevice<Backend> for PhysicalDevice {
             framebuffer_stencil_samples_count: limits.framebuffer_stencil_sample_counts.as_raw()
                 as _,
             max_color_attachments: limits.max_color_attachments as _,
+            buffer_image_granularity: limits.buffer_image_granularity,
             non_coherent_atom_size: limits.non_coherent_atom_size as _,
             max_sampler_anisotropy: limits.max_sampler_anisotropy,
             min_vertex_input_binding_stride_alignment: 1,
@@ -877,9 +903,12 @@ impl Drop for RawDevice {
 // Need to explicitly synchronize on submission and present.
 pub type RawCommandQueue = Arc<vk::Queue>;
 
+#[derive(Derivative)]
+#[derivative(Debug)]
 pub struct CommandQueue {
     raw: RawCommandQueue,
     device: Arc<RawDevice>,
+    #[derivative(Debug = "ignore")]
     swapchain_fn: vk::KhrSwapchainFn,
 }
 
@@ -941,7 +970,7 @@ impl hal::queue::RawCommandQueue<Backend> for CommandQueue {
         &mut self,
         swapchains: Is,
         wait_semaphores: Iw,
-    ) -> Result<(), ()>
+    ) -> Result<Option<Suboptimal>, PresentError>
     where
         W: 'a + Borrow<window::Swapchain>,
         Is: IntoIterator<Item = (&'a W, SwapImageIndex)>,
@@ -972,8 +1001,13 @@ impl hal::queue::RawCommandQueue<Backend> for CommandQueue {
         };
 
         match self.swapchain_fn.queue_present_khr(*self.raw, &info) {
-            vk::Result::SUCCESS => Ok(()),
-            vk::Result::SUBOPTIMAL_KHR | vk::Result::ERROR_OUT_OF_DATE_KHR => Err(()),
+            vk::Result::SUCCESS => Ok(None),
+            vk::Result::SUBOPTIMAL_KHR => Ok(Some(Suboptimal)),
+            vk::Result::ERROR_OUT_OF_HOST_MEMORY => Err(PresentError::OutOfMemory(OutOfMemory::OutOfHostMemory)),
+            vk::Result::ERROR_OUT_OF_DEVICE_MEMORY => Err(PresentError::OutOfMemory(OutOfMemory::OutOfDeviceMemory)),
+            vk::Result::ERROR_DEVICE_LOST => Err(PresentError::DeviceLost(DeviceLost)),
+            vk::Result::ERROR_OUT_OF_DATE_KHR => Err(PresentError::OutOfDate),
+            vk::Result::ERROR_SURFACE_LOST_KHR => Err(PresentError::SurfaceLost(SurfaceLost)),
             _ => panic!("Failed to present frame"),
         }
     }
@@ -989,6 +1023,7 @@ impl hal::queue::RawCommandQueue<Backend> for CommandQueue {
     }
 }
 
+#[derive(Debug)]
 pub struct Device {
     raw: Arc<RawDevice>,
 }
