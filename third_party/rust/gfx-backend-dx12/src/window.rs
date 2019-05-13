@@ -28,7 +28,10 @@ impl Instance {
     }
 }
 
+#[derive(Derivative)]
+#[derivative(Debug)]
 pub struct Surface {
+    #[derivative(Debug = "ignore")]
     pub(crate) factory: native::WeakPtr<dxgi1_4::IDXGIFactory4>,
     pub(crate) wnd_handle: HWND,
 }
@@ -104,6 +107,7 @@ impl hal::Surface<Backend> for Surface {
     }
 }
 
+#[derive(Debug)]
 pub struct Swapchain {
     pub(crate) inner: native::WeakPtr<dxgi1_4::IDXGISwapChain3>,
     pub(crate) next_frame: usize,
@@ -119,8 +123,9 @@ impl hal::Swapchain<Backend> for Swapchain {
     unsafe fn acquire_image(
         &mut self,
         _timout_ns: u64,
-        _sync: hal::FrameSync<Backend>,
-    ) -> Result<hal::SwapImageIndex, hal::AcquireError> {
+        _semaphore: Option<&r::Semaphore>,
+        _fence: Option<&r::Fence>,
+    ) -> Result<(hal::SwapImageIndex, Option<hal::window::Suboptimal>), hal::AcquireError> {
         // TODO: sync
 
         if false {
@@ -133,7 +138,7 @@ impl hal::Swapchain<Backend> for Swapchain {
         }
 
         // TODO:
-        Ok(self.inner.GetCurrentBackBufferIndex())
+        Ok((self.inner.GetCurrentBackBufferIndex(), None))
     }
 }
 

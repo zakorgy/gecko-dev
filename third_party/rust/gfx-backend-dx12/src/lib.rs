@@ -42,6 +42,7 @@ use std::{mem, ptr};
 
 use native::descriptor;
 
+#[derive(Debug)]
 pub(crate) struct HeapProperties {
     pub page_property: d3d12::D3D12_CPU_PAGE_PROPERTY,
     pub memory_pool: d3d12::D3D12_MEMORY_POOL,
@@ -178,10 +179,14 @@ static QUEUE_FAMILIES: [QueueFamily; 4] = [
     QueueFamily::Normal(QueueType::Transfer),
 ];
 
+#[derive(Derivative)]
+#[derivative(Debug)]
 pub struct PhysicalDevice {
+    #[derivative(Debug = "ignore")]
     adapter: native::WeakPtr<dxgi1_2::IDXGIAdapter2>,
     features: Features,
     limits: Limits,
+    #[derivative(Debug = "ignore")]
     format_properties: Arc<FormatProperties>,
     private_caps: Capabilities,
     heap_properties: &'static [HeapProperties; NUM_HEAP_PROPERTIES],
@@ -402,10 +407,12 @@ impl hal::PhysicalDevice<Backend> for PhysicalDevice {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Derivative)]
+#[derivative(Debug)]
 pub struct CommandQueue {
     pub(crate) raw: native::CommandQueue,
     idle_fence: native::Fence,
+    #[derivative(Debug = "ignore")]
     idle_event: native::sync::Event,
 }
 
@@ -455,7 +462,7 @@ impl hal::queue::RawCommandQueue<Backend> for CommandQueue {
         &mut self,
         swapchains: Is,
         _wait_semaphores: Iw,
-    ) -> Result<(), ()>
+    ) -> Result<Option<hal::window::Suboptimal>, hal::window::PresentError>
     where
         W: 'a + Borrow<window::Swapchain>,
         Is: IntoIterator<Item = (&'a W, SwapImageIndex)>,
@@ -467,7 +474,7 @@ impl hal::queue::RawCommandQueue<Backend> for CommandQueue {
             swapchain.borrow().inner.Present(1, 0);
         }
 
-        Ok(())
+        Ok(None)
     }
 
     fn wait_idle(&self) -> Result<(), error::HostExecutionError> {
@@ -498,7 +505,7 @@ pub struct Capabilities {
     memory_architecture: MemoryArchitecture,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct CmdSignatures {
     draw: native::CommandSignature,
     draw_indexed: native::CommandSignature,
@@ -514,6 +521,7 @@ impl CmdSignatures {
 }
 
 // Shared objects between command buffers, owned by the device.
+#[derive(Debug)]
 struct Shared {
     pub signatures: CmdSignatures,
     pub service_pipes: internal::ServicePipes,
@@ -526,6 +534,8 @@ impl Shared {
     }
 }
 
+#[derive(Derivative)]
+#[derivative(Debug)]
 pub struct Device {
     raw: native::Device,
     private_caps: Capabilities,
@@ -540,7 +550,9 @@ pub struct Device {
     // CPU/GPU descriptor heaps
     heap_srv_cbv_uav: Mutex<resource::DescriptorHeap>,
     heap_sampler: Mutex<resource::DescriptorHeap>,
+    #[derivative(Debug = "ignore")]
     events: Mutex<Vec<native::Event>>,
+    #[derivative(Debug = "ignore")]
     shared: Arc<Shared>,
     // Present queue exposed by the `Present` queue family.
     // Required for swapchain creation. Only a single queue supports presentation.
@@ -975,6 +987,9 @@ impl hal::Instance for Instance {
                         // a corresponding buffer for mapping.
                         if i == MemoryGroup::ImageOnly as _ || i == MemoryGroup::TargetOnly as _ {
                             ty.properties.remove(Properties::CPU_VISIBLE);
+                            // Coherent and cached can only be on memory types that are cpu visible
+                            ty.properties.remove(Properties::COHERENT);
+                            ty.properties.remove(Properties::CPU_CACHED);
                         }
                         ty
                     }));
@@ -1034,7 +1049,8 @@ impl hal::Instance for Instance {
                     Features::MULTI_DRAW_INDIRECT |
                     Features::FORMAT_BC |
                     Features::INSTANCE_RATE |
-                    Features::SAMPLER_MIP_LOD_BIAS,
+                    Features::SAMPLER_MIP_LOD_BIAS |
+                    Features::SAMPLER_ANISOTROPY,
                 limits: Limits { // TODO
                     max_image_1d_size: d3d12::D3D12_REQ_TEXTURE1D_U_DIMENSION as _,
                     max_image_2d_size: d3d12::D3D12_REQ_TEXTURE2D_U_OR_V_DIMENSION as _,
@@ -1043,7 +1059,13 @@ impl hal::Instance for Instance {
                     max_image_array_layers: d3d12::D3D12_REQ_TEXTURE2D_ARRAY_AXIS_DIMENSION as _,
                     max_texel_elements: 0,
                     max_patch_size: 0,
-                    max_viewports: 0,
+                    max_viewports: d3d12::D3D12_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE as _,
+                    max_viewport_dimensions: [d3d12::D3D12_VIEWPORT_BOUNDS_MAX as _; 2],
+                    max_framebuffer_extent: hal::image::Extent { //TODO
+                        width: 4096,
+                        height: 4096,
+                        depth: 1,
+                    },
                     max_compute_work_group_count: [
                         d3d12::D3D12_CS_THREAD_GROUP_MAX_X,
                         d3d12::D3D12_CS_THREAD_GROUP_MAX_Y,
@@ -1059,8 +1081,6 @@ impl hal::Instance for Instance {
                     max_vertex_input_attribute_offset: 255, // TODO
                     max_vertex_input_binding_stride: d3d12::D3D12_REQ_MULTI_ELEMENT_STRUCTURE_SIZE_IN_BYTES as _,
                     max_vertex_output_components: 16, // TODO
-                    optimal_buffer_copy_offset_alignment: d3d12::D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT as _,
-                    optimal_buffer_copy_pitch_alignment: d3d12::D3D12_TEXTURE_DATA_PITCH_ALIGNMENT as _,
                     min_texel_buffer_offset_alignment: 1, // TODO
                     min_uniform_buffer_offset_alignment: 256, // Required alignment for CBVs
                     min_storage_buffer_offset_alignment: 1, // TODO
@@ -1069,9 +1089,12 @@ impl hal::Instance for Instance {
                     framebuffer_color_samples_count: 0b101,
                     framebuffer_depth_samples_count: 0b101,
                     framebuffer_stencil_samples_count: 0b101,
-                    max_color_attachments: 1, // TODO
+                    max_color_attachments: d3d12::D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT as _,
+                    buffer_image_granularity: 1,
                     non_coherent_atom_size: 1, //TODO: confirm
                     max_sampler_anisotropy: 16.,
+                    optimal_buffer_copy_offset_alignment: d3d12::D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT as _,
+                    optimal_buffer_copy_pitch_alignment: d3d12::D3D12_TEXTURE_DATA_PITCH_ALIGNMENT as _,
                     min_vertex_input_binding_stride_alignment: 1,
                     .. Limits::default() //TODO
                 },
@@ -1146,6 +1169,7 @@ fn validate_line_width(width: f32) {
     assert_eq!(width, 1.0);
 }
 
+#[derive(Debug)]
 pub struct FormatProperties(
     Box<[Mutex<Option<f::Properties>>]>,
     native::Device,

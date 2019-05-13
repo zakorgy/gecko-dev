@@ -25,7 +25,7 @@
 //! # extern crate gfx_backend_empty as empty;
 //! # extern crate gfx_hal;
 //! # fn main() {
-//! use gfx_hal::{Device, FrameSync};
+//! use gfx_hal::Device;
 //! # use gfx_hal::{CommandQueue, Graphics, Swapchain};
 //!
 //! # let mut swapchain: empty::Swapchain = return;
@@ -35,7 +35,7 @@
 //! let acquisition_semaphore = device.create_semaphore().unwrap();
 //! let render_semaphore = device.create_semaphore().unwrap();
 //!
-//! let frame = swapchain.acquire_image(!0, FrameSync::Semaphore(&acquisition_semaphore));
+//! let (frame, suboptimal) = swapchain.acquire_image(!0, Some(&acquisition_semaphore), None).unwrap();
 //! // render the scene..
 //! // `render_semaphore` will be signalled once rendering has been finished
 //! swapchain.present(&mut present_queue, 0, &[render_semaphore]);
@@ -60,6 +60,7 @@ use std::any::Any;
 use std::borrow::Borrow;
 use std::cmp::{max, min};
 use std::iter;
+use std::fmt;
 use std::ops::Range;
 
 /// Error occurred during swapchain creation.
@@ -136,7 +137,7 @@ impl Extent2D {
 }
 
 /// Describes information about what a `Surface`'s properties are.
-/// Fetch this with `surface.capabilities_and_formats(device)`.
+/// Fetch this with `surface.compatibility(device)`.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SurfaceCapabilities {
@@ -171,7 +172,7 @@ pub struct SurfaceCapabilities {
 
 /// A `Surface` abstracts the surface of a native window, which will be presented
 /// on the display.
-pub trait Surface<B: Backend>: Any + Send + Sync {
+pub trait Surface<B: Backend>: fmt::Debug + Any + Send + Sync {
     /// Retrieve the surface image kind.
     fn kind(&self) -> image::Kind;
 
@@ -204,21 +205,6 @@ pub trait Surface<B: Backend>: Any + Send + Sync {
 /// the GPU (aka double-buffering). A `SwapImageIndex` refers
 /// to a particular image in the swapchain.
 pub type SwapImageIndex = u32;
-
-/// Synchronization primitives which will be signalled once a frame got retrieved.
-///
-/// The semaphore or fence _must_ be unsignalled.
-pub enum FrameSync<'a, B: Backend> {
-    /// Semaphore used for synchronization.
-    ///
-    /// Will be signaled once the frame backbuffer is available.
-    Semaphore(&'a B::Semaphore),
-
-    /// Fence used for synchronization.
-    ///
-    /// Will be signaled once the frame backbuffer is available.
-    Fence(&'a B::Fence),
-}
 
 /// Specifies the mode regulating how a swapchain presents frames.
 #[repr(C)]
@@ -395,20 +381,50 @@ pub enum Backbuffer<B: Backend> {
     Framebuffer(B::Framebuffer),
 }
 
+/// Marker value returned if the swapchain no longer matches the surface properties exactly,
+/// but can still be used to present to the surface successfully.
+pub struct Suboptimal;
+
 /// Error on acquiring the next image from a swapchain.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug, Fail, PartialEq, Eq)]
 pub enum AcquireError {
+    /// Out of either host or device memory.
+    #[fail(display = "{}", _0)]
+    OutOfMemory(device::OutOfMemory),
     /// No image was ready after the specified timeout expired.
+    #[fail(display = "No images ready")]
     NotReady,
     /// The swapchain is no longer in sync with the surface, needs to be re-created.
+    #[fail(display = "Swapchain is out of date")]
     OutOfDate,
     /// The surface was lost, and the swapchain is no longer usable.
+    #[fail(display = "{}", _0)]
     SurfaceLost(device::SurfaceLost),
+    /// Device is lost
+    #[fail(display = "{}", _0)]
+    DeviceLost(device::DeviceLost),
+}
+
+/// Error on acquiring the next image from a swapchain.
+#[derive(Clone, Copy, Debug, Fail, PartialEq, Eq)]
+pub enum PresentError {
+    /// Out of either host or device memory.
+    #[fail(display = "{}", _0)]
+    OutOfMemory(device::OutOfMemory),
+    /// The swapchain is no longer in sync with the surface, needs to be re-created.
+    #[fail(display = "Swapchain is out of date")]
+    OutOfDate,
+    /// The surface was lost, and the swapchain is no longer usable.
+    #[fail(display = "{}", _0)]
+    SurfaceLost(device::SurfaceLost),
+    /// Device is lost
+    #[fail(display = "{}", _0)]
+    DeviceLost(device::DeviceLost),
 }
 
 /// The `Swapchain` is the backend representation of the surface.
 /// It consists of multiple buffers, which will be presented on the surface.
-pub trait Swapchain<B: Backend>: Any + Send + Sync {
+pub trait Swapchain<B: Backend>: fmt::Debug + Any + Send + Sync {
     /// Acquire a new swapchain image for rendering. This needs to be called before presenting.
     ///
     /// May fail according to one of the reasons indicated in `AcquireError` enum.
@@ -416,9 +432,8 @@ pub trait Swapchain<B: Backend>: Any + Send + Sync {
     /// # Synchronization
     ///
     /// The acquired image will not be immediately available when the function returns.
-    /// Once available the underlying primitive of `sync` will be signaled.
-    /// This can either be a [`Semaphore`](../trait.Resources.html#associatedtype.Semaphore)
-    /// or a [`Fence`](../trait.Resources.html#associatedtype.Fence).
+    /// Once available the provided [`Semaphore`](../trait.Resources.html#associatedtype.Semaphore)
+    /// and [`Fence`](../trait.Resources.html#associatedtype.Fence) will be signaled.
     ///
     /// # Examples
     ///
@@ -428,8 +443,9 @@ pub trait Swapchain<B: Backend>: Any + Send + Sync {
     unsafe fn acquire_image(
         &mut self,
         timeout_ns: u64,
-        sync: FrameSync<B>,
-    ) -> Result<SwapImageIndex, AcquireError>;
+        semaphore: Option<&B::Semaphore>,
+        fence: Option<&B::Fence>,
+    ) -> Result<(SwapImageIndex, Option<Suboptimal>), AcquireError>;
 
     /// Present one acquired image.
     ///
@@ -448,7 +464,7 @@ pub trait Swapchain<B: Backend>: Any + Send + Sync {
         present_queue: &mut CommandQueue<B, C>,
         image_index: SwapImageIndex,
         wait_semaphores: Iw,
-    ) -> Result<(), ()>
+    ) -> Result<Option<Suboptimal>, PresentError>
     where
         Self: 'a + Sized + Borrow<B::Swapchain>,
         C: Capability,
@@ -463,7 +479,7 @@ pub trait Swapchain<B: Backend>: Any + Send + Sync {
         &'a self,
         present_queue: &mut CommandQueue<B, C>,
         image_index: SwapImageIndex,
-    ) -> Result<(), ()>
+    ) -> Result<Option<Suboptimal>, PresentError>
     where
         Self: 'a + Sized + Borrow<B::Swapchain>,
         C: Capability,

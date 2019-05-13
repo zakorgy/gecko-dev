@@ -13,11 +13,12 @@ use std::any::Any;
 use std::borrow::Borrow;
 use std::iter;
 use std::marker::PhantomData;
+use std::fmt;
 
 use crate::command::{Primary, Submittable};
 use crate::error::HostExecutionError;
 use crate::pso;
-use crate::window::SwapImageIndex;
+use crate::window::{PresentError, Suboptimal, SwapImageIndex};
 use crate::Backend;
 
 pub use self::capability::{Capability, Compute, General, Graphics, Supports, Transfer};
@@ -49,14 +50,14 @@ pub struct Submission<Ic, Iw, Is> {
 
 /// `RawCommandQueue` are abstractions to the internal GPU execution engines.
 /// Commands are executed on the the device by submitting command buffers to queues.
-pub trait RawCommandQueue<B: Backend>: Any + Send + Sync {
+pub trait RawCommandQueue<B: Backend>: fmt::Debug + Any + Send + Sync {
     /// Submit command buffers to queue for execution.
     /// `fence` must be in unsignalled state, and will be signalled after all command buffers in the submission have
     /// finished execution.
     ///
     /// Unsafe because it's not checked that the queue can process the submitted command buffers.
     /// Trying to submit compute commands to a graphics queue will result in undefined behavior.
-    /// Each queue implements safe wrappers according to their supported functionalities!
+    /// Each queue implements safer wrappers according to their supported functionalities!
     unsafe fn submit<'a, T, Ic, S, Iw, Is>(
         &mut self,
         submission: Submission<Ic, Iw, Is>,
@@ -77,7 +78,7 @@ pub trait RawCommandQueue<B: Backend>: Any + Send + Sync {
         &mut self,
         swapchains: Is,
         wait_semaphores: Iw,
-    ) -> Result<(), ()>
+    ) -> Result<Option<Suboptimal>, PresentError>
     where
         Self: Sized,
         W: 'a + Borrow<B::Swapchain>,
@@ -90,6 +91,7 @@ pub trait RawCommandQueue<B: Backend>: Any + Send + Sync {
 }
 
 /// Stronger-typed and safer `CommandQueue` wraps around `RawCommandQueue`.
+#[derive(Debug)]
 pub struct CommandQueue<B: Backend, C>(B::CommandQueue, PhantomData<C>);
 
 impl<B: Backend, C: Capability> CommandQueue<B, C> {
@@ -159,7 +161,7 @@ impl<B: Backend, C: Capability> CommandQueue<B, C> {
         &mut self,
         swapchains: Is,
         wait_semaphores: Iw,
-    ) -> Result<(), ()>
+    ) -> Result<Option<Suboptimal>, PresentError>
     where
         W: 'a + Borrow<B::Swapchain>,
         Is: IntoIterator<Item = (&'a W, SwapImageIndex)>,
