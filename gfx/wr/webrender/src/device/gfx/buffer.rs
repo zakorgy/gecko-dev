@@ -471,7 +471,7 @@ impl<B: hal::Backend> UniformBufferHandler<B> {
                 heaps,
                 MemoryUsageValue::Dynamic,
                 self.buffer_usage,
-                self.pitch_alignment_mask,
+                self.pitch_alignment_mask | self.non_coherent_atom_size_mask,
                 data.len(),
                 self.data_stride,
             ));

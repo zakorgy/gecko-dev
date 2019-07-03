@@ -252,7 +252,7 @@ impl<B: hal::Backend> Device<B> {
                 }
                 if let Some(mut dynamic) = config.dynamic {
                     dynamic.min_device_allocation = dynamic.min_device_allocation.min(
-                        (memory_properties.memory_heaps[mt.heap_index as usize] / 1048)
+                        (memory_properties.memory_heaps[mt.heap_index as usize] / 1024)
                             .next_power_of_two(),
                     );
                     dynamic.block_size_granularity = dynamic.block_size_granularity.min(
