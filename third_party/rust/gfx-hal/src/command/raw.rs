@@ -11,7 +11,9 @@ use crate::image::{Filter, Layout, SubresourceRange};
 use crate::memory::{Barrier, Dependencies};
 use crate::range::RangeArg;
 use crate::{buffer, pass, pso, query};
-use crate::{Backend, DrawCount, IndexCount, InstanceCount, VertexCount, VertexOffset, WorkGroupCount};
+use crate::{
+    Backend, DrawCount, IndexCount, InstanceCount, VertexCount, VertexOffset, WorkGroupCount,
+};
 
 /// Unsafe variant of `ClearColor`.
 #[repr(C)]
@@ -24,6 +26,12 @@ pub union ClearColorRaw {
     /// `u32` variant
     pub uint32: [u32; 4],
     _align: [u32; 4],
+}
+
+impl std::fmt::Debug for ClearColorRaw {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        writeln![f, "ClearColorRaw"]
+    }
 }
 
 /// A variant of `ClearDepthStencil` that has a `#[repr(C)]` layout

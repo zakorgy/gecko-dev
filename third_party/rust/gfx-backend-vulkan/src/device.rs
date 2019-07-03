@@ -10,7 +10,7 @@ use hal::pool::CommandPoolCreateFlags;
 use hal::pso::VertexInputRate;
 use hal::range::RangeArg;
 use hal::{buffer, device as d, format, image, mapping, pass, pso, query, queue};
-use hal::{Backbuffer, Features, MemoryTypeId, SwapchainConfig};
+use hal::{Features, MemoryTypeId, SwapchainConfig};
 
 use std::borrow::Borrow;
 use std::ffi::CString;
@@ -160,14 +160,15 @@ impl d::Device<B> for Device {
                     .iter()
                     .map(|&id| id as u32)
                     .collect::<Box<[_]>>();
+                let resolves = subpass.resolves.iter().map(make_ref).collect::<Box<[_]>>();
 
-                (colors, depth_stencil, inputs, preserves)
+                (colors, depth_stencil, inputs, preserves, resolves)
             })
             .collect::<Box<[_]>>();
 
         let subpasses = attachment_refs
             .iter()
-            .map(|(colors, depth_stencil, inputs, preserves)| {
+            .map(|(colors, depth_stencil, inputs, preserves, resolves)| {
                 vk::SubpassDescription {
                     flags: vk::SubpassDescriptionFlags::empty(),
                     pipeline_bind_point: vk::PipelineBindPoint::GRAPHICS,
@@ -175,7 +176,7 @@ impl d::Device<B> for Device {
                     p_input_attachments: inputs.as_ptr(),
                     color_attachment_count: colors.len() as u32,
                     p_color_attachments: colors.as_ptr(),
-                    p_resolve_attachments: ptr::null(), // TODO
+                    p_resolve_attachments: if resolves.is_empty() { ptr::null() } else { resolves.as_ptr() },
                     p_depth_stencil_attachment: match depth_stencil {
                         Some(ref aref) => aref as *const _,
                         None => ptr::null(),
@@ -1876,7 +1877,7 @@ impl d::Device<B> for Device {
         surface: &mut w::Surface,
         config: SwapchainConfig,
         provided_old_swapchain: Option<w::Swapchain>,
-    ) -> Result<(w::Swapchain, Backbuffer<B>), hal::window::CreationError> {
+    ) -> Result<(w::Swapchain, Vec<n::Image>), hal::window::CreationError> {
         let functor = khr::Swapchain::new(&surface.raw.instance.0, &self.raw.0);
 
         let old_swapchain = match provided_old_swapchain {
@@ -1963,7 +1964,7 @@ impl d::Device<B> for Device {
             })
             .collect();
 
-        Ok((swapchain, Backbuffer::Images(images)))
+        Ok((swapchain, images))
     }
 
     unsafe fn destroy_swapchain(&self, swapchain: w::Swapchain) {

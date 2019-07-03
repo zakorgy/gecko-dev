@@ -455,7 +455,7 @@ impl hal::Device<Backend> for Device {
         _: &mut Surface,
         _: hal::SwapchainConfig,
         _: Option<Swapchain>,
-    ) -> Result<(Swapchain, hal::Backbuffer<Backend>), hal::window::CreationError> {
+    ) -> Result<(Swapchain, Vec<()>), hal::window::CreationError> {
         unimplemented!()
     }
 
@@ -866,6 +866,7 @@ impl hal::Swapchain<Backend> for Swapchain {
     }
 }
 
+#[derive(Debug)]
 pub struct Instance;
 
 impl Instance {

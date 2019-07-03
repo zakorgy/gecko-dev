@@ -372,17 +372,9 @@ impl SwapchainConfig {
     // TODO: depth-only, stencil-only, swapchain size, present modes, etc.
 }
 
-/// Swapchain backbuffer type
-#[derive(Debug)]
-pub enum Backbuffer<B: Backend> {
-    /// Color image chain
-    Images(Vec<B::Image>),
-    /// A single opaque framebuffer
-    Framebuffer(B::Framebuffer),
-}
-
 /// Marker value returned if the swapchain no longer matches the surface properties exactly,
 /// but can still be used to present to the surface successfully.
+#[derive(Debug)]
 pub struct Suboptimal;
 
 /// Error on acquiring the next image from a swapchain.

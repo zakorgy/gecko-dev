@@ -11,11 +11,16 @@
 # will likely look very different (and much more reasonable)
 
 [package]
-name = "veclist"
-version = "0.1.2"
-authors = ["omni-viral <scareaangel@gmail.com>"]
-description = "This library contains single simple collection. It can be used to push, access and pop with `O(1)` complexity"
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/omni-viral/veclist.git"
+name = "colorful"
+version = "0.2.1"
+authors = ["da2018 <da2018t@gmail.com>"]
+exclude = ["images/*", "examples"]
+description = "Make your terminal output colorful"
+homepage = "https://github.com/rocketsman/colorful"
+readme = "README.md"
+keywords = ["cli", "colors", "terminal"]
+categories = ["cli", "colors", "terminal"]
+license = "MIT"
+repository = "https://github.com/rocketsman/colorful"
 
 [dependencies]
