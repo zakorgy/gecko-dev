@@ -26,20 +26,21 @@ gecko = []
 webrender_build = { version = "0.0.1", path = "../webrender_build" }
 cfg-if = "0.1.2"
 glsl-to-spirv = "0.1"
-gfx-hal = { git = "https://github.com/gfx-rs/gfx.git", rev="37a177c6ba59a0b073c5ee56eaf9e5ce3b9a3d33" }
+gfx-hal = { version = "0.2", features = ["serde"] }
 ron = "0.1.7"
 serde = { version = "1.0", features = ["serde_derive"] }
 
 [dependencies]
 app_units = "0.7"
+arrayvec = "0.4"
 base64 = { optional = true, version = "0.10" }
 bincode = "1.0"
 bitflags = "1.0"
 byteorder = "1.0"
 cfg-if = "0.1.2"
 fxhash = "0.2.1"
-gfx-hal = { git = "https://github.com/gfx-rs/gfx.git", features = ["serde"], rev="37a177c6ba59a0b073c5ee56eaf9e5ce3b9a3d33" }
-gfx-backend-empty = { git = "https://github.com/gfx-rs/gfx.git", rev="37a177c6ba59a0b073c5ee56eaf9e5ce3b9a3d33" }
+gfx-hal = { version = "0.2", features = ["serde"] }
+gfx-backend-empty = "0.2.0"
 gleam = { optional = true, version = "0.6.8" }
 image = { optional = true, version = "0.21" }
 lazy_static = "1"
@@ -50,7 +51,8 @@ plane-split = "0.13.3"
 png = { optional = true, version = "0.14" }
 rand ="0.4"
 rayon = "1"
-rendy-memory = { git = "https://github.com/zakorgy/rendy.git", branch="memory_for_gecko" }
+rendy-memory = "0.2"
+rendy-descriptor = "0.2"
 ron = "0.1.7"
 serde = { version = "1.0", features = ["serde_derive"] }
 serde_json = { optional = true, version = "1.0" }
@@ -95,15 +97,14 @@ libc = "0.2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 dwrote = "0.8"
-gfx-backend-dx12 = { git = "https://github.com/gfx-rs/gfx.git", optional = true, rev="37a177c6ba59a0b073c5ee56eaf9e5ce3b9a3d33" }
+gfx-backend-dx12 = { version = "0.2", optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.6"
 core-graphics = "0.17.1"
 core-text = { version = "13", default-features = false }
-gfx-backend-metal = { git = "https://github.com/gfx-rs/gfx.git", optional = true, rev="37a177c6ba59a0b073c5ee56eaf9e5ce3b9a3d33" }
+gfx-backend-metal = { version = "0.2", optional = true }
 
 [target.'cfg(all(any(unix, windows), not(target_os = "macos")))'.dependencies.gfx-backend-vulkan]
-git = "https://github.com/gfx-rs/gfx.git"
+version = "0.2"
 optional = true
-rev="37a177c6ba59a0b073c5ee56eaf9e5ce3b9a3d33"

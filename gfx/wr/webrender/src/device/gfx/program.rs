@@ -3,16 +3,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use api::{ColorF, DeviceIntRect, ImageFormat};
-use euclid::Transform3D;
 use hal::{self, Device as BackendDevice};
 use internal_types::FastHashMap;
 use smallvec::SmallVec;
 use rendy_memory::Heaps;
+use std::borrow::Cow::{Borrowed};
 
-use super::buffer::{InstanceBufferHandler, UniformBufferHandler, VertexBufferHandler};
+use super::buffer::{InstanceBufferHandler, VertexBufferHandler};
 use super::blend_state::SUBPIXEL_CONSTANT_TEXT_COLOR;
-use super::descriptor::DescriptorPools;
-use super::image::ImageCore;
 use super::render_pass::RenderPass;
 use super::vertex_types;
 use super::PipelineRequirements;
@@ -23,16 +21,18 @@ use std::mem;
 
 const ENTRY_NAME: &str = "main";
 const MAX_INDEX_COUNT: usize = 4096;
+// The size of the push constant block is 68 bytes, and we upload it with u32 data (4 bytes).
+pub(super) const PUSH_CONSTANT_BLOCK_SIZE: usize = 17; // 68 / 4
 // The number of specialization constants in each shader.
 const SPECIALIZATION_CONSTANT_COUNT: usize = 5;
 // Size of a specialization constant variable in bytes.
 const SPECIALIZATION_CONSTANT_SIZE: usize = 4;
-const SPECIALIZATION_FEATURES: &'static [&'static [&'static str]] = &[
-    &["ALPHA_PASS"],
-    &["COLOR_TARGET"],
-    &["GLYPH_TRANSFORM"],
-    &["DITHERING"],
-    &["DEBUG_OVERDRAW"],
+const SPECIALIZATION_FEATURES: &'static [&'static str] = &[
+    "ALPHA_PASS",
+    "COLOR_TARGET",
+    "GLYPH_TRANSFORM",
+    "DITHERING",
+    "DEBUG_OVERDRAW",
 ];
 const QUAD: [vertex_types::Vertex; 6] = [
     vertex_types::Vertex {
@@ -55,32 +55,15 @@ const QUAD: [vertex_types::Vertex; 6] = [
     },
 ];
 
-impl ShaderKind {
-    pub(super) fn is_debug(&self) -> bool {
-        match *self {
-            ShaderKind::DebugFont | ShaderKind::DebugColor => true,
-            _ => false,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-#[allow(non_snake_case)]
-pub struct Locals {
-    uTransform: [[f32; 4]; 4],
-    uMode: i32,
-}
 
 pub(crate) struct Program<B: hal::Backend> {
-    bindings_map: FastHashMap<String, u32>,
     pipelines: FastHashMap<(hal::pso::BlendState, hal::pso::DepthTest), B::GraphicsPipeline>,
     pub(super) vertex_buffer: SmallVec<[VertexBufferHandler<B>; 1]>,
     pub(super) index_buffer: Option<SmallVec<[VertexBufferHandler<B>; 1]>>,
     pub(super) instance_buffer: SmallVec<[InstanceBufferHandler<B>; 1]>,
-    pub(super) locals_buffer: SmallVec<[UniformBufferHandler<B>; 1]>,
     pub(super) shader_name: String,
     pub(super) shader_kind: ShaderKind,
-    pub(super) bound_textures: [u32; 16],
+    pub(super) constants: [u32; PUSH_CONSTANT_BLOCK_SIZE],
 }
 
 impl<B: hal::Backend> Program<B> {
@@ -124,21 +107,21 @@ impl<B: hal::Backend> Program<B> {
 
         let (vs_module, fs_module) = shader_modules.get(shader_name).unwrap();
 
-        let mut constants = Vec::with_capacity(SPECIALIZATION_CONSTANT_COUNT);
         let mut specialization_data =
             vec![0; SPECIALIZATION_CONSTANT_COUNT * SPECIALIZATION_CONSTANT_SIZE];
-        for i in 0 .. SPECIALIZATION_CONSTANT_COUNT {
-            constants.push(hal::pso::SpecializationConstant {
-                id: i as _,
-                range: (SPECIALIZATION_CONSTANT_SIZE * i) as _
-                    .. (SPECIALIZATION_CONSTANT_SIZE * (i + 1)) as _,
-            });
-            for (index, feature) in SPECIALIZATION_FEATURES[i].iter().enumerate() {
-                if features.contains(feature) {
-                    specialization_data[SPECIALIZATION_CONSTANT_SIZE * i] = (index + 1) as u8;
+        let constants = SPECIALIZATION_FEATURES
+            .iter()
+            .zip(specialization_data.chunks_mut(SPECIALIZATION_CONSTANT_SIZE))
+            .enumerate()
+            .map(|(i, (feature, out_data))| {
+                out_data[0] = features.contains(feature) as u8;
+                hal::pso::SpecializationConstant {
+                    id: i as _,
+                    range: (SPECIALIZATION_CONSTANT_SIZE * i) as _
+                        .. (SPECIALIZATION_CONSTANT_SIZE * (i + 1)) as _,
                 }
-            }
-        }
+            })
+            .collect::<Vec<_>>();
 
         let pipelines = {
             let (vs_entry, fs_entry) = (
@@ -146,16 +129,16 @@ impl<B: hal::Backend> Program<B> {
                     entry: ENTRY_NAME,
                     module: &vs_module,
                     specialization: hal::pso::Specialization {
-                        constants: &constants,
-                        data: &specialization_data.as_slice(),
+                        constants: Borrowed(&constants),
+                        data: Borrowed(&specialization_data.as_slice()),
                     },
                 },
                 hal::pso::EntryPoint::<B> {
                     entry: ENTRY_NAME,
                     module: &fs_module,
                     specialization: hal::pso::Specialization {
-                        constants: &constants,
-                        data: &specialization_data.as_slice(),
+                        constants: Borrowed(&constants),
+                        data: Borrowed(&specialization_data.as_slice()),
                     },
                 },
             );
@@ -352,7 +335,6 @@ impl<B: hal::Backend> Program<B> {
 
         let mut vertex_buffer = SmallVec::new();
         let mut instance_buffer = SmallVec::new();
-        let mut locals_buffer = SmallVec::new();
         let mut index_buffer = if shader_kind.is_debug() {
             Some(SmallVec::new())
         } else {
@@ -375,12 +357,6 @@ impl<B: hal::Backend> Program<B> {
                 (limits.non_coherent_atom_size - 1) as usize,
                 (limits.optimal_buffer_copy_pitch_alignment - 1) as usize,
             ));
-            locals_buffer.push(UniformBufferHandler::new(
-                hal::buffer::Usage::UNIFORM,
-                mem::size_of::<Locals>(),
-                (limits.min_uniform_buffer_offset_alignment - 1) as usize,
-                (limits.non_coherent_atom_size - 1) as usize,
-            ));
             if let Some(ref mut index_buffer) = index_buffer {
                 index_buffer.push(VertexBufferHandler::new(
                     device,
@@ -394,18 +370,14 @@ impl<B: hal::Backend> Program<B> {
             }
         }
 
-        let bindings_map = pipeline_requirements.bindings_map;
-
         Program {
-            bindings_map,
             pipelines,
             vertex_buffer,
             index_buffer,
             instance_buffer,
-            locals_buffer,
             shader_name: String::from(shader_name),
             shader_kind,
-            bound_textures: [0; 16],
+            constants: [0; PUSH_CONSTANT_BLOCK_SIZE],
         }
     }
 
@@ -420,112 +392,34 @@ impl<B: hal::Backend> Program<B> {
         self.instance_buffer[buffer_id].add(device, instances, heaps);
     }
 
-    pub(super) fn bind_locals(
-        &mut self,
-        device: &B::Device,
-        heaps: &mut Heaps<B>,
-        set: &B::DescriptorSet,
-        projection: &Transform3D<f32>,
-        u_mode: i32,
-        buffer_id: usize,
-    ) {
-        let locals_data = Locals {
-            uTransform: projection.to_row_arrays(),
-            uMode: u_mode,
-        };
-        self.locals_buffer[buffer_id].add(device, &[locals_data], heaps);
-        unsafe {
-            device.write_descriptor_sets(Some(hal::pso::DescriptorSetWrite {
-                set,
-                binding: self.bindings_map["Locals"],
-                array_offset: 0,
-                descriptors: Some(hal::pso::Descriptor::Buffer(
-                    &self.locals_buffer[buffer_id].buffer().buffer,
-                    Some(0) .. None,
-                )),
-            }));
-        }
-    }
-
-    pub(super) fn bind_texture(
-        &self,
-        device: &B::Device,
-        set: &B::DescriptorSet,
-        image: &ImageCore<B>,
-        binding: &'static str,
-        cmd_buffer: &mut hal::command::CommandBuffer<B, hal::Graphics>,
-    ) {
-        if let Some(binding) = self.bindings_map.get(&("t".to_owned() + binding)) {
-            unsafe {
-                let mut src_stage = Some(hal::pso::PipelineStage::empty());
-                if let Some(barrier) = image.transit(
-                    hal::image::Access::SHADER_READ,
-                    hal::image::Layout::ShaderReadOnlyOptimal,
-                    image.subresource_range.clone(),
-                    src_stage.as_mut(),
-                ) {
-                    cmd_buffer.pipeline_barrier(
-                        src_stage.unwrap()
-                            .. hal::pso::PipelineStage::FRAGMENT_SHADER,
-                        hal::memory::Dependencies::empty(),
-                        &[barrier],
-                    );
-                }
-                device.write_descriptor_sets(Some(hal::pso::DescriptorSetWrite {
-                    set,
-                    binding: *binding,
-                    array_offset: 0,
-                    descriptors: Some(hal::pso::Descriptor::Image(
-                        &image.view,
-                        hal::image::Layout::ShaderReadOnlyOptimal,
-                    )),
-                }));
-            }
-        }
-    }
-
-    pub(super) fn bind_sampler(
-        &self,
-        device: &B::Device,
-        set: &B::DescriptorSet,
-        sampler: &B::Sampler,
-        binding: &'static str,
-    ) {
-        if let Some(binding) = self.bindings_map.get(&("s".to_owned() + binding)) {
-            unsafe {
-                device.write_descriptor_sets(Some(hal::pso::DescriptorSetWrite {
-                    set,
-                    binding: *binding,
-                    array_offset: 0,
-                    descriptors: Some(hal::pso::Descriptor::Sampler(sampler)),
-                }));
-            }
-        }
-    }
-
     pub(super) fn submit(
-        &self,
+        &mut self,
         cmd_buffer: &mut hal::command::CommandBuffer<B, hal::Graphics>,
         viewport: hal::pso::Viewport,
         render_pass: &B::RenderPass,
         frame_buffer: &B::Framebuffer,
-        desc_pools: &mut DescriptorPools<B>,
-        desc_pools_global: &mut DescriptorPools<B>,
-        desc_pools_sampler: &mut DescriptorPools<B>,
+        desc_set_per_draw: &B::DescriptorSet,
+        desc_set_per_pass: Option<&B::DescriptorSet>,
+        desc_set_per_frame: &B::DescriptorSet,
+        desc_set_locals: Option<&B::DescriptorSet>,
         clear_values: &[hal::command::ClearValue],
         blend_state: hal::pso::BlendState,
         blend_color: ColorF,
         depth_test: hal::pso::DepthTest,
         scissor_rect: Option<DeviceIntRect>,
         next_id: usize,
-        pipeline_layouts: &FastHashMap<ShaderKind, B::PipelineLayout>,
-        pipeline_requirements: &FastHashMap<String, PipelineRequirements>,
-        device: &B::Device,
+        pipeline_layout: &B::PipelineLayout,
     ) {
         let vertex_buffer = &self.vertex_buffer[next_id];
         let instance_buffer = &self.instance_buffer[next_id];
-
         unsafe {
+            #[cfg(feature = "push_constants")]
+            cmd_buffer.push_graphics_constants(
+                pipeline_layout,
+                hal::pso::ShaderStageFlags::VERTEX,
+                0,
+                &self.constants,
+            );
             cmd_buffer.set_viewports(0, &[viewport.clone()]);
             match scissor_rect {
                 Some(r) => cmd_buffer.set_scissors(
@@ -549,18 +443,18 @@ impl<B: hal::Backend> Program<B> {
                     )),
             );
 
+            #[cfg(not(feature = "push_constants"))]
+            assert!(desc_set_locals.is_some());
+            use std::iter;
             cmd_buffer.bind_graphics_descriptor_sets(
-                &pipeline_layouts[&self.shader_kind],
-                0,
-                Some(desc_pools.get(&self.shader_kind))
-                    .into_iter()
-                    .chain(Some(desc_pools_global.get(&self.shader_kind)))
-                    .chain(Some(desc_pools_sampler.get(&self.shader_kind))),
+                pipeline_layout,
+                if desc_set_per_pass.is_some() { 0 } else { 1 },
+                desc_set_per_pass.into_iter()
+                    .chain(iter::once(desc_set_per_frame))
+                    .chain(iter::once(desc_set_per_draw))
+                    .chain(desc_set_locals),
                 &[],
             );
-            desc_pools.next(&self.shader_kind, device, pipeline_requirements);
-            desc_pools_global.next(&self.shader_kind, device, pipeline_requirements);
-            desc_pools_sampler.next(&self.shader_kind, device, pipeline_requirements);
 
             if blend_state == SUBPIXEL_CONSTANT_TEXT_COLOR {
                 cmd_buffer.set_blend_constants(blend_color.to_array());
@@ -627,9 +521,6 @@ impl<B: hal::Backend> Program<B> {
         }
         for mut instance_buffer in self.instance_buffer {
             instance_buffer.deinit(device, heaps);
-        }
-        for mut locals_buffer in self.locals_buffer {
-            locals_buffer.deinit(device, heaps);
         }
         for pipeline in self.pipelines.drain() {
             unsafe { device.destroy_graphics_pipeline(pipeline.1) };

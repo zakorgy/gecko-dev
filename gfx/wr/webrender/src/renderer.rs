@@ -1834,10 +1834,7 @@ impl Renderer {
             match msg {
                 #[cfg(not(feature = "gleam"))]
                 ResultMsg::UpdateWindowSize(window_size) => {
-                    if window_size != self.device.viewport_size() {
-                        info!("Resize from {:?} to {:?}", self.device.viewport_size(), window_size);
-                        self.resize(Some((window_size.width, window_size.height)));
-                    }
+                    self.resize(Some((window_size.width, window_size.height)));
                 }
                 ResultMsg::PublishPipelineInfo(mut pipeline_info) => {
                     for (pipeline_id, epoch) in pipeline_info.epochs {
@@ -2310,13 +2307,7 @@ impl Renderer {
         };
 
         #[cfg(not(feature="gleam"))]
-        {
-            if !self.device.set_next_frame_id() {
-                self.resize(None);
-                return Ok(RendererStats::empty());
-            }
-        }
-
+        self.device.set_next_frame_id();
 
         let cpu_frame_id = profile_timers.cpu_time.profile(|| {
             let _gm = self.gpu_profile.start_marker("begin frame");
@@ -2488,18 +2479,12 @@ impl Renderer {
             if let Some(debug_renderer) = self.debug.try_get_mut() {
                 debug_renderer.render(&mut self.device, framebuffer_size);
             }
+            #[cfg(not(feature="gleam"))]
+            self.device.submit_to_gpu();
             self.device.end_frame();
         });
         if framebuffer_size.is_some() {
             self.last_time = current_time;
-        }
-
-        #[cfg(not(feature="gleam"))]
-        {
-            if !self.device.submit_to_gpu() {
-                self.resize(None);
-                return Ok(RendererStats::empty());
-            }
         }
 
         if self.renderer_errors.is_empty() {
@@ -2748,8 +2733,8 @@ impl Renderer {
             self.device.bind_texture(TextureSampler::Dither, texture);
         }
 
-        #[cfg(not(feature = "gleam"))]
-        self.device.bind_textures();
+        /*#[cfg(not(feature = "gleam"))]
+        self.device.bind_textures();*/
 
         self.draw_instanced_batch_with_previously_bound_textures(data, vertex_array_kind, stats)
     }
@@ -3117,10 +3102,10 @@ impl Renderer {
                                 self.device.set_scissor_rect(scissor_rect);
                             }
 
-                            #[cfg(not(feature = "gleam"))]
+                            /*#[cfg(not(feature = "gleam"))]
                             let program = self.device.bound_program();
                             #[cfg(not(feature = "gleam"))]
-                            self.device.set_uniforms(&program, projection);
+                            self.device.set_uniforms(&program, projection);*/
 
                             self.draw_instanced_batch(
                                 &batch.instances,
@@ -3214,10 +3199,10 @@ impl Renderer {
                                 self.device.set_scissor_rect(scissor_rect);
                             }
 
-                            #[cfg(not(feature = "gleam"))]
+                            /*#[cfg(not(feature = "gleam"))]
                             let program = self.device.bound_program();
                             #[cfg(not(feature = "gleam"))]
-                            self.device.set_uniforms(&program, projection);
+                            self.device.set_uniforms(&program, projection);*/
 
                             self.draw_instanced_batch(
                                 &batch.instances,
@@ -3230,12 +3215,12 @@ impl Renderer {
                                 self.set_blend_mode_subpixel_with_bg_color_pass1(framebuffer_kind);
                                 self.device.switch_mode(ShaderColorMode::SubpixelWithBgColorPass1 as _);
 
-                                #[cfg(not(feature = "gleam"))]
+                                /*#[cfg(not(feature = "gleam"))]
                                 let program = self.device.bound_program();
                                 #[cfg(not(feature = "gleam"))]
                                 self.device.set_uniforms(&program, projection);
                                 #[cfg(not(feature = "gleam"))]
-                                self.device.bind_textures();
+                                self.device.bind_textures();*/
 
                                 // When drawing the 2nd and 3rd passes, we know that the VAO, textures etc
                                 // are all set up from the previous draw_instanced_batch call,
@@ -3247,12 +3232,12 @@ impl Renderer {
                                 self.set_blend_mode_subpixel_with_bg_color_pass2(framebuffer_kind);
                                 self.device.switch_mode(ShaderColorMode::SubpixelWithBgColorPass2 as _);
 
-                                // In case of gfx we can't avoid re-uploading and re-binding,
+                                /*// In case of gfx we can't avoid re-uploading and re-binding,
                                 // since we have a new pipeline for the new draw.
                                 #[cfg(not(feature = "gleam"))]
                                 self.device.set_uniforms(&program, projection);
                                 #[cfg(not(feature = "gleam"))]
-                                self.device.bind_textures();
+                                self.device.bind_textures();*/
 
                                 self.device
                                     .draw_indexed_triangles_instanced_u16(6, batch.instances.len() as i32);

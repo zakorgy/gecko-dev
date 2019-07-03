@@ -174,6 +174,7 @@ extern crate libc;
 extern crate dwrote;
 
 extern crate app_units;
+extern crate arrayvec;
 extern crate bincode;
 extern crate byteorder;
 extern crate fxhash;
@@ -190,6 +191,7 @@ extern crate pathfinder_partitioner;
 extern crate pathfinder_path_utils;
 extern crate plane_split;
 extern crate rayon;
+extern crate rendy_descriptor;
 extern crate rendy_memory;
 extern crate ron;
 #[cfg(feature = "debugger")]

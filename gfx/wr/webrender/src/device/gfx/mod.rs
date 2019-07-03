@@ -35,8 +35,6 @@ pub const LESS_EQUAL_WRITE: hal::pso::DepthTest = hal::pso::DepthTest::On {
 pub struct PipelineRequirements {
     pub attribute_descriptors: Vec<hal::pso::AttributeDesc>,
     pub bindings_map: FastHashMap<String, u32>,
-    pub descriptor_range_descriptors: Vec<Vec<hal::pso::DescriptorRangeDesc>>,
-    pub descriptor_set_layout_bindings: Vec<Vec<hal::pso::DescriptorSetLayoutBinding>>,
     pub vertex_buffer_descriptors: Vec<hal::pso::VertexBufferDesc>,
 }
 

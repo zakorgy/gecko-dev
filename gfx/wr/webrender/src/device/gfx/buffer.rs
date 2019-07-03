@@ -177,7 +177,7 @@ impl<B: hal::Backend> BufferPool<B> {
         }
     }
 
-    pub(super) fn add<T: Copy>(&mut self, device: &B::Device, data: &[T]) {
+    pub(super) fn add<T: Copy>(&mut self, device: &B::Device, data: &[T], texel_size_mask: usize) {
         assert!(
             mem::size_of::<T>() <= self.data_stride,
             "mem::size_of::<T>()={:?} <= self.data_stride={:?}",
@@ -193,14 +193,16 @@ impl<B: hal::Backend> BufferPool<B> {
             buffer_len,
             self.buffer.buffer_size
         );
+        let alignment_mask = self.copy_alignment_mask | texel_size_mask;
+        self.buffer_offset = (self.offset + alignment_mask) & !alignment_mask;
         self.size = self.buffer.update(
             device,
             data,
-            self.offset,
+            self.buffer_offset,
             self.non_coherent_atom_size_mask as u64,
         );
-        self.buffer_offset = self.offset;
-        self.offset += (self.size + self.copy_alignment_mask) & !self.copy_alignment_mask;
+        let diff = self.buffer_offset - self.offset;
+        self.offset += (self.size + diff + alignment_mask) & !alignment_mask;
     }
 
     pub(super) fn buffer(&self) -> &Buffer<B> {
@@ -362,63 +364,6 @@ impl<B: hal::Backend> InstanceBufferHandler<B> {
     }
 }
 
-pub(super) struct UniformBufferHandler<B: hal::Backend> {
-    buffers: Vec<Buffer<B>>,
-    offset: usize,
-    buffer_usage: hal::buffer::Usage,
-    data_stride: usize,
-    pitch_alignment_mask: usize,
-    non_coherent_atom_size_mask: usize,
-}
-
-impl<B: hal::Backend> UniformBufferHandler<B> {
-    pub(super) fn new(
-        buffer_usage: hal::buffer::Usage,
-        data_stride: usize,
-        pitch_alignment_mask: usize,
-        non_coherent_atom_size_mask: usize,
-    ) -> Self {
-        UniformBufferHandler {
-            buffers: vec![],
-            offset: 0,
-            buffer_usage,
-            data_stride,
-            pitch_alignment_mask,
-            non_coherent_atom_size_mask,
-        }
-    }
-
-    pub(super) fn add<T: Copy>(&mut self, device: &B::Device, data: &[T], heaps: &mut Heaps<B>) {
-        if self.buffers.len() == self.offset {
-            self.buffers.push(Buffer::new(
-                device,
-                heaps,
-                MemoryUsageValue::Dynamic,
-                self.buffer_usage,
-                self.pitch_alignment_mask,
-                data.len(),
-                self.data_stride,
-            ));
-        }
-        self.buffers[self.offset].update_all(device, data, self.non_coherent_atom_size_mask as u64);
-        self.offset += 1;
-    }
-
-    pub(super) fn buffer(&self) -> &Buffer<B> {
-        &self.buffers[self.offset - 1]
-    }
-
-    pub(super) fn reset(&mut self) {
-        self.offset = 0;
-    }
-
-    pub(super) fn deinit(self, device: &B::Device, heaps: &mut Heaps<B>) {
-        for buffer in self.buffers {
-            buffer.deinit(device, heaps);
-        }
-    }
-}
-
 pub(super) struct VertexBufferHandler<B: hal::Backend> {
     buffer: Buffer<B>,
     buffer_usage: hal::buffer::Usage,
@@ -490,5 +435,62 @@ impl<B: hal::Backend> VertexBufferHandler<B> {
 
     pub(super) fn deinit(self, device: &B::Device, heaps: &mut Heaps<B>) {
         self.buffer.deinit(device, heaps);
+    }
+}
+
+pub(super) struct UniformBufferHandler<B: hal::Backend> {
+    buffers: Vec<Buffer<B>>,
+    offset: usize,
+    buffer_usage: hal::buffer::Usage,
+    data_stride: usize,
+    pitch_alignment_mask: usize,
+    non_coherent_atom_size_mask: usize,
+}
+
+impl<B: hal::Backend> UniformBufferHandler<B> {
+    pub(super) fn new(
+        buffer_usage: hal::buffer::Usage,
+        data_stride: usize,
+        pitch_alignment_mask: usize,
+        non_coherent_atom_size_mask: usize,
+    ) -> Self {
+        UniformBufferHandler {
+            buffers: vec![],
+            offset: 0,
+            buffer_usage,
+            data_stride,
+            pitch_alignment_mask,
+            non_coherent_atom_size_mask,
+        }
+    }
+
+    pub(super) fn add<T: Copy>(&mut self, device: &B::Device, data: &[T], heaps: &mut Heaps<B>) {
+        if self.buffers.len() == self.offset {
+            self.buffers.push(Buffer::new(
+                device,
+                heaps,
+                MemoryUsageValue::Dynamic,
+                self.buffer_usage,
+                self.pitch_alignment_mask,
+                data.len(),
+                self.data_stride,
+            ));
+        }
+        self.buffers[self.offset].update_all(device, data, self.non_coherent_atom_size_mask as u64);
+        self.offset += 1;
+    }
+
+    pub(super) fn buffer(&self) -> &Buffer<B> {
+        &self.buffers[self.offset - 1]
+    }
+
+    pub(super) fn reset(&mut self) {
+        self.offset = 0;
+    }
+
+    pub(super) fn deinit(self, device: &B::Device, heaps: &mut Heaps<B>) {
+        for buffer in self.buffers {
+            buffer.deinit(device, heaps);
+        }
     }
 }
