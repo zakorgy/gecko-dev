@@ -1383,17 +1383,16 @@ impl Renderer {
             options.upload_method.clone(),
             options.cached_programs.take(),
             HeapsConfig {
-                /*linear: Some(LinearConfig {
-                    linear_size: 128 * 1024 * 1024,
+                linear: Some(LinearConfig {
+                    linear_size: 512 * 1024 * 1024,
                 }),
                 dynamic: Some(DynamicConfig {
-                    max_block_size: 1024 * 1024,
+                    min_device_allocation: 8 * 1024 * 1024,
                     block_size_granularity: 256,
-                    blocks_per_chunk: 256,
                     max_chunk_size: 32 * 1024 * 1024,
-                }),*/
-                linear: None,
-                dynamic: None,
+                }),
+                /*linear: None,
+                dynamic: None,*/
             },
         );
 

@@ -9,8 +9,8 @@ use rendy_memory::{Block, Heaps, MemoryBlock, MemoryUsageValue, Write};
 use std::cell::Cell;
 use std::mem;
 
-pub const MAX_INSTANCE_COUNT: usize = 8192;
-pub const TEXTURE_CACHE_SIZE: usize = 128 << 20; // 128MB
+pub const MAX_INSTANCE_COUNT: usize = 512;
+pub const TEXTURE_CACHE_SIZE: usize = 32 << 20; // 128MB
 
 pub(super) struct Buffer<B: hal::Backend> {
     pub(super) memory_block: MemoryBlock<B>,
@@ -163,7 +163,7 @@ impl<B: hal::Backend> BufferPool<B> {
             MemoryUsageValue::Upload,
             buffer_usage,
             pitch_alignment_mask | non_coherent_atom_size_mask,
-            TEXTURE_CACHE_SIZE,
+            TEXTURE_CACHE_SIZE / data_stride,
             data_stride,
         );
         BufferPool {
@@ -355,6 +355,7 @@ impl<B: hal::Backend> InstanceBufferHandler<B> {
             buffer.reset();
         }
         self.current_buffer_index = 0;
+        //println!("## InstanceBufferHandler buffer count {:?}", self.buffers.len());
     }
 
     pub(super) fn deinit(self, device: &B::Device, heaps: &mut Heaps<B>) {
@@ -486,6 +487,7 @@ impl<B: hal::Backend> UniformBufferHandler<B> {
 
     pub(super) fn reset(&mut self) {
         self.offset = 0;
+        //println!("## UniformBufferHandler buffer count {:?}", self.buffers.len());
     }
 
     pub(super) fn deinit(self, device: &B::Device, heaps: &mut Heaps<B>) {
