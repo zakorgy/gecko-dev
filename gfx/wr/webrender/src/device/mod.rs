@@ -93,13 +93,19 @@ pub type IdType = gleam_gl::GLuint;
 pub struct TextureSlot(pub usize);
 
 #[repr(u32)]
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub enum TextureFilter {
     Nearest,
     Linear,
     Trilinear,
+}
+
+impl Default for TextureFilter {
+    fn default() -> Self {
+        TextureFilter::Nearest
+    }
 }
 
 #[derive(Debug)]
@@ -335,7 +341,7 @@ pub struct Texture {
     fbos_with_depth: Vec<FBOId>,
     last_frame_used: GpuFrameId,
     #[cfg(not(feature = "gleam"))]
-    bound_in_frame: Cell<GpuFrameId>,
+    pub bound_in_frame: Cell<GpuFrameId>,
 }
 
 impl Texture {
@@ -663,8 +669,8 @@ impl<'a> From<DrawTarget<'a>> for ReadTarget<'a> {
     }
 }
 
-/// Flags that control how shaders are pre-cached, if at all.
 bitflags! {
+    /// Flags that control how shaders are pre-cached, if at all.
     #[derive(Default)]
     pub struct ShaderPrecacheFlags: u32 {
         /// Needed for const initialization

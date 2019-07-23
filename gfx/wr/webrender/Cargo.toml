@@ -26,19 +26,20 @@ gecko = []
 webrender_build = { version = "0.0.1", path = "../webrender_build" }
 cfg-if = "0.1.2"
 glsl-to-spirv = "0.1"
-gfx-hal = { git = "https://github.com/zakorgy/gfx.git", branch = "metal_for_gecko" }
+gfx-hal = "0.2"
 ron = "0.1.7"
 serde = { version = "1.0", features = ["serde_derive"] }
 
 [dependencies]
 app_units = "0.7"
+arrayvec = "0.4"
 base64 = { optional = true, version = "0.10" }
 bincode = "1.0"
 bitflags = "1.0"
 byteorder = "1.0"
 cfg-if = "0.1.2"
 fxhash = "0.2.1"
-gfx-hal = { git = "https://github.com/zakorgy/gfx.git", branch = "metal_for_gecko", features = ["serde"] }
+gfx-hal = { version = "0.2", features = ["serde"] }
 gfx-backend-empty = { git = "https://github.com/zakorgy/gfx.git", branch = "metal_for_gecko" }
 gleam = { optional = true, version = "0.6.8" }
 image = { optional = true, version = "0.21" }
@@ -50,6 +51,9 @@ plane-split = "0.13.3"
 png = { optional = true, version = "0.14" }
 rand ="0.4"
 rayon = "1"
+rendy-descriptor = "0.2"
+rendy-memory = "0.2.0"
+relevant = { version = "0.4", features = ["std"] }
 ron = "0.1.7"
 serde = { version = "1.0", features = ["serde_derive"] }
 serde_json = { optional = true, version = "1.0" }
@@ -94,15 +98,14 @@ libc = "0.2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 dwrote = "0.8"
-gfx-backend-dx12 = { git = "https://github.com/gfx-rs/gfx.git", optional = true, rev="4cc5a251d54b83fbc720e4e9711207e5f1344c8f" }
+gfx-backend-dx12 = { version = "0.2.0", optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.6"
 core-graphics = "0.17.1"
 core-text = { version = "13", default-features = false }
-gfx-backend-metal = { git = "https://github.com/zakorgy/gfx.git", branch = "metal_for_gecko", optional = true }
+gfx-backend-metal = { version = "0.2.0", optional = true }
 
 [target.'cfg(all(any(unix, windows), not(target_os = "macos")))'.dependencies.gfx-backend-vulkan]
-git = "https://github.com/gfx-rs/gfx.git"
+version = "0.2.0"
 optional = true
-rev="4cc5a251d54b83fbc720e4e9711207e5f1344c8f"

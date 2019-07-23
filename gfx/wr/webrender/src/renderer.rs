@@ -48,6 +48,8 @@ use device::{ProgramCache, ReadPixelsFormat};
 use device::query::GpuTimer;
 #[cfg(feature = "gleam")]
 use device::{CustomVAO, Program, VBO};
+#[cfg(not(feature = "gleam"))]
+use device::BackendApiType;
 use euclid::rect;
 use euclid::Transform3D;
 use frame_builder::{ChasePrimitive, FrameBuilderConfig};
@@ -77,6 +79,8 @@ use render_backend::{FrameId, RenderBackend};
 use scene_builder::{SceneBuilder, LowPrioritySceneBuilder};
 use shade::{Shaders, WrShaders};
 use smallvec::SmallVec;
+#[cfg(not(feature = "gleam"))]
+use rendy_memory::HeapsConfig;
 use render_task::{RenderTask, RenderTaskKind, RenderTaskTree};
 use resource_cache::ResourceCache;
 use util::drain_filter;
@@ -1145,6 +1149,11 @@ impl LazyInitializedDebugRenderer {
             debug_renderer.deinit(device);
         }
     }
+
+    #[cfg(not(feature = "gleam"))]
+    fn take(&mut self) -> Option<DebugRenderer> {
+        self.debug_renderer.take()
+    }
 }
 
 // NB: If you add more VAOs here, be sure to deinitialize them in
@@ -1167,7 +1176,6 @@ pub struct Renderer {
     result_rx: Receiver<ResultMsg>,
     debug_server: DebugServer,
     pub device: Device<back::Backend>,
-    _instance: back::Instance,
     pending_texture_updates: Vec<TextureUpdateList>,
     pending_gpu_cache_updates: Vec<GpuCacheUpdateList>,
     pending_gpu_cache_clear: bool,
@@ -1324,7 +1332,7 @@ impl Renderer {
                 #[cfg(all(feature = "vulkan", unix, not(target_os = "macos")))]
                 SurfaceHandles::LinuxVulkan(display, window) => instance.create_surface_from_xlib(display as _, window as _),
                 #[cfg(all(feature = "metal", target_os = "macos"))]
-                SurfaceHandles::MacosMetal(nsview) => instance.create_surface_from_nsview(nsview as _),
+                SurfaceHandles::MacosMetal(nsview) => instance.create_surface_from_nsview(nsview as _, false),
                 #[cfg(all(feature = "vulkan", windows))]
                 SurfaceHandles::Windows(hinstance, hwnd) => instance.create_surface_from_hwnd(hinstance as _,hwnd as _),
                 #[cfg(all(feature = "dx12", windows))]
@@ -1333,16 +1341,23 @@ impl Renderer {
             };
             ( adapter, surface, instance)
         };
+        #[cfg(feature = "vulkan")]
+        let backend_api = BackendApiType::Vulkan;
+        #[cfg(feature = "metal")]
+        let backend_api = BackendApiType::Metal;
+        #[cfg(feature = "dx12")]
+        let backend_api = BackendApiType::Dx12;
         let init = DeviceInit {
             adapter: adapter,
-            surface: surface,
+            instance: Box::new(instance),
+            backend_api,
+            surface: Some(surface),
             window_size: (width, height),
-            frame_count: None,
             descriptor_count: None,
             cache_path: None,
             save_cache: false,
         };
-        Self::init(init, instance, notifier, options, shaders)
+        Self::init(init, notifier, options, shaders)
     }
 
     /// Initializes WebRender and creates a `Renderer` and `RenderApiSender`.
@@ -1364,7 +1379,6 @@ impl Renderer {
     /// [rendereroptions]: struct.RendererOptions.html
     pub fn init(
         init: DeviceInit<back::Backend>,
-        _instance: back::Instance,
         notifier: Box<RenderNotifier>,
         mut options: RendererOptions,
         shaders: Option<&mut WrShaders>
@@ -1384,6 +1398,12 @@ impl Renderer {
             options.resource_override_path.clone(),
             options.upload_method.clone(),
             options.cached_programs.take(),
+            #[cfg(not(feature = "gleam"))]
+            options.heaps_config,
+            #[cfg(not(feature = "gleam"))]
+            options.instance_buffer_size,
+            #[cfg(not(feature = "gleam"))]
+            options.texture_cahce_size,
         );
 
         #[cfg(feature = "gleam")]
@@ -1711,7 +1731,6 @@ impl Renderer {
         let mut renderer = Renderer {
             result_rx,
             debug_server,
-            _instance,
             device,
             active_documents: Vec::new(),
             pending_texture_updates: Vec::new(),
@@ -1822,13 +1841,6 @@ impl Renderer {
         // Pull any pending results and return the most recent.
         while let Ok(msg) = self.result_rx.try_recv() {
             match msg {
-                #[cfg(not(feature = "gleam"))]
-                ResultMsg::UpdateWindowSize(window_size) => {
-                    if window_size != self.device.viewport_size() {
-                        info!("Resize from {:?} to {:?}", self.device.viewport_size(), window_size);
-                        self.resize(Some((window_size.width, window_size.height)));
-                    }
-                }
                 ResultMsg::PublishPipelineInfo(mut pipeline_info) => {
                     for (pipeline_id, epoch) in pipeline_info.epochs {
                         self.pipeline_info.epochs.insert(pipeline_id, epoch);
@@ -1971,9 +1983,12 @@ impl Renderer {
     }
 
     #[cfg(not(feature = "gleam"))]
-    fn resize(&mut self, window_size: Option<(i32, i32)>) -> DeviceIntSize {
+    pub fn resize(&mut self, window_size: Option<(i32, i32)>) -> DeviceIntSize {
         self.shaders.borrow_mut().reset();
         let size = self.device.recreate_swapchain(window_size);
+        if let Some(debug_renderer) = self.debug.take() {
+            debug_renderer.deinit(&mut self.device);
+        }
         size
     }
 
@@ -2299,14 +2314,7 @@ impl Renderer {
             samplers
         };
 
-        #[cfg(not(feature="gleam"))]
-        {
-            if !self.device.set_next_frame_id() {
-                self.resize(None);
-                return Ok(RendererStats::empty());
-            }
-        }
-
+        self.device.set_next_frame_id();
 
         let cpu_frame_id = profile_timers.cpu_time.profile(|| {
             let _gm = self.gpu_profile.start_marker("begin frame");
@@ -2478,18 +2486,13 @@ impl Renderer {
             if let Some(debug_renderer) = self.debug.try_get_mut() {
                 debug_renderer.render(&mut self.device, framebuffer_size);
             }
+
+            #[cfg(not(feature="gleam"))]
+            self.device.submit_to_gpu();
             self.device.end_frame();
         });
         if framebuffer_size.is_some() {
             self.last_time = current_time;
-        }
-
-        #[cfg(not(feature="gleam"))]
-        {
-            if !self.device.submit_to_gpu() {
-                self.resize(None);
-                return Ok(RendererStats::empty());
-            }
         }
 
         if self.renderer_errors.is_empty() {
@@ -2737,9 +2740,6 @@ impl Renderer {
         if let Some(ref texture) = self.dither_matrix_texture {
             self.device.bind_texture(TextureSampler::Dither, texture);
         }
-
-        #[cfg(not(feature = "gleam"))]
-        self.device.bind_textures();
 
         self.draw_instanced_batch_with_previously_bound_textures(data, vertex_array_kind, stats)
     }
@@ -3117,11 +3117,6 @@ impl Renderer {
                                 self.device.set_scissor_rect(scissor_rect);
                             }
 
-                            #[cfg(not(feature = "gleam"))]
-                            let program = self.device.bound_program();
-                            #[cfg(not(feature = "gleam"))]
-                            self.device.set_uniforms(&program, projection);
-
                             self.draw_instanced_batch(
                                 &batch.instances,
                                 VertexArrayKind::Primitive,
@@ -3223,11 +3218,6 @@ impl Renderer {
                                 self.device.set_scissor_rect(scissor_rect);
                             }
 
-                            #[cfg(not(feature = "gleam"))]
-                            let program = self.device.bound_program();
-                            #[cfg(not(feature = "gleam"))]
-                            self.device.set_uniforms(&program, projection);
-
                             self.draw_instanced_batch(
                                 &batch.instances,
                                 VertexArrayKind::Primitive,
@@ -3239,13 +3229,6 @@ impl Renderer {
                                 self.set_blend_mode_subpixel_with_bg_color_pass1(framebuffer_kind);
                                 self.device.switch_mode(ShaderColorMode::SubpixelWithBgColorPass1 as _);
 
-                                #[cfg(not(feature = "gleam"))]
-                                let program = self.device.bound_program();
-                                #[cfg(not(feature = "gleam"))]
-                                self.device.set_uniforms(&program, projection);
-                                #[cfg(not(feature = "gleam"))]
-                                self.device.bind_textures();
-
                                 // When drawing the 2nd and 3rd passes, we know that the VAO, textures etc
                                 // are all set up from the previous draw_instanced_batch call,
                                 // so just issue a draw call here to avoid re-uploading the
@@ -3255,13 +3238,6 @@ impl Renderer {
 
                                 self.set_blend_mode_subpixel_with_bg_color_pass2(framebuffer_kind);
                                 self.device.switch_mode(ShaderColorMode::SubpixelWithBgColorPass2 as _);
-
-                                // In case of gfx we can't avoid re-uploading and re-binding,
-                                // since we have a new pipeline for the new draw.
-                                #[cfg(not(feature = "gleam"))]
-                                self.device.set_uniforms(&program, projection);
-                                #[cfg(not(feature = "gleam"))]
-                                self.device.bind_textures();
 
                                 self.device
                                     .draw_indexed_triangles_instanced_u16(6, batch.instances.len() as i32);
@@ -4648,6 +4624,12 @@ pub struct RendererOptions {
     pub support_low_priority_transactions: bool,
     pub namespace_alloc_by_client: bool,
     pub enable_picture_caching: bool,
+    #[cfg(not(feature = "gleam"))]
+    pub heaps_config: HeapsConfig,
+    // The size of an instance buffer in bytes
+    pub instance_buffer_size: usize,
+    // The size of a staging buffer for image data upload in bytes
+    pub texture_cahce_size: usize,
 }
 
 impl Default for RendererOptions {
@@ -4685,6 +4667,19 @@ impl Default for RendererOptions {
             support_low_priority_transactions: false,
             namespace_alloc_by_client: false,
             enable_picture_caching: false,
+            #[cfg(not(feature = "gleam"))]
+            heaps_config: HeapsConfig {
+                linear: Some(rendy_memory::LinearConfig{
+                    linear_size: 128 * 1024 * 1024,
+                }),
+                dynamic: Some(rendy_memory::DynamicConfig {
+                    min_device_allocation: 1024 * 1024,
+                    block_size_granularity: 256,
+                    max_chunk_size: 32 * 1024 * 1024,
+                }),
+            },
+            instance_buffer_size: 1 << 20,
+            texture_cahce_size: 16 << 20,
         }
     }
 }

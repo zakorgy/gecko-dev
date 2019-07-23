@@ -310,8 +310,6 @@ pub enum ResultMsg {
         BackendProfileCounters,
     ),
     AppendNotificationRequests(Vec<NotificationRequest>),
-    #[cfg(not(feature = "gleam"))]
-    UpdateWindowSize(DeviceIntSize),
 }
 
 #[derive(Clone, Debug)]
