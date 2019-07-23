@@ -7,7 +7,6 @@
 
 use super::*;
 
-use objc_foundation::{NSString, INSString};
 use block::Block;
 
 #[repr(u32)]
@@ -56,81 +55,68 @@ foreign_obj_type! {
 impl CommandBufferRef {
     pub fn label(&self) -> &str {
         unsafe {
-            let label: &NSString = msg_send![self, label];
-            label.as_str()
+            let label = msg_send![self, label];
+            crate::nsstring_as_str(label)
         }
     }
 
     pub fn set_label(&self, label: &str) {
         unsafe {
-            let nslabel = NSString::from_str(label);
-            msg_send![self, setLabel:nslabel];
+            let nslabel = crate::nsstring_from_str(label);
+            msg_send![self, setLabel: nslabel];
         }
     }
 
     pub fn enqueue(&self) {
-        unsafe {
-            msg_send![self, enqueue]
-        }
+        unsafe { msg_send![self, enqueue] }
     }
 
     pub fn commit(&self) {
-        unsafe {
-            msg_send![self, commit]
-        }
+        unsafe { msg_send![self, commit] }
     }
 
     pub fn status(&self) -> MTLCommandBufferStatus {
-        unsafe {
-            msg_send![self, status]
-        }
+        unsafe { msg_send![self, status] }
     }
 
     pub fn present_drawable(&self, drawable: &DrawableRef) {
-        unsafe {
-            msg_send![self, presentDrawable:drawable]
-        }
+        unsafe { msg_send![self, presentDrawable: drawable] }
     }
 
     pub fn wait_until_completed(&self) {
-        unsafe {
-            msg_send![self, waitUntilCompleted]
-        }
+        unsafe { msg_send![self, waitUntilCompleted] }
     }
 
     pub fn wait_until_scheduled(&self) {
-        unsafe {
-            msg_send![self, waitUntilScheduled]
-        }
+        unsafe { msg_send![self, waitUntilScheduled] }
     }
 
     pub fn new_blit_command_encoder(&self) -> &BlitCommandEncoderRef {
-        unsafe {
-            msg_send![self, blitCommandEncoder]
-        }
+        unsafe { msg_send![self, blitCommandEncoder] }
     }
 
     pub fn new_compute_command_encoder(&self) -> &ComputeCommandEncoderRef {
-        unsafe {
-            msg_send![self, computeCommandEncoder]
-        }
+        unsafe { msg_send![self, computeCommandEncoder] }
     }
 
-    pub fn new_render_command_encoder(&self, descriptor: &RenderPassDescriptorRef) -> &RenderCommandEncoderRef {
-        unsafe {
-            msg_send![self, renderCommandEncoderWithDescriptor:descriptor]
-        }
+    pub fn new_render_command_encoder(
+        &self,
+        descriptor: &RenderPassDescriptorRef,
+    ) -> &RenderCommandEncoderRef {
+        unsafe { msg_send![self, renderCommandEncoderWithDescriptor: descriptor] }
     }
 
-    pub fn new_parallel_render_command_encoder(&self, descriptor: &RenderPassDescriptorRef) -> &ParallelRenderCommandEncoderRef {
-        unsafe {
-            msg_send![self, parallelRenderCommandEncoderWithDescriptor:descriptor]
-        }
+    pub fn new_parallel_render_command_encoder(
+        &self,
+        descriptor: &RenderPassDescriptorRef,
+    ) -> &ParallelRenderCommandEncoderRef {
+        unsafe { msg_send![self, parallelRenderCommandEncoderWithDescriptor: descriptor] }
     }
 
-    pub fn compute_command_encoder_with_dispatch_type(&self, ty: MTLDispatchType) -> &ComputeCommandEncoderRef {
-        unsafe {
-            msg_send![self, computeCommandEncoderWithDispatchType: ty]
-        }
+    pub fn compute_command_encoder_with_dispatch_type(
+        &self,
+        ty: MTLDispatchType,
+    ) -> &ComputeCommandEncoderRef {
+        unsafe { msg_send![self, computeCommandEncoderWithDispatchType: ty] }
     }
 }

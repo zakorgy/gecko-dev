@@ -1,19 +1,22 @@
-use gfx_hal as hal;
+use crate::{
+    conversions as conv,
+    PrivateCapabilities,
+};
 
-use crate::conversions as conv;
-use crate::PrivateCapabilities;
+use hal::{
+    pso,
+    backend::FastHashMap,
+    command::ClearColorRaw,
+    format::{Aspects, ChannelType},
+    image::Filter,
+};
 
 use metal;
 use parking_lot::{Mutex, RawRwLock};
 use storage_map::{StorageMap, StorageMapGuard};
 
-use self::hal::backend::FastHashMap;
-use self::hal::command::ClearColorRaw;
-use self::hal::format::{Aspects, ChannelType};
-use self::hal::image::Filter;
-use self::hal::pso;
-
 use std::mem;
+
 
 pub type FastStorageMap<K, V> = StorageMap<RawRwLock, FastHashMap<K, V>>;
 pub type FastStorageGuard<'a, V> = StorageMapGuard<'a, RawRwLock, V>;
@@ -79,6 +82,7 @@ impl Channel {
     }
 }
 
+#[derive(Debug)]
 pub struct SamplerStates {
     nearest: metal::SamplerState,
     linear: metal::SamplerState,
@@ -106,6 +110,7 @@ impl SamplerStates {
     }
 }
 
+#[derive(Debug)]
 pub struct DepthStencilStates {
     map: FastStorageMap<pso::DepthStencilDesc, metal::DepthStencilState>,
     write_none: pso::DepthStencilDesc,
@@ -262,6 +267,7 @@ pub struct ClearKey {
     pub target_index: Option<(u8, Channel)>,
 }
 
+#[derive(Debug)]
 pub struct ImageClearPipes {
     map: FastStorageMap<ClearKey, metal::RenderPipelineState>,
 }
@@ -347,6 +353,7 @@ pub type BlitKey = (
     Channel,
 );
 
+#[derive(Debug)]
 pub struct ImageBlitPipes {
     map: FastStorageMap<BlitKey, metal::RenderPipelineState>,
 }
@@ -435,6 +442,7 @@ impl ImageBlitPipes {
     }
 }
 
+#[derive(Debug)]
 pub struct ServicePipes {
     pub library: Mutex<metal::Library>,
     pub sampler_states: SamplerStates,

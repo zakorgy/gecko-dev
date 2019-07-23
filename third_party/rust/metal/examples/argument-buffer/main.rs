@@ -5,11 +5,8 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-extern crate metal;
-extern crate cocoa;
-#[macro_use] extern crate objc;
-extern crate objc_id;
-extern crate objc_foundation;
+#[macro_use]
+extern crate objc;
 
 use metal::*;
 
@@ -34,6 +31,7 @@ fn main() {
 
     let sampler = {
         let descriptor = SamplerDescriptor::new();
+        descriptor.set_support_argument_buffers(true);
         device.new_sampler(&descriptor)
     };
     encoder.set_sampler_state(&sampler, 1);

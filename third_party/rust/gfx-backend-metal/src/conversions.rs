@@ -1,10 +1,12 @@
-use gfx_hal as hal;
+use hal;
 
 use crate::PrivateCapabilities;
 
-use self::hal::format::{Format, Properties, Swizzle};
-use self::hal::pso::{Comparison, StencilOp};
-use self::hal::{image, pass, pso, IndexType};
+use hal::{
+    image, pass, pso, IndexType,
+    format::{Format, Properties, Swizzle},
+    pso::{Comparison, StencilOp},
+};
 use metal::*;
 
 impl PrivateCapabilities {
@@ -1073,7 +1075,7 @@ pub fn map_texture_usage(usage: image::Usage, tiling: image::Tiling) -> MTLTextu
     if usage.intersects(U::COLOR_ATTACHMENT | U::DEPTH_STENCIL_ATTACHMENT) {
         texture_usage |= MTLTextureUsage::RenderTarget;
     }
-    if usage.intersects(U::SAMPLED) {
+    if usage.intersects(U::SAMPLED | U::INPUT_ATTACHMENT) {
         texture_usage |= MTLTextureUsage::ShaderRead;
     }
     if usage.intersects(U::STORAGE) {

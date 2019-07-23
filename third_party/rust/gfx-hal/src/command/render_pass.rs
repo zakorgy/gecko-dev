@@ -12,6 +12,7 @@ use crate::{buffer, pass, pso, query};
 use crate::{Backend, DrawCount, IndexCount, InstanceCount, VertexCount, VertexOffset};
 
 /// Specifies how commands for the following renderpasses will be recorded.
+#[derive(Debug)]
 pub enum SubpassContents {
     /// Contents of the subpass will be inline in the command buffer,
     /// NOT in secondary command buffers.
@@ -27,6 +28,7 @@ pub enum SubpassContents {
 ///
 /// Where methods are undocumented, they are identical to the methods on the `RawCommandBuffer`
 /// trait with the same names.
+#[derive(Debug)]
 pub struct RenderSubpassCommon<B, C> {
     cmb: C,
     _marker: PhantomData<B>,
@@ -99,7 +101,7 @@ impl<B: Backend, C: BorrowMut<B::CommandBuffer>> RenderSubpassCommon<B, C> {
     }
 
     ///
-    pub unsafe fn bind_vertex_buffers<I, T>(&mut self, first_binding: u32, buffers: I)
+    pub unsafe fn bind_vertex_buffers<I, T>(&mut self, first_binding: pso::BufferIndex, buffers: I)
     where
         I: IntoIterator<Item = (T, buffer::Offset)>,
         T: Borrow<B::Buffer>,
@@ -220,6 +222,7 @@ impl<B: Backend, C: BorrowMut<B::CommandBuffer>> RenderSubpassCommon<B, C> {
 
 /// An object that records commands into a command buffer inline, that is,
 /// without secondary command buffers.
+#[derive(Debug)]
 pub struct RenderPassInlineEncoder<'a, B: Backend>(
     RenderSubpassCommon<B, &'a mut B::CommandBuffer>,
 )
@@ -265,11 +268,13 @@ impl<'a, B: Backend> RenderPassInlineEncoder<'a, B> {
     }
 
     /// Begins recording a new subpass with secondary buffers.
-    pub fn next_subpass_secondary(self) -> RenderPassSecondaryEncoder<'a, B> {
+    pub fn next_subpass_secondary(mut self) -> RenderPassSecondaryEncoder<'a, B> {
         unsafe {
             self.0.cmb.next_subpass(SubpassContents::SecondaryBuffers);
+            let cmb = std::ptr::read(&mut self.0.cmb);
+            std::mem::forget(self); // Prevent `end_render_pass`
+            RenderPassSecondaryEncoder(cmb)
         }
-        RenderPassSecondaryEncoder(self.0.cmb)
     }
 }
 
@@ -296,6 +301,7 @@ impl<'a, B: Backend> Drop for RenderPassInlineEncoder<'a, B> {
 
 /// An object that records commands into a command buffer where each command must
 /// be a call to execute a secondary command buffer.
+#[derive(Debug)]
 pub struct RenderPassSecondaryEncoder<'a, B: Backend>(&'a mut B::CommandBuffer)
 where
     B::CommandBuffer: 'a;
@@ -341,10 +347,12 @@ impl<'a, B: Backend> RenderPassSecondaryEncoder<'a, B> {
     }
 
     /// Starts a new subpass with inline commands.
-    pub fn next_subpass_inline(self) -> RenderPassInlineEncoder<'a, B> {
+    pub fn next_subpass_inline(mut self) -> RenderPassInlineEncoder<'a, B> {
         unsafe {
             self.0.next_subpass(SubpassContents::Inline);
-            RenderPassInlineEncoder(RenderSubpassCommon::new(self.0))
+            let cmb = std::ptr::read(&mut self.0);
+            std::mem::forget(self); // Prevent `end_render_pass`
+            RenderPassInlineEncoder(RenderSubpassCommon::new(cmb))
         }
     }
 
@@ -366,6 +374,7 @@ impl<'a, B: Backend> Drop for RenderPassSecondaryEncoder<'a, B> {
 }
 
 /// A secondary command buffer recorded entirely within a subpass.
+#[derive(Debug)]
 pub struct SubpassCommandBuffer<B: Backend, S: Shot, R = <B as Backend>::CommandBuffer>(
     RenderSubpassCommon<B, R>,
     PhantomData<S>,

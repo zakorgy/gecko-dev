@@ -1,17 +1,15 @@
-use gfx_hal as hal;
+use crate::{
+    native,
+    Backend, QueueFamily,
+    device::{Device, PhysicalDevice},
+    internal::Channel,
+};
 
-use crate::device::{Device, PhysicalDevice};
-use crate::internal::Channel;
-use crate::native;
-use crate::{Backend, QueueFamily};
-
-use std::ptr::NonNull;
-use std::sync::Arc;
-use std::thread;
-
-use self::hal::window::Extent2D;
-use self::hal::{format, image};
-use self::hal::{Backbuffer, SwapchainConfig, CompositeAlpha};
+use hal::{
+    format, image,
+    SwapchainConfig, CompositeAlpha,
+    window::{Extent2D, Suboptimal},
+};
 
 use core_graphics::base::CGFloat;
 use core_graphics::geometry::{CGRect, CGSize};
@@ -21,20 +19,31 @@ use objc::rc::autoreleasepool;
 use objc::runtime::Object;
 use parking_lot::{Mutex, MutexGuard};
 
+use std::ptr::NonNull;
+use std::sync::Arc;
+use std::thread;
+
+
 //TODO: make it a weak pointer, so that we know which
 // frames can be replaced if we receive an unknown
 // texture pointer by an acquired drawable.
 pub type CAMetalLayer = *mut Object;
 
+/// This is a random ID to be used for signposts associated with swapchain events.
+const SIGNPOST_ID: u32 = 0x100;
+
+#[derive(Debug)]
 pub struct Surface {
     inner: Arc<SurfaceInner>,
     main_thread_id: thread::ThreadId,
 }
 
 #[derive(Debug)]
-pub struct SurfaceInner {
+pub(crate) struct SurfaceInner {
     view: Option<NonNull<Object>>,
     render_layer: Mutex<CAMetalLayer>,
+    /// Place start/end signposts for the duration of frames held
+    enable_signposts: bool,
 }
 
 unsafe impl Send for SurfaceInner {}
@@ -63,10 +72,12 @@ impl SurfaceInner {
         SurfaceInner {
             view,
             render_layer: Mutex::new(layer),
+            enable_signposts: false,
         }
     }
 
-    pub fn into_surface(self) -> Surface {
+    pub fn into_surface(mut self, enable_signposts: bool) -> Surface {
+        self.enable_signposts = enable_signposts;
         Surface {
             inner: Arc::new(self),
             main_thread_id: thread::current().id(),
@@ -80,6 +91,11 @@ impl SurfaceInner {
         let layer_ref = self.render_layer.lock();
         autoreleasepool(|| {
             // for the drawable
+            let _signpost = if self.enable_signposts {
+                Some(native::Signpost::new(SIGNPOST_ID, [0, 0, 0, 0]))
+            } else {
+                None
+            };
             let (drawable, texture_temp): (&metal::DrawableRef, &metal::TextureRef) = unsafe {
                 let drawable = msg_send![*layer_ref, nextDrawable];
                 (drawable, msg_send![drawable, texture])
@@ -93,7 +109,12 @@ impl SurfaceInner {
                 Some(index) => {
                     let mut frame = frames[index].inner.lock();
                     assert!(frame.drawable.is_none());
+                    frame.iteration += 1;
                     frame.drawable = Some(drawable.to_owned());
+                    if self.enable_signposts && false {
+                        //Note: could encode the `iteration` here if we need it
+                        frame.signpost = Some(native::Signpost::new(SIGNPOST_ID, [1, index as usize, 0, 0]));
+                    }
 
                     debug!("Next is frame[{}]", index);
                     Ok((index, frame))
@@ -141,6 +162,7 @@ impl SurfaceInner {
 #[derive(Debug)]
 struct FrameInner {
     drawable: Option<metal::Drawable>,
+    signpost: Option<native::Signpost>,
     /// If there is a `drawable`, availability indicates if it's free for grabs.
     /// If there is `None`, `available == false` means that the frame has already
     /// been acquired and the `drawable` will appear at some point.
@@ -148,6 +170,7 @@ struct FrameInner {
     /// Stays true for as long as the drawable is circulating through the
     /// CAMetalLayer's frame queue.
     linked: bool,
+    iteration: usize,
     last_frame: usize,
 }
 
@@ -166,36 +189,34 @@ impl Drop for Frame {
     }
 }
 
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AcquireMode {
     Wait,
     Oldest,
 }
 
+#[derive(Debug)]
 pub struct Swapchain {
     frames: Arc<Vec<Frame>>,
     surface: Arc<SurfaceInner>,
     extent: Extent2D,
     last_frame: usize,
-    image_ready_callbacks: Vec<Arc<Mutex<Option<SwapchainImage>>>>,
     pub acquire_mode: AcquireMode,
 }
 
 impl Drop for Swapchain {
     fn drop(&mut self) {
         info!("dropping Swapchain");
-        for ir in self.image_ready_callbacks.drain(..) {
-            if ir.lock().take().is_some() {
-                debug!("\twith a callback");
-            }
-        }
     }
 }
 
 impl Swapchain {
     fn clear_drawables(&self) {
         for frame in self.frames.iter() {
-            frame.inner.lock().drawable = None;
+            let mut inner = frame.inner.lock();
+            inner.drawable = None;
+            inner.signpost = None;
         }
     }
 
@@ -204,6 +225,7 @@ impl Swapchain {
     pub(crate) fn take_drawable(&self, index: hal::SwapImageIndex) -> Result<metal::Drawable, ()> {
         let mut frame = self.frames[index as usize].inner.lock();
         assert!(!frame.available && frame.linked);
+        frame.signpost = None;
 
         match frame.drawable.take() {
             Some(drawable) => {
@@ -218,19 +240,6 @@ impl Swapchain {
             }
         }
     }
-
-    fn signal_sync(&self, sync: hal::FrameSync<Backend>) {
-        match sync {
-            hal::FrameSync::Semaphore(semaphore) => {
-                if let Some(ref system) = semaphore.system {
-                    system.signal();
-                }
-            }
-            hal::FrameSync::Fence(fence) => {
-                *fence.0.borrow_mut() = native::FenceInner::Idle { signaled: true };
-            }
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -241,6 +250,11 @@ pub struct SwapchainImage {
 }
 
 impl SwapchainImage {
+    /// Returns the associated frame iteration.
+    pub fn iteration(&self) -> usize {
+        self.frames[self.index as usize].inner.lock().iteration
+    }
+
     /// Waits until the specified swapchain index is available for rendering.
     /// Returns the number of frames it had to wait.
     pub fn wait_until_ready(&self) -> usize {
@@ -356,7 +370,7 @@ impl Device {
         surface: &mut Surface,
         config: SwapchainConfig,
         old_swapchain: Option<Swapchain>,
-    ) -> (Swapchain, Backbuffer<Backend>) {
+    ) -> (Swapchain, Vec<native::Image>) {
         info!("build_swapchain {:?}", config);
         if let Some(ref sc) = old_swapchain {
             sc.clear_drawables();
@@ -442,8 +456,14 @@ impl Device {
                     Frame {
                         inner: Mutex::new(FrameInner {
                             drawable,
+                            signpost: if index != 0 && surface.inner.enable_signposts {
+                                Some(native::Signpost::new(SIGNPOST_ID, [1, index as usize, 0, 0]))
+                            } else {
+                                None
+                            },
                             available: true,
                             linked: true,
+                            iteration: 0,
                             last_frame: 0,
                         }),
                         texture: texture.to_owned(),
@@ -469,11 +489,10 @@ impl Device {
             surface: surface.inner.clone(),
             extent: config.extent,
             last_frame: 0,
-            image_ready_callbacks: Vec::new(),
             acquire_mode: AcquireMode::Oldest,
         };
 
-        (swapchain, Backbuffer::Images(images))
+        (swapchain, images)
     }
 }
 
@@ -481,12 +500,15 @@ impl hal::Swapchain<Backend> for Swapchain {
     unsafe fn acquire_image(
         &mut self,
         _timeout_ns: u64,
-        sync: hal::FrameSync<Backend>,
-    ) -> Result<hal::SwapImageIndex, hal::AcquireError> {
+        semaphore: Option<&native::Semaphore>,
+        fence: Option<&native::Fence>,
+    ) -> Result<(hal::SwapImageIndex, Option<Suboptimal>), hal::AcquireError> {
         self.last_frame += 1;
 
         //TODO: figure out a proper story of HiDPI
         if false && self.surface.dimensions() != self.extent {
+            // mark the method as used
+            native::Signpost::place(SIGNPOST_ID, [0, 0, 0, 0]);
             unimplemented!()
         }
 
@@ -502,8 +524,19 @@ impl hal::Swapchain<Backend> for Swapchain {
                 debug!("Found drawable of frame {}, acquiring", index);
                 frame.available = false;
                 frame.last_frame = self.last_frame;
-                self.signal_sync(sync);
-                return Ok(index as _);
+                if self.surface.enable_signposts {
+                    //Note: could encode the `iteration` here if we need it
+                    frame.signpost = Some(native::Signpost::new(SIGNPOST_ID, [1, index, 0, 0]));
+                }
+                if let Some(semaphore) = semaphore {
+                    if let Some(ref system) = semaphore.system {
+                        system.signal();
+                    }
+                }
+                if let Some(fence) = fence {
+                    fence.0.replace(native::FenceInner::Idle { signaled: true });
+                }
+                return Ok((index as _, None));
             }
             if frame.last_frame < oldest_frame {
                 oldest_frame = frame.last_frame;
@@ -512,10 +545,17 @@ impl hal::Swapchain<Backend> for Swapchain {
         }
 
         let (index, mut frame) = match self.acquire_mode {
-            AcquireMode::Wait => self
-                .surface
-                .next_frame(&self.frames)
-                .map_err(|_| hal::AcquireError::OutOfDate)?,
+            AcquireMode::Wait => {
+                let pair = self
+                    .surface
+                    .next_frame(&self.frames)
+                    .map_err(|_| hal::AcquireError::OutOfDate)?;
+
+                if let Some(fence) = fence {
+                    fence.0.replace(native::FenceInner::Idle { signaled: true });
+                }
+                pair
+            },
             AcquireMode::Oldest => {
                 let frame = match self.frames.get(oldest_index) {
                     Some(frame) => frame.inner.lock(),
@@ -528,25 +568,26 @@ impl hal::Swapchain<Backend> for Swapchain {
                     return Err(hal::AcquireError::OutOfDate);
                 }
 
-                self.image_ready_callbacks.retain(|ir| ir.lock().is_some());
-                match sync {
-                    hal::FrameSync::Semaphore(semaphore) => {
-                        self.image_ready_callbacks
-                            .push(Arc::clone(&semaphore.image_ready));
-                        let mut sw_image = semaphore.image_ready.lock();
-                        if let Some(ref swi) = *sw_image {
-                            warn!("frame {} hasn't been waited upon", swi.index);
-                        }
-                        *sw_image = Some(SwapchainImage {
-                            frames: self.frames.clone(),
-                            surface: self.surface.clone(),
+                if let Some(semaphore) = semaphore {
+                    let mut sw_image = semaphore.image_ready.lock();
+                    if let Some(ref swi) = *sw_image {
+                        warn!("frame {} hasn't been waited upon", swi.index);
+                    }
+                    *sw_image = Some(SwapchainImage {
+                        frames: Arc::clone(&self.frames),
+                        surface: Arc::clone(&self.surface),
+                        index: oldest_index as _,
+                    });
+                }
+                if let Some(fence) = fence {
+                    fence.0.replace(native::FenceInner::AcquireFrame {
+                        swapchain_image: SwapchainImage {
+                            frames: Arc::clone(&self.frames),
+                            surface: Arc::clone(&self.surface),
                             index: oldest_index as _,
-                        });
-                    }
-                    hal::FrameSync::Fence(_fence) => {
-                        //TODO: need presentation handlers always created and setting a bool
-                        unimplemented!()
-                    }
+                        },
+                        iteration: frame.iteration,
+                    });
                 }
 
                 (oldest_index, frame)
@@ -557,7 +598,11 @@ impl hal::Swapchain<Backend> for Swapchain {
         assert!(frame.available);
         frame.last_frame = self.last_frame;
         frame.available = false;
+        if self.surface.enable_signposts {
+            //Note: could encode the `iteration` here if we need it
+            frame.signpost = Some(native::Signpost::new(SIGNPOST_ID, [1, index, 0, 0]));
+        }
 
-        Ok(index as _)
+        Ok((index as _, None))
     }
 }

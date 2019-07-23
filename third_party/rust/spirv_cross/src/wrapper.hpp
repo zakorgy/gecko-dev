@@ -11,7 +11,6 @@ typedef void ScInternalCompilerGlsl;
 
 extern "C"
 {
-
     enum ScInternalResult
     {
         Success,
@@ -60,6 +59,17 @@ extern "C"
         uint32_t version;
         bool enable_point_size_builtin;
         bool disable_rasterization;
+        uint32_t swizzle_buffer_index;
+        uint32_t indirect_params_buffer_index;
+        uint32_t shader_output_buffer_index;
+        uint32_t shader_patch_output_buffer_index;
+        uint32_t shader_tess_factor_buffer_index;
+        uint32_t buffer_size_buffer_index;
+        bool capture_output_to_buffer;
+        bool swizzle_texture_samples;
+        bool tess_domain_origin_lower_left;
+        bool argument_buffers;
+        bool pad_fragment_output_components;
     } ScMslCompilerOptions;
 
     typedef struct ScGlslCompilerOptions
@@ -116,22 +126,34 @@ extern "C"
 
     ScInternalResult sc_internal_get_latest_exception_message(const char **message);
 
+#ifdef SPIRV_CROSS_WRAPPER_HLSL
     ScInternalResult sc_internal_compiler_hlsl_new(ScInternalCompilerHlsl **compiler, const uint32_t *ir, const size_t size);
     ScInternalResult sc_internal_compiler_hlsl_set_options(const ScInternalCompilerHlsl *compiler, const ScHlslCompilerOptions *options);
     ScInternalResult sc_internal_compiler_hlsl_set_root_constant_layout(const ScInternalCompilerHlsl *compiler, const ScHlslRootConstant *constants, size_t count);
+#endif
+
+#ifdef SPIRV_CROSS_WRAPPER_MSL
+    typedef struct MslConstSamplerMapping {
+        uint32_t desc_set;
+        uint32_t binding;
+        spirv_cross::MSLConstexprSampler sampler;
+    } MslConstSamplerMapping;
 
     ScInternalResult sc_internal_compiler_msl_new(ScInternalCompilerMsl **compiler, const uint32_t *ir, const size_t size);
     ScInternalResult sc_internal_compiler_msl_set_options(const ScInternalCompilerMsl *compiler, const ScMslCompilerOptions *options);
     ScInternalResult sc_internal_compiler_msl_get_is_rasterization_disabled(const ScInternalCompilerMsl *compiler, bool *is_rasterization_disabled);
     ScInternalResult sc_internal_compiler_msl_compile(const ScInternalCompilerBase *compiler, const char **shader,
                                                       const spirv_cross::MSLVertexAttr *p_vat_overrides, const size_t vat_override_count,
-                                                      const spirv_cross::MSLResourceBinding *p_res_overrides, const size_t res_override_count);
+                                                      const spirv_cross::MSLResourceBinding *p_res_overrides, const size_t res_override_count,
+                                                      const MslConstSamplerMapping *p_const_samplers, const size_t const_sampler_count);
+#endif
 
+#ifdef SPIRV_CROSS_WRAPPER_GLSL
     ScInternalResult sc_internal_compiler_glsl_new(ScInternalCompilerGlsl **compiler, const uint32_t *ir, const size_t size);
     ScInternalResult sc_internal_compiler_glsl_set_options(const ScInternalCompilerGlsl *compiler, const ScGlslCompilerOptions *options);
-
     ScInternalResult sc_internal_compiler_glsl_build_combined_image_samplers(const ScInternalCompilerBase *compiler);
     ScInternalResult sc_internal_compiler_glsl_get_combined_image_samplers(const ScInternalCompilerBase *compiler, const ScCombinedImageSampler **samplers, size_t *size);
+#endif
 
     ScInternalResult sc_internal_compiler_get_decoration(const ScInternalCompilerBase *compiler, uint32_t *result, const uint32_t id, const spv::Decoration decoration);
     ScInternalResult sc_internal_compiler_set_decoration(const ScInternalCompilerBase *compiler, const uint32_t id, const spv::Decoration decoration, const uint32_t argument);
@@ -141,7 +163,8 @@ extern "C"
     ScInternalResult sc_internal_compiler_get_cleansed_entry_point_name(const ScInternalCompilerBase *compiler, const char *original_entry_point_name, const spv::ExecutionModel execution_model, const char **compiled_entry_point_name);
     ScInternalResult sc_internal_compiler_get_shader_resources(const ScInternalCompilerBase *compiler, ScShaderResources *shader_resources);
     ScInternalResult sc_internal_compiler_get_specialization_constants(const ScInternalCompilerBase *compiler, ScSpecializationConstant **constants, size_t *size);
-    ScInternalResult sc_internal_compiler_set_scalar_constant(const ScInternalCompilerBase *compiler, const uint32_t id, const uint64_t constant);
+    // `uint64_t` isn't supported in Emscripten without implicitly splitting the value into two `uint32_t` - instead do it explicitly
+    ScInternalResult sc_internal_compiler_set_scalar_constant(const ScInternalCompilerBase *compiler, const uint32_t id, const uint32_t constant_high_bits, const uint32_t constant_low_bits);
     ScInternalResult sc_internal_compiler_get_type(const ScInternalCompilerBase *compiler, const uint32_t id, const ScType **spirv_type);
     ScInternalResult sc_internal_compiler_get_member_name(const ScInternalCompilerBase *compiler, const uint32_t id, const uint32_t index, const char **name);
     ScInternalResult sc_internal_compiler_get_member_decoration(const ScInternalCompilerBase *compiler, const uint32_t id, const uint32_t index, const spv::Decoration decoration, uint32_t *result);

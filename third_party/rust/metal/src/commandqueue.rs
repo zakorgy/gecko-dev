@@ -7,8 +7,6 @@
 
 use super::*;
 
-use objc_foundation::{NSString, INSString};
-
 pub enum MTLCommandQueue {}
 
 foreign_obj_type! {
@@ -20,33 +18,27 @@ foreign_obj_type! {
 impl CommandQueueRef {
     pub fn label(&self) -> &str {
         unsafe {
-            let label: &NSString = msg_send![self, label];
-            label.as_str()
+            let label = msg_send![self, label];
+            crate::nsstring_as_str(label)
         }
     }
 
     pub fn set_label(&self, label: &str) {
         unsafe {
-            let nslabel = NSString::from_str(label);
-            msg_send![self, setLabel:nslabel]
+            let nslabel = crate::nsstring_from_str(label);
+            msg_send![self, setLabel: nslabel];
         }
     }
 
     pub fn new_command_buffer(&self) -> &CommandBufferRef {
-        unsafe {
-            msg_send![self, commandBuffer]
-        }
+        unsafe { msg_send![self, commandBuffer] }
     }
 
     pub fn new_command_buffer_with_unretained_references(&self) -> &CommandBufferRef {
-        unsafe {
-            msg_send![self, commandBufferWithUnretainedReferences]
-        }
+        unsafe { msg_send![self, commandBufferWithUnretainedReferences] }
     }
 
     pub fn device(&self) -> &DeviceRef {
-        unsafe {
-            msg_send![self, device]
-        }
+        unsafe { msg_send![self, device] }
     }
 }

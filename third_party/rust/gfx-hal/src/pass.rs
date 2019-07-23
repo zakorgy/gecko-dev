@@ -3,8 +3,8 @@
 use crate::format::Format;
 use crate::image;
 use crate::pso::PipelineStage;
-use std::ops::Range;
 use crate::Backend;
+use std::ops::Range;
 
 /// Specifies the operation which will be applied at the beginning of a subpass.
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
@@ -134,6 +134,7 @@ pub struct SubpassDependency {
 }
 
 /// Description of a subpass for renderpass creation.
+#[derive(Debug)]
 pub struct SubpassDesc<'a> {
     /// Which attachments will be used as color buffers.
     pub colors: &'a [AttachmentRef],

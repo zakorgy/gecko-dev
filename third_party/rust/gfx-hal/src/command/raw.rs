@@ -11,7 +11,9 @@ use crate::image::{Filter, Layout, SubresourceRange};
 use crate::memory::{Barrier, Dependencies};
 use crate::range::RangeArg;
 use crate::{buffer, pass, pso, query};
-use crate::{Backend, DrawCount, IndexCount, InstanceCount, VertexCount, VertexOffset, WorkGroupCount};
+use crate::{
+    Backend, DrawCount, IndexCount, InstanceCount, VertexCount, VertexOffset, WorkGroupCount,
+};
 
 /// Unsafe variant of `ClearColor`.
 #[repr(C)]
@@ -24,6 +26,12 @@ pub union ClearColorRaw {
     /// `u32` variant
     pub uint32: [u32; 4],
     _align: [u32; 4],
+}
+
+impl std::fmt::Debug for ClearColorRaw {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        writeln![f, "ClearColorRaw"]
+    }
 }
 
 /// A variant of `ClearDepthStencil` that has a `#[repr(C)]` layout
@@ -117,7 +125,7 @@ impl<'a, B: Backend> Default for CommandBufferInheritanceInfo<'a, B> {
 
 /// A trait that describes all the operations that must be
 /// provided by a `Backend`'s command buffer.
-pub trait RawCommandBuffer<B: Backend>: Any + Send + Sync {
+pub trait RawCommandBuffer<B: Backend>: fmt::Debug + Any + Send + Sync {
     /// Begins recording commands to a command buffer.
     unsafe fn begin(
         &mut self,
@@ -221,7 +229,7 @@ pub trait RawCommandBuffer<B: Backend>: Any + Send + Sync {
     /// The `buffers` iterator should yield the `Buffer` to bind, as well as an
     /// offset, in bytes, into that buffer where the vertex data that should be bound
     /// starts.
-    unsafe fn bind_vertex_buffers<I, T>(&mut self, first_binding: u32, buffers: I)
+    unsafe fn bind_vertex_buffers<I, T>(&mut self, first_binding: pso::BufferIndex, buffers: I)
     where
         I: IntoIterator<Item = (T, buffer::Offset)>,
         T: Borrow<B::Buffer>;
@@ -381,7 +389,7 @@ pub trait RawCommandBuffer<B: Backend>: Any + Send + Sync {
     /// - A compute pipeline must be bound using `bind_compute_pipeline`.
     /// - Only queues with compute capability support this function.
     /// - This function must be called outside of a render pass.
-    /// - `count` must be less than or equal to `Limits::max_compute_group_count`
+    /// - `count` must be less than or equal to `Limits::max_compute_work_group_count`
     ///
     /// TODO:
     unsafe fn dispatch(&mut self, count: WorkGroupCount);

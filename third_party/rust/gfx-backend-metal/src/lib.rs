@@ -1,18 +1,32 @@
-use gfx_hal as hal;
-use range_alloc;
 #[macro_use]
 extern crate bitflags;
-use cocoa;
-use foreign_types;
 #[macro_use]
 extern crate objc;
 #[macro_use]
 extern crate log;
 
+use hal;
+use hal::queue::QueueFamilyId;
+use range_alloc::RangeAllocator;
+
+use cocoa;
+use cocoa::foundation::NSInteger;
+use core_graphics::base::CGFloat;
+use core_graphics::geometry::CGRect;
+use foreign_types::ForeignTypeRef;
+use metal::MTLFeatureSet;
+use metal::MTLLanguageVersion;
+use objc::runtime::{Object, BOOL, YES};
+use parking_lot::{Condvar, Mutex};
 #[cfg(feature = "dispatch")]
 use dispatch;
 #[cfg(feature = "winit")]
 use winit;
+
+use std::mem;
+use std::os::raw::c_void;
+use std::ptr::NonNull;
+use std::sync::Arc;
 
 mod command;
 mod conversions;
@@ -28,21 +42,6 @@ pub use crate::window::{AcquireMode, CAMetalLayer, Surface, Swapchain};
 
 pub type GraphicsCommandPool = CommandPool;
 
-use std::mem;
-use std::os::raw::c_void;
-use std::ptr::NonNull;
-use std::sync::Arc;
-
-use self::hal::queue::QueueFamilyId;
-
-use cocoa::foundation::NSInteger;
-use core_graphics::base::CGFloat;
-use core_graphics::geometry::CGRect;
-use foreign_types::ForeignTypeRef;
-use metal::MTLFeatureSet;
-use metal::MTLLanguageVersion;
-use objc::runtime::{Object, BOOL, YES};
-use parking_lot::{Condvar, Mutex};
 
 //TODO: investigate why exactly using `u8` here is slower (~5% total).
 /// A type representing Metal binding's resource index.
@@ -68,6 +67,7 @@ impl Default for OnlineRecording {
 
 const MAX_ACTIVE_COMMAND_BUFFERS: usize = 1 << 14;
 const MAX_VISIBILITY_QUERIES: usize = 1 << 14;
+const MAX_COLOR_ATTACHMENTS: usize = 4;
 
 #[derive(Debug, Clone, Copy)]
 pub struct QueueFamily {}
@@ -84,15 +84,17 @@ impl hal::QueueFamily for QueueFamily {
     }
 }
 
+#[derive(Debug)]
 struct VisibilityShared {
     /// Availability buffer is in shared memory, it has N double words for
     /// query results followed by N words for the availability.
     buffer: metal::Buffer,
-    allocator: Mutex<range_alloc::RangeAllocator<hal::query::Id>>,
+    allocator: Mutex<RangeAllocator<hal::query::Id>>,
     availability_offset: hal::buffer::Offset,
     condvar: Condvar,
 }
 
+#[derive(Debug)]
 struct Shared {
     device: Mutex<metal::Device>,
     queue: Mutex<command::QueueInner>,
@@ -115,7 +117,7 @@ impl Shared {
                     * (mem::size_of::<u64>() + mem::size_of::<u32>()) as u64,
                 metal::MTLResourceOptions::StorageModeShared,
             ),
-            allocator: Mutex::new(range_alloc::RangeAllocator::new(
+            allocator: Mutex::new(RangeAllocator::new(
                 0..MAX_VISIBILITY_QUERIES as hal::query::Id,
             )),
             availability_offset: (MAX_VISIBILITY_QUERIES * mem::size_of::<u64>())
@@ -139,6 +141,7 @@ impl Shared {
     }
 }
 
+#[derive(Debug)]
 pub struct Instance;
 
 impl hal::Instance for Instance {
@@ -190,8 +193,8 @@ impl Instance {
         window::SurfaceInner::new(None, layer)
     }
 
-    pub fn create_surface_from_layer(&self, layer: CAMetalLayer) -> Surface {
-        unsafe { self.create_from_layer(layer) }.into_surface()
+    pub fn create_surface_from_layer(&self, layer: CAMetalLayer, enable_signposts: bool) -> Surface {
+        unsafe { self.create_from_layer(layer) }.into_surface(enable_signposts)
     }
 }
 
@@ -204,12 +207,13 @@ impl Instance {
             panic!("window does not have a valid contentView");
         }
 
-        // temporary, hopefully!
+        // Deprecated! Clients should use `create_surface_from_layer` instead.
         let is_actually_layer: BOOL = msg_send![view, isKindOfClass: class];
         if is_actually_layer == YES {
             return self.create_from_layer(view);
         }
 
+        msg_send![view, retain];
         let existing: CAMetalLayer = msg_send![view, layer];
         let use_current = if existing.is_null() {
             false
@@ -223,7 +227,6 @@ impl Instance {
         } else {
             let layer: CAMetalLayer = msg_send![class, new];
             msg_send![view, setLayer: layer];
-            msg_send![view, retain];
             let bounds: CGRect = msg_send![view, bounds];
             msg_send![layer, setBounds: bounds];
 
@@ -238,14 +241,16 @@ impl Instance {
         window::SurfaceInner::new(NonNull::new(view), render_layer)
     }
 
-    pub fn create_surface_from_nsview(&self, nsview: *mut c_void) -> Surface {
-        unsafe { self.create_from_nsview(nsview) }.into_surface()
+    pub fn create_surface_from_nsview(
+        &self, nsview: *mut c_void, enable_signposts: bool
+    ) -> Surface {
+        unsafe { self.create_from_nsview(nsview) }.into_surface(enable_signposts)
     }
 
     #[cfg(feature = "winit")]
     pub fn create_surface(&self, window: &winit::Window) -> Surface {
         use winit::os::macos::WindowExt;
-        self.create_surface_from_nsview(window.get_nsview())
+        self.create_surface_from_nsview(window.get_nsview(), false)
     }
 }
 
@@ -293,14 +298,16 @@ impl Instance {
         window::SurfaceInner::new(NonNull::new(view), render_layer)
     }
 
-    pub fn create_surface_from_uiview(&self, uiview: *mut c_void) -> Surface {
-        unsafe { self.create_from_uiview(uiview) }.into_surface()
+    pub fn create_surface_from_uiview(
+        &self, uiview: *mut c_void, enable_signposts: bool
+    ) -> Surface {
+        unsafe { self.create_from_uiview(uiview) }.into_surface(enable_signposts)
     }
 
     #[cfg(feature = "winit")]
     pub fn create_surface(&self, window: &winit::Window) -> Surface {
         use winit::os::ios::WindowExt;
-        self.create_surface_from_uiview(window.get_uiview())
+        self.create_surface_from_uiview(window.get_uiview(), false)
     }
 }
 
@@ -492,7 +499,7 @@ const FUNCTION_SPECIALIZATION_SUPPORT: &[MTLFeatureSet] = &[
 ];
 
 const DEPTH_CLIP_MODE: &[MTLFeatureSet] = &[
-    MTLFeatureSet::iOS_GPUFamily2_v1,
+    MTLFeatureSet::iOS_GPUFamily4_v1,
     MTLFeatureSet::tvOS_GPUFamily1_v3,
     MTLFeatureSet::macOS_GPUFamily1_v1,
 ];
@@ -567,6 +574,8 @@ struct PrivateCapabilities {
     buffer_alignment: u64,
     max_buffer_size: u64,
     max_texture_size: u64,
+    max_texture_3d_size: u64,
+    max_texture_layers: u64,
 }
 
 impl PrivateCapabilities {
@@ -753,50 +762,37 @@ impl PrivateCapabilities {
                 ],
             ) && !os_is_mac,
             format_rgba32float_all: os_is_mac,
-            format_depth16unorm: Self::supports_any(
-                &device,
-                &[
-                    MTLFeatureSet::macOS_GPUFamily1_v2,
-                    MTLFeatureSet::macOS_GPUFamily1_v3,
-                ],
-            ),
-            format_depth32float_filter: Self::supports_any(
-                &device,
-                &[
-                    MTLFeatureSet::macOS_GPUFamily1_v1,
-                    MTLFeatureSet::macOS_GPUFamily1_v2,
-                    MTLFeatureSet::macOS_GPUFamily1_v3,
-                ],
-            ),
-            format_depth32float_none: !Self::supports_any(
-                &device,
-                &[
-                    MTLFeatureSet::macOS_GPUFamily1_v1,
-                    MTLFeatureSet::macOS_GPUFamily1_v2,
-                    MTLFeatureSet::macOS_GPUFamily1_v3,
-                ],
-            ),
+            format_depth16unorm: device.supports_feature_set(MTLFeatureSet::macOS_GPUFamily1_v2),
+            format_depth32float_filter: device.supports_feature_set(MTLFeatureSet::macOS_GPUFamily1_v1),
+            format_depth32float_none: !device.supports_feature_set(MTLFeatureSet::macOS_GPUFamily1_v1),
             format_bgr10a2_all: Self::supports_any(&device, BGR10A2_ALL),
-            format_bgr10a2_no_write: !Self::supports_any(
-                &device,
-                &[MTLFeatureSet::macOS_GPUFamily1_v3],
-            ),
+            format_bgr10a2_no_write: !device.supports_feature_set(MTLFeatureSet::macOS_GPUFamily1_v3),
             max_buffers_per_stage: 31,
             max_textures_per_stage: if os_is_mac { 128 } else { 31 },
             max_samplers_per_stage: 16,
             buffer_alignment: if os_is_mac { 256 } else { 64 },
-            max_buffer_size: if Self::supports_any(
-                &device,
-                &[
-                    MTLFeatureSet::macOS_GPUFamily1_v2,
-                    MTLFeatureSet::macOS_GPUFamily1_v3,
-                ],
-            ) {
+            max_buffer_size: if device.supports_feature_set(MTLFeatureSet::macOS_GPUFamily1_v2) {
                 1 << 30 // 1GB on macOS 1.2 and up
             } else {
                 1 << 28 // 256MB otherwise
             },
-            max_texture_size: 4096, //TODO
+            max_texture_size: if Self::supports_any(&device, &[
+                MTLFeatureSet::iOS_GPUFamily3_v1,
+                MTLFeatureSet::tvOS_GPUFamily2_v1,
+                MTLFeatureSet::macOS_GPUFamily1_v1,
+            ]) {
+                16384
+            } else if Self::supports_any(&device, &[
+                MTLFeatureSet::iOS_GPUFamily1_v2,
+                MTLFeatureSet::iOS_GPUFamily2_v2,
+                MTLFeatureSet::tvOS_GPUFamily1_v1,
+            ]) {
+                8192
+            } else {
+                4096
+            },
+            max_texture_3d_size: 2048,
+            max_texture_layers: 2048,
         }
     }
 

@@ -1,4 +1,6 @@
+#pragma GCC diagnostic ignored "-Wunknown-pragmas"
 //#pragma warning(disable : 4996 4101)
+
 #include "vendor/SPIRV-Cross/spirv_cross_util.hpp"
 #include "vendor/SPIRV-Cross/spirv_hlsl.hpp"
 #include "vendor/SPIRV-Cross/spirv_msl.hpp"
@@ -7,6 +9,16 @@
 
 static const char *latest_exception_message;
 
+#ifdef SPIRV_CROSS_WRAPPER_NO_EXCEPTIONS
+#define INTERNAL_RESULT(block_to_attempt)                 \
+    do                                                    \
+    {                                                     \
+        {                                                 \
+            block_to_attempt                              \
+        }                                                 \
+        return ScInternalResult::Success;                 \
+    } while (0);
+#else
 #define INTERNAL_RESULT(block_to_attempt)                 \
     do                                                    \
     {                                                     \
@@ -32,6 +44,7 @@ static const char *latest_exception_message;
         }                                                 \
         return ScInternalResult::Unhandled;               \
     } while (0);
+#endif
 
 extern "C"
 {
@@ -40,6 +53,7 @@ extern "C"
         INTERNAL_RESULT(*message = latest_exception_message;)
     }
 
+#ifdef SPIRV_CROSS_WRAPPER_HLSL
     ScInternalResult sc_internal_compiler_hlsl_new(ScInternalCompilerHlsl **compiler, const uint32_t *ir, const size_t size)
     {
         INTERNAL_RESULT(*compiler = new spirv_cross::CompilerHLSL(ir, size);)
@@ -84,7 +98,9 @@ extern "C"
                 compiler_hlsl->set_root_constant_layouts(root_constants);
             } while (0);)
     }
+#endif
 
+#ifdef SPIRV_CROSS_WRAPPER_MSL
     ScInternalResult sc_internal_compiler_msl_new(ScInternalCompilerMsl **compiler, const uint32_t *ir, const size_t size)
     {
         INTERNAL_RESULT(*compiler = new spirv_cross::CompilerMSL(ir, size);)
@@ -92,23 +108,30 @@ extern "C"
 
     ScInternalResult sc_internal_compiler_msl_compile(const ScInternalCompilerBase *compiler, const char **shader,
                                                       const spirv_cross::MSLVertexAttr *p_vat_overrides, const size_t vat_override_count,
-                                                      const spirv_cross::MSLResourceBinding *p_res_overrides, const size_t res_override_count)
+                                                      const spirv_cross::MSLResourceBinding *p_res_overrides, const size_t res_override_count,
+                                                      const MslConstSamplerMapping *p_const_samplers, const size_t const_sampler_count)
     {
         INTERNAL_RESULT(
             do {
-                std::vector<spirv_cross::MSLVertexAttr> vat_overrides;
-                if (p_vat_overrides)
+                auto compiler_msl = ((spirv_cross::CompilerMSL *)compiler);
+
+                for (size_t i = 0; i < vat_override_count; i++)
                 {
-                    vat_overrides.insert(vat_overrides.end(), &p_vat_overrides[0], &p_vat_overrides[vat_override_count]);
+                    compiler_msl->add_msl_vertex_attribute(p_vat_overrides[i]);
                 }
 
-                std::vector<spirv_cross::MSLResourceBinding> res_overrides;
-                if (p_res_overrides)
+                for (size_t i = 0; i < res_override_count; i++)
                 {
-                    res_overrides.insert(res_overrides.end(), &p_res_overrides[0], &p_res_overrides[res_override_count]);
+                    compiler_msl->add_msl_resource_binding(p_res_overrides[i]);
                 }
 
-                *shader = strdup(((spirv_cross::CompilerMSL *)compiler)->compile(&vat_overrides, &res_overrides).c_str());
+                for (size_t i = 0; i < const_sampler_count; i++)
+                {
+                    const auto& mapping = p_const_samplers[i];
+                    compiler_msl->remap_constexpr_sampler_by_binding(mapping.desc_set, mapping.binding, mapping.sampler);
+                }
+
+                *shader = strdup(compiler_msl->compile().c_str());
             } while (0);)
     }
 
@@ -126,8 +149,19 @@ extern "C"
                 auto msl_options = compiler_msl->get_msl_options();
                 msl_options.platform = static_cast<spirv_cross::CompilerMSL::Options::Platform>(options->platform);
                 msl_options.msl_version = options->version;
+                msl_options.swizzle_buffer_index = options->swizzle_buffer_index;
+                msl_options.indirect_params_buffer_index = options->indirect_params_buffer_index;
+                msl_options.shader_output_buffer_index = options->shader_output_buffer_index;
+                msl_options.shader_patch_output_buffer_index = options->shader_patch_output_buffer_index;
+                msl_options.shader_tess_factor_buffer_index = options->shader_tess_factor_buffer_index;
+                msl_options.buffer_size_buffer_index = options->buffer_size_buffer_index;
                 msl_options.enable_point_size_builtin = options->enable_point_size_builtin;
                 msl_options.disable_rasterization = options->disable_rasterization;
+                msl_options.capture_output_to_buffer = options->capture_output_to_buffer;
+                msl_options.swizzle_texture_samples = options->swizzle_texture_samples;
+                msl_options.tess_domain_origin_lower_left = options->tess_domain_origin_lower_left;
+                msl_options.argument_buffers = options->argument_buffers;
+                msl_options.pad_fragment_output_components = options->pad_fragment_output_components;
                 compiler_msl->set_msl_options(msl_options);
             } while (0);)
     }
@@ -136,7 +170,9 @@ extern "C"
     {
         INTERNAL_RESULT(*is_rasterization_disabled = ((spirv_cross::CompilerMSL *)compiler)->get_is_rasterization_disabled();)
     }
+#endif
 
+#ifdef SPIRV_CROSS_WRAPPER_GLSL
     ScInternalResult sc_internal_compiler_glsl_new(ScInternalCompilerGlsl **compiler, const uint32_t *ir, const size_t size)
     {
         INTERNAL_RESULT(*compiler = new spirv_cross::CompilerGLSL(ir, size);)
@@ -168,11 +204,12 @@ extern "C"
     {
         INTERNAL_RESULT(
             do {
-                const std::vector<spirv_cross::CombinedImageSampler>& ret = ((spirv_cross::CompilerGLSL *)compiler)->get_combined_image_samplers();
+                const spirv_cross::SmallVector<spirv_cross::CombinedImageSampler>& ret = ((spirv_cross::CompilerGLSL *)compiler)->get_combined_image_samplers();
                 *samplers = (const ScCombinedImageSampler *)ret.data();
                 *size = ret.size();
             } while (0);)
     }
+#endif
 
     ScInternalResult sc_internal_compiler_get_decoration(const ScInternalCompilerBase *compiler, uint32_t *result, const uint32_t id, const spv::Decoration decoration)
     {
@@ -233,7 +270,7 @@ extern "C"
             } while (0);)
     }
 
-    void fill_resource_array(ScResourceArray *resources, const std::vector<spirv_cross::Resource> &sc_resources)
+    void fill_resource_array(ScResourceArray *resources, const spirv_cross::SmallVector<spirv_cross::Resource> &sc_resources)
     {
         auto const sc_size = sc_resources.size();
 
@@ -295,12 +332,12 @@ extern "C"
             } while (0);)
     }
 
-    ScInternalResult sc_internal_compiler_set_scalar_constant(const ScInternalCompilerBase *compiler, const uint32_t id, const uint64_t constant)
+    ScInternalResult sc_internal_compiler_set_scalar_constant(const ScInternalCompilerBase *compiler, const uint32_t id, const uint32_t constant_high_bits, const uint32_t constant_low_bits)
     {
         INTERNAL_RESULT(
             do {
                 auto &sc_constant = ((spirv_cross::Compiler *)compiler)->get_constant(id);
-                sc_constant.m.c[0].r[0].u64 = constant;
+                sc_constant.m.c[0].r[0].u64 = (((uint64_t)constant_high_bits) << 32) | constant_low_bits;
             } while (0);)
     }
 
@@ -383,7 +420,7 @@ extern "C"
     ScInternalResult sc_internal_compiler_rename_interface_variable(const ScInternalCompilerBase *compiler, const ScResource *resources, const size_t resources_size, uint32_t location, const char *name)
     {
         INTERNAL_RESULT(do {
-            std::vector<spirv_cross::Resource> sc_resources;
+            spirv_cross::SmallVector<spirv_cross::Resource> sc_resources;
             for (size_t i = 0; i < resources_size; i++)
             {
                 auto const &resource = resources[i];

@@ -7,12 +7,9 @@
 
 use super::*;
 
-use cocoa::foundation::{NSRange, NSUInteger, NSInteger};
-use objc_foundation::{NSString, INSString};
+use cocoa::foundation::{NSInteger, NSRange, NSUInteger};
 
-use libc;
 use std::ops::Range;
-
 
 #[repr(u64)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -27,8 +24,8 @@ pub enum MTLPrimitiveType {
 #[repr(u64)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum MTLIndexType {
-   UInt16 = 0,
-   UInt32 = 1,
+    UInt16 = 0,
+    UInt32 = 1,
 }
 
 #[repr(u64)]
@@ -83,7 +80,7 @@ pub struct MTLScissorRect {
     pub x: NSUInteger,
     pub y: NSUInteger,
     pub width: NSUInteger,
-    pub height: NSUInteger
+    pub height: NSUInteger,
 }
 
 #[repr(C)]
@@ -103,7 +100,7 @@ pub struct MTLDrawPrimitivesIndirectArguments {
     pub vertexCount: u32,
     pub instanceCount: u32,
     pub vertexStart: u32,
-    pub baseInstance: u32
+    pub baseInstance: u32,
 }
 
 #[repr(C)]
@@ -113,7 +110,7 @@ pub struct MTLDrawIndexedPrimitivesIndirectArguments {
     pub instanceCount: u32,
     pub indexStart: u32,
     pub baseVertex: i32,
-    pub baseInstance: u32
+    pub baseInstance: u32,
 }
 
 pub enum MTLCommandEncoder {}
@@ -127,15 +124,15 @@ foreign_obj_type! {
 impl CommandEncoderRef {
     pub fn label(&self) -> &str {
         unsafe {
-            let label: &NSString = msg_send![self, label];
-            label.as_str()
+            let label = msg_send![self, label];
+            crate::nsstring_as_str(label)
         }
     }
 
     pub fn set_label(&self, label: &str) {
         unsafe {
-            let nslabel = NSString::from_str(label);
-            msg_send![self, setLabel:nslabel];
+            let nslabel = crate::nsstring_from_str(label);
+            msg_send![self, setLabel: nslabel];
         }
     }
 
@@ -155,12 +152,9 @@ foreign_obj_type! {
     type ParentType = CommandEncoderRef;
 }
 
-
 impl ParallelRenderCommandEncoderRef {
     pub fn render_command_encoder(&self) -> &RenderCommandEncoderRef {
-        unsafe {
-            msg_send![self, renderCommandEncoder]
-        }
+        unsafe { msg_send![self, renderCommandEncoder] }
     }
 }
 
@@ -175,33 +169,23 @@ foreign_obj_type! {
 
 impl RenderCommandEncoderRef {
     pub fn set_render_pipeline_state(&self, pipeline_state: &RenderPipelineStateRef) {
-        unsafe {
-            msg_send![self, setRenderPipelineState:pipeline_state]
-        }
+        unsafe { msg_send![self, setRenderPipelineState: pipeline_state] }
     }
 
     pub fn set_viewport(&self, viewport: MTLViewport) {
-        unsafe {
-            msg_send![self, setViewport:viewport]
-        }
+        unsafe { msg_send![self, setViewport: viewport] }
     }
 
     pub fn set_front_facing_winding(&self, winding: MTLWinding) {
-        unsafe {
-            msg_send![self, setFrontFacingWinding:winding]
-        }
+        unsafe { msg_send![self, setFrontFacingWinding: winding] }
     }
 
     pub fn set_cull_mode(&self, mode: MTLCullMode) {
-        unsafe {
-            msg_send![self, setCullMode:mode]
-        }
+        unsafe { msg_send![self, setCullMode: mode] }
     }
 
     pub fn set_depth_clip_mode(&self, mode: MTLDepthClipMode) {
-        unsafe {
-            msg_send![self, setDepthClipMode:mode]
-        }
+        unsafe { msg_send![self, setDepthClipMode: mode] }
     }
 
     pub fn set_depth_bias(&self, bias: f32, scale: f32, clamp: f32) {
@@ -213,15 +197,11 @@ impl RenderCommandEncoderRef {
     }
 
     pub fn set_scissor_rect(&self, rect: MTLScissorRect) {
-        unsafe {
-            msg_send![self, setScissorRect:rect]
-        }
+        unsafe { msg_send![self, setScissorRect: rect] }
     }
 
     pub fn set_triangle_fill_mode(&self, mode: MTLTriangleFillMode) {
-        unsafe {
-            msg_send![self, setTriangleFillMode:mode]
-        }
+        unsafe { msg_send![self, setTriangleFillMode: mode] }
     }
 
     pub fn set_blend_color(&self, red: f32, green: f32, blue: f32, alpha: f32) {
@@ -234,15 +214,11 @@ impl RenderCommandEncoderRef {
     }
 
     pub fn set_depth_stencil_state(&self, depth_stencil_state: &DepthStencilStateRef) {
-        unsafe {
-            msg_send![self, setDepthStencilState:depth_stencil_state]
-        }
+        unsafe { msg_send![self, setDepthStencilState: depth_stencil_state] }
     }
 
     pub fn set_stencil_reference_value(&self, value: u32) {
-        unsafe {
-            msg_send![self, setStencilReferenceValue:value]
-        }
+        unsafe { msg_send![self, setStencilReferenceValue: value] }
     }
 
     pub fn set_stencil_front_back_reference_value(&self, front: u32, back: u32) {
@@ -262,7 +238,12 @@ impl RenderCommandEncoderRef {
 
     // Specifying Resources for a Vertex Shader Function
 
-    pub fn set_vertex_bytes(&self, index: NSUInteger, length: NSUInteger, bytes: *const libc::c_void) {
+    pub fn set_vertex_bytes(
+        &self,
+        index: NSUInteger,
+        length: NSUInteger,
+        bytes: *const std::ffi::c_void,
+    ) {
         unsafe {
             msg_send![self,
                 setVertexBytes:bytes
@@ -272,7 +253,12 @@ impl RenderCommandEncoderRef {
         }
     }
 
-    pub fn set_vertex_buffer(&self, index: NSUInteger, buffer: Option<&BufferRef>, offset: NSUInteger) {
+    pub fn set_vertex_buffer(
+        &self,
+        index: NSUInteger,
+        buffer: Option<&BufferRef>,
+        offset: NSUInteger,
+    ) {
         unsafe {
             msg_send![self,
                 setVertexBuffer:buffer
@@ -282,7 +268,12 @@ impl RenderCommandEncoderRef {
         }
     }
 
-    pub fn set_vertex_buffers(&self, start_index: NSUInteger, data: &[Option<&BufferRef>], offsets: &[NSUInteger]) {
+    pub fn set_vertex_buffers(
+        &self,
+        start_index: NSUInteger,
+        data: &[Option<&BufferRef>],
+        offsets: &[NSUInteger],
+    ) {
         debug_assert_eq!(offsets.len(), data.len());
         unsafe {
             msg_send![self,
@@ -326,7 +317,11 @@ impl RenderCommandEncoderRef {
         }
     }
 
-    pub fn set_vertex_sampler_states(&self, start_index: NSUInteger, data: &[Option<&SamplerStateRef>]) {
+    pub fn set_vertex_sampler_states(
+        &self,
+        start_index: NSUInteger,
+        data: &[Option<&SamplerStateRef>],
+    ) {
         unsafe {
             msg_send![self,
                 setVertexSamplerStates: data.as_ptr()
@@ -339,7 +334,10 @@ impl RenderCommandEncoderRef {
     }
 
     pub fn set_vertex_sampler_state_with_lod(
-        &self, index: NSUInteger, sampler: Option<&SamplerStateRef>, lod_clamp: Range<f32>
+        &self,
+        index: NSUInteger,
+        sampler: Option<&SamplerStateRef>,
+        lod_clamp: Range<f32>,
     ) {
         unsafe {
             msg_send![self,
@@ -353,7 +351,12 @@ impl RenderCommandEncoderRef {
 
     // Specifying Resources for a Fragment Shader Function
 
-    pub fn set_fragment_bytes(&self, index: NSUInteger, length: NSUInteger, bytes: *const libc::c_void) {
+    pub fn set_fragment_bytes(
+        &self,
+        index: NSUInteger,
+        length: NSUInteger,
+        bytes: *const std::ffi::c_void,
+    ) {
         unsafe {
             msg_send![self,
                 setFragmentBytes:bytes
@@ -363,7 +366,12 @@ impl RenderCommandEncoderRef {
         }
     }
 
-    pub fn set_fragment_buffer(&self, index: NSUInteger, buffer: Option<&BufferRef>, offset: NSUInteger) {
+    pub fn set_fragment_buffer(
+        &self,
+        index: NSUInteger,
+        buffer: Option<&BufferRef>,
+        offset: NSUInteger,
+    ) {
         unsafe {
             msg_send![self,
                 setFragmentBuffer:buffer
@@ -373,7 +381,12 @@ impl RenderCommandEncoderRef {
         }
     }
 
-    pub fn set_fragment_buffers(&self, start_index: NSUInteger, data: &[Option<&BufferRef>], offsets: &[NSUInteger]) {
+    pub fn set_fragment_buffers(
+        &self,
+        start_index: NSUInteger,
+        data: &[Option<&BufferRef>],
+        offsets: &[NSUInteger],
+    ) {
         debug_assert_eq!(offsets.len(), data.len());
         unsafe {
             msg_send![self,
@@ -415,7 +428,11 @@ impl RenderCommandEncoderRef {
         }
     }
 
-    pub fn set_fragment_sampler_states(&self, start_index: NSUInteger, data: &[Option<&SamplerStateRef>]) {
+    pub fn set_fragment_sampler_states(
+        &self,
+        start_index: NSUInteger,
+        data: &[Option<&SamplerStateRef>],
+    ) {
         unsafe {
             msg_send![self,
                 setFragmentSamplerStates: data.as_ptr()
@@ -428,7 +445,10 @@ impl RenderCommandEncoderRef {
     }
 
     pub fn set_fragment_sampler_state_with_lod(
-        &self, index: NSUInteger, sampler: Option<&SamplerStateRef>, lod_clamp: Range<f32>
+        &self,
+        index: NSUInteger,
+        sampler: Option<&SamplerStateRef>,
+        lod_clamp: Range<f32>,
     ) {
         unsafe {
             msg_send![self,
@@ -443,7 +463,10 @@ impl RenderCommandEncoderRef {
     // Drawing Geometric Primitives
 
     pub fn draw_primitives(
-        &self, primitive_type: MTLPrimitiveType, vertex_start: NSUInteger, vertex_count: NSUInteger
+        &self,
+        primitive_type: MTLPrimitiveType,
+        vertex_start: NSUInteger,
+        vertex_count: NSUInteger,
     ) {
         unsafe {
             msg_send![self,
@@ -455,7 +478,11 @@ impl RenderCommandEncoderRef {
     }
 
     pub fn draw_primitives_instanced(
-        &self, primitive_type: MTLPrimitiveType, vertex_start: NSUInteger, vertex_count: NSUInteger, instance_count: NSUInteger
+        &self,
+        primitive_type: MTLPrimitiveType,
+        vertex_start: NSUInteger,
+        vertex_count: NSUInteger,
+        instance_count: NSUInteger,
     ) {
         unsafe {
             msg_send![self,
@@ -468,7 +495,12 @@ impl RenderCommandEncoderRef {
     }
 
     pub fn draw_primitives_instanced_base_instance(
-        &self, primitive_type: MTLPrimitiveType, vertex_start: NSUInteger, vertex_count: NSUInteger, instance_count: NSUInteger, base_instance: NSUInteger
+        &self,
+        primitive_type: MTLPrimitiveType,
+        vertex_start: NSUInteger,
+        vertex_count: NSUInteger,
+        instance_count: NSUInteger,
+        base_instance: NSUInteger,
     ) {
         unsafe {
             msg_send![self,
@@ -482,7 +514,10 @@ impl RenderCommandEncoderRef {
     }
 
     pub fn draw_primitives_indirect(
-        &self, primitive_type: MTLPrimitiveType, indirect_buffer: &BufferRef, indirect_buffer_offset: NSUInteger
+        &self,
+        primitive_type: MTLPrimitiveType,
+        indirect_buffer: &BufferRef,
+        indirect_buffer_offset: NSUInteger,
     ) {
         unsafe {
             msg_send![self,
@@ -494,7 +529,12 @@ impl RenderCommandEncoderRef {
     }
 
     pub fn draw_indexed_primitives(
-        &self, primitive_type: MTLPrimitiveType, index_count: NSUInteger, index_type: MTLIndexType, index_buffer: &BufferRef, index_buffer_offset: NSUInteger
+        &self,
+        primitive_type: MTLPrimitiveType,
+        index_count: NSUInteger,
+        index_type: MTLIndexType,
+        index_buffer: &BufferRef,
+        index_buffer_offset: NSUInteger,
     ) {
         unsafe {
             msg_send![self,
@@ -508,7 +548,13 @@ impl RenderCommandEncoderRef {
     }
 
     pub fn draw_indexed_primitives_instanced(
-        &self, primitive_type: MTLPrimitiveType, index_count: NSUInteger, index_type: MTLIndexType, index_buffer: &BufferRef, index_buffer_offset: NSUInteger, instance_count: NSUInteger
+        &self,
+        primitive_type: MTLPrimitiveType,
+        index_count: NSUInteger,
+        index_type: MTLIndexType,
+        index_buffer: &BufferRef,
+        index_buffer_offset: NSUInteger,
+        instance_count: NSUInteger,
     ) {
         unsafe {
             msg_send![self,
@@ -523,7 +569,15 @@ impl RenderCommandEncoderRef {
     }
 
     pub fn draw_indexed_primitives_instanced_base_instance(
-        &self, primitive_type: MTLPrimitiveType, index_count: NSUInteger, index_type: MTLIndexType, index_buffer: &BufferRef, index_buffer_offset: NSUInteger, instance_count: NSUInteger, base_vertex: NSInteger, base_instance: NSUInteger
+        &self,
+        primitive_type: MTLPrimitiveType,
+        index_count: NSUInteger,
+        index_type: MTLIndexType,
+        index_buffer: &BufferRef,
+        index_buffer_offset: NSUInteger,
+        instance_count: NSUInteger,
+        base_vertex: NSInteger,
+        base_instance: NSUInteger,
     ) {
         unsafe {
             msg_send![self,
@@ -540,7 +594,13 @@ impl RenderCommandEncoderRef {
     }
 
     pub fn draw_indexed_primitives_indirect(
-        &self, primitive_type: MTLPrimitiveType, index_type: MTLIndexType, index_buffer: &BufferRef, index_buffer_offset: NSUInteger, indirect_buffer: &BufferRef, indirect_buffer_offset: NSUInteger
+        &self,
+        primitive_type: MTLPrimitiveType,
+        index_type: MTLIndexType,
+        index_buffer: &BufferRef,
+        index_buffer_offset: NSUInteger,
+        indirect_buffer: &BufferRef,
+        indirect_buffer_offset: NSUInteger,
     ) {
         unsafe {
             msg_send![self,
@@ -567,9 +627,7 @@ impl RenderCommandEncoderRef {
     }
 
     pub fn use_heap(&self, heap: &HeapRef) {
-        unsafe {
-            msg_send![self, useHeap:heap]
-        }
+        unsafe { msg_send![self, useHeap: heap] }
     }
 }
 
@@ -584,14 +642,10 @@ foreign_obj_type! {
 
 impl BlitCommandEncoderRef {
     pub fn synchronize_resource(&self, resource: &ResourceRef) {
-        unsafe {
-            msg_send![self, synchronizeResource:resource]
-        }
+        unsafe { msg_send![self, synchronizeResource: resource] }
     }
 
-    pub fn fill_buffer(&self,
-        destination_buffer: &BufferRef, range: NSRange, value: u8,
-    ) {
+    pub fn fill_buffer(&self, destination_buffer: &BufferRef, range: NSRange, value: u8) {
         unsafe {
             msg_send![self,
                 fillBuffer: destination_buffer
@@ -601,9 +655,12 @@ impl BlitCommandEncoderRef {
         }
     }
 
-    pub fn copy_from_buffer(&self,
-        source_buffer: &BufferRef, source_offset: NSUInteger,
-        destination_buffer: &BufferRef, destination_offset: NSUInteger,
+    pub fn copy_from_buffer(
+        &self,
+        source_buffer: &BufferRef,
+        source_offset: NSUInteger,
+        destination_buffer: &BufferRef,
+        destination_offset: NSUInteger,
         size: NSUInteger,
     ) {
         unsafe {
@@ -617,9 +674,17 @@ impl BlitCommandEncoderRef {
         }
     }
 
-    pub fn copy_from_texture(&self,
-        source_texture: &TextureRef, source_slice: NSUInteger, source_level: NSUInteger, source_origin: MTLOrigin, source_size: MTLSize,
-        destination_texture: &TextureRef, destination_slice: NSUInteger, destination_level: NSUInteger, destination_origin: MTLOrigin,
+    pub fn copy_from_texture(
+        &self,
+        source_texture: &TextureRef,
+        source_slice: NSUInteger,
+        source_level: NSUInteger,
+        source_origin: MTLOrigin,
+        source_size: MTLSize,
+        destination_texture: &TextureRef,
+        destination_slice: NSUInteger,
+        destination_level: NSUInteger,
+        destination_origin: MTLOrigin,
     ) {
         unsafe {
             msg_send![self,
@@ -636,9 +701,17 @@ impl BlitCommandEncoderRef {
         }
     }
 
-    pub fn copy_from_buffer_to_texture(&self,
-        source_buffer: &BufferRef, source_offset: NSUInteger, source_bytes_per_row: NSUInteger, source_bytes_per_image: NSUInteger, source_size: MTLSize,
-        destination_texture: &TextureRef, destination_slice: NSUInteger, destination_level: NSUInteger, destination_origin: MTLOrigin,
+    pub fn copy_from_buffer_to_texture(
+        &self,
+        source_buffer: &BufferRef,
+        source_offset: NSUInteger,
+        source_bytes_per_row: NSUInteger,
+        source_bytes_per_image: NSUInteger,
+        source_size: MTLSize,
+        destination_texture: &TextureRef,
+        destination_slice: NSUInteger,
+        destination_level: NSUInteger,
+        destination_origin: MTLOrigin,
         options: MTLBlitOption,
     ) {
         unsafe {
@@ -657,9 +730,17 @@ impl BlitCommandEncoderRef {
         }
     }
 
-    pub fn copy_from_texture_to_buffer(&self,
-        source_texture: &TextureRef, source_slice: NSUInteger, source_level: NSUInteger, source_origin: MTLOrigin, source_size: MTLSize,
-        destination_buffer: &BufferRef, destination_offset: NSUInteger, destination_bytes_per_row: NSUInteger, destination_bytes_per_image: NSUInteger,
+    pub fn copy_from_texture_to_buffer(
+        &self,
+        source_texture: &TextureRef,
+        source_slice: NSUInteger,
+        source_level: NSUInteger,
+        source_origin: MTLOrigin,
+        source_size: MTLSize,
+        destination_buffer: &BufferRef,
+        destination_offset: NSUInteger,
+        destination_bytes_per_row: NSUInteger,
+        destination_bytes_per_image: NSUInteger,
         options: MTLBlitOption,
     ) {
         unsafe {
@@ -678,18 +759,15 @@ impl BlitCommandEncoderRef {
         }
     }
 
-    pub fn optimize_contents_for_gpu_access(&self,
-        texture: &TextureRef
-    ) {
-        unsafe {
-            msg_send![self,
-                optimizeContentsForGPUAccess: texture
-            ]
-        }
+    pub fn optimize_contents_for_gpu_access(&self, texture: &TextureRef) {
+        unsafe { msg_send![self, optimizeContentsForGPUAccess: texture] }
     }
 
-    pub fn optimize_contents_for_gpu_access_slice_level(&self,
-        texture: &TextureRef, slice: NSUInteger, level: NSUInteger
+    pub fn optimize_contents_for_gpu_access_slice_level(
+        &self,
+        texture: &TextureRef,
+        slice: NSUInteger,
+        level: NSUInteger,
     ) {
         unsafe {
             msg_send![self,
@@ -700,18 +778,15 @@ impl BlitCommandEncoderRef {
         }
     }
 
-    pub fn optimize_contents_for_cpu_access(&self,
-        texture: &TextureRef
-    ) {
-        unsafe {
-            msg_send![self,
-                optimizeContentsForCPUAccess: texture
-            ]
-        }
+    pub fn optimize_contents_for_cpu_access(&self, texture: &TextureRef) {
+        unsafe { msg_send![self, optimizeContentsForCPUAccess: texture] }
     }
 
-    pub fn optimize_contents_for_cpu_access_slice_level(&self,
-        texture: &TextureRef, slice: NSUInteger, level: NSUInteger
+    pub fn optimize_contents_for_cpu_access_slice_level(
+        &self,
+        texture: &TextureRef,
+        slice: NSUInteger,
+        level: NSUInteger,
     ) {
         unsafe {
             msg_send![self,
@@ -734,18 +809,19 @@ foreign_obj_type! {
 
 impl ComputeCommandEncoderRef {
     pub fn set_compute_pipeline_state(&self, state: &ComputePipelineStateRef) {
-        unsafe {
-            msg_send![self, setComputePipelineState:state]
-        }
+        unsafe { msg_send![self, setComputePipelineState: state] }
     }
 
     pub fn set_buffer(&self, index: NSUInteger, buffer: Option<&BufferRef>, offset: NSUInteger) {
-        unsafe {
-            msg_send![self, setBuffer:buffer offset:offset atIndex:index]
-        }
+        unsafe { msg_send![self, setBuffer:buffer offset:offset atIndex:index] }
     }
 
-    pub fn set_buffers(&self, start_index: NSUInteger, data: &[Option<&BufferRef>], offsets: &[NSUInteger]) {
+    pub fn set_buffers(
+        &self,
+        start_index: NSUInteger,
+        data: &[Option<&BufferRef>],
+        offsets: &[NSUInteger],
+    ) {
         debug_assert_eq!(offsets.len(), data.len());
         unsafe {
             msg_send![self,
@@ -802,7 +878,10 @@ impl ComputeCommandEncoderRef {
     }
 
     pub fn set_sampler_state_with_lod(
-        &self, index: NSUInteger, sampler: Option<&SamplerStateRef>, lod_clamp: Range<f32>
+        &self,
+        index: NSUInteger,
+        sampler: Option<&SamplerStateRef>,
+        lod_clamp: Range<f32>,
     ) {
         unsafe {
             msg_send![self,
@@ -814,7 +893,7 @@ impl ComputeCommandEncoderRef {
         }
     }
 
-    pub fn set_bytes(&self, index: NSUInteger, length: NSUInteger, bytes: *const libc::c_void) {
+    pub fn set_bytes(&self, index: NSUInteger, length: NSUInteger, bytes: *const std::ffi::c_void) {
         unsafe {
             msg_send![self,
                 setBytes: bytes
@@ -824,7 +903,11 @@ impl ComputeCommandEncoderRef {
         }
     }
 
-    pub fn dispatch_thread_groups(&self, thread_groups_count: MTLSize, threads_per_thread_group: MTLSize) {
+    pub fn dispatch_thread_groups(
+        &self,
+        thread_groups_count: MTLSize,
+        threads_per_thread_group: MTLSize,
+    ) {
         unsafe {
             msg_send![self,
                 dispatchThreadgroups:thread_groups_count
@@ -833,7 +916,12 @@ impl ComputeCommandEncoderRef {
         }
     }
 
-    pub fn dispatch_thread_groups_indirect(&self, buffer: &BufferRef, offset: NSUInteger, threads_per_thread_group: MTLSize) {
+    pub fn dispatch_thread_groups_indirect(
+        &self,
+        buffer: &BufferRef,
+        offset: NSUInteger,
+        threads_per_thread_group: MTLSize,
+    ) {
         unsafe {
             msg_send![self,
                 dispatchThreadgroupsWithIndirectBuffer:buffer
@@ -853,9 +941,7 @@ impl ComputeCommandEncoderRef {
     }
 
     pub fn use_heap(&self, heap: &HeapRef) {
-        unsafe {
-            msg_send![self, useHeap:heap]
-        }
+        unsafe { msg_send![self, useHeap: heap] }
     }
 }
 
@@ -869,15 +955,11 @@ foreign_obj_type! {
 
 impl ArgumentEncoderRef {
     pub fn encoded_length(&self) -> NSUInteger {
-        unsafe {
-            msg_send![self, encodedLength]
-        }
+        unsafe { msg_send![self, encodedLength] }
     }
 
     pub fn alignment(&self) -> NSUInteger {
-        unsafe {
-            msg_send![self, alignment]
-        }
+        unsafe { msg_send![self, alignment] }
     }
 
     pub fn set_argument_buffer(&self, buffer: &BufferRef, offset: NSUInteger) {
@@ -889,7 +971,12 @@ impl ArgumentEncoderRef {
         }
     }
 
-    pub fn set_argument_buffer_to_element(&self, buffer: &BufferRef, offset: NSUInteger, array_element: NSUInteger) {
+    pub fn set_argument_buffer_to_element(
+        &self,
+        buffer: &BufferRef,
+        offset: NSUInteger,
+        array_element: NSUInteger,
+    ) {
         unsafe {
             msg_send![self,
                 setArgumentBuffer: buffer
@@ -909,7 +996,12 @@ impl ArgumentEncoderRef {
         }
     }
 
-    pub fn set_buffers(&self, data: &[&BufferRef], offsets: &[NSUInteger], start_index: NSUInteger) {
+    pub fn set_buffers(
+        &self,
+        data: &[&BufferRef],
+        offsets: &[NSUInteger],
+        start_index: NSUInteger,
+    ) {
         assert_eq!(offsets.len(), data.len());
         unsafe {
             msg_send![self,
@@ -965,15 +1057,13 @@ impl ArgumentEncoderRef {
         }
     }
 
-    pub fn constant_data(&self, at_index: NSUInteger) -> *mut libc::c_void {
-        unsafe {
-            msg_send![self, constantDataAtIndex:at_index]
-        }
+    pub fn constant_data(&self, at_index: NSUInteger) -> *mut std::ffi::c_void {
+        unsafe { msg_send![self, constantDataAtIndex: at_index] }
     }
 
     pub fn new_argument_encoder_for_buffer(&self, index: NSUInteger) -> ArgumentEncoder {
         unsafe {
-            let ptr = msg_send![self, newArgumentEncoderForBufferAtIndex:index];
+            let ptr = msg_send![self, newArgumentEncoderForBufferAtIndex: index];
             ArgumentEncoder::from_ptr(ptr)
         }
     }

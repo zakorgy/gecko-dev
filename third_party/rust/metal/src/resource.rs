@@ -6,7 +6,6 @@
 // copied, modified, or distributed except according to those terms.
 
 use cocoa::foundation::NSUInteger;
-use objc_foundation::{NSString, INSString};
 
 #[repr(u64)]
 #[allow(non_camel_case_types)]
@@ -30,7 +29,7 @@ pub enum MTLCPUCacheMode {
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum MTLStorageMode {
-    Shared  = 0,
+    Shared = 0,
     Managed = 1,
     Private = 2,
     Memoryless = 3,
@@ -80,33 +79,27 @@ foreign_obj_type! {
 impl ResourceRef {
     pub fn label(&self) -> &str {
         unsafe {
-            let label: &NSString = msg_send![self, label];
-            label.as_str()
+            let label = msg_send![self, label];
+            crate::nsstring_as_str(label)
         }
     }
 
     pub fn set_label(&self, label: &str) {
         unsafe {
-            let nslabel = NSString::from_str(label);
-            msg_send![self, setLabel:nslabel]
+            let nslabel = crate::nsstring_from_str(label);
+            msg_send![self, setLabel: nslabel];
         }
     }
 
     pub fn cpu_cache_mode(&self) -> MTLCPUCacheMode {
-        unsafe {
-            msg_send![self, cpuCacheMode]
-        }
+        unsafe { msg_send![self, cpuCacheMode] }
     }
 
     pub fn storage_mode(&self) -> MTLStorageMode {
-        unsafe {
-            msg_send![self, storageMode]
-        }
+        unsafe { msg_send![self, storageMode] }
     }
 
     pub fn set_purgeable_state(&self, state: MTLPurgeableState) -> MTLPurgeableState {
-        unsafe {
-            msg_send![self, setPurgeableState:state]
-        }
+        unsafe { msg_send![self, setPurgeableState: state] }
     }
 }

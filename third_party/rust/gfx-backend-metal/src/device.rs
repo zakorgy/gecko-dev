@@ -1,13 +1,37 @@
-use gfx_hal as hal;
-
-use crate::internal::{Channel, FastStorageMap};
-use crate::native;
-use range_alloc::RangeAllocator;
-use crate::{command, conversions as conv, native as n};
 use crate::{
+    command, conversions as conv, native as n,
+    internal::{Channel, FastStorageMap},
     AsNative, Backend, OnlineRecording, QueueFamily, ResourceIndex, Shared,
     Surface, Swapchain, VisibilityShared,
+    MAX_COLOR_ATTACHMENTS,
 };
+
+use hal::{
+    buffer, error, format, image, mapping, memory, pass, pso, query, window,
+    device::{
+        AllocationError, BindError, DeviceLost, OomOrDeviceLost, OutOfMemory, ShaderError,
+    },
+    memory::Properties,
+    pool::CommandPoolCreateFlags,
+    pso::VertexInputRate,
+    queue::{QueueFamilyId, Queues},
+    range::RangeArg,
+};
+use range_alloc::RangeAllocator;
+
+use cocoa::foundation::{NSRange, NSUInteger};
+use copyless::VecHelper;
+use foreign_types::ForeignType;
+use metal::{
+    self,
+    CaptureManager, MTLArgumentAccess, MTLCPUCacheMode, MTLDataType, MTLLanguageVersion,
+    MTLPrimitiveTopologyClass, MTLPrimitiveType, MTLResourceOptions, MTLSamplerBorderColor,
+    MTLSamplerMipFilter, MTLStorageMode, MTLTextureType, MTLVertexStepFunction,
+};
+use objc::rc::autoreleasepool;
+use objc::runtime::{Object, BOOL, NO};
+use parking_lot::Mutex;
+use spirv_cross::{msl, spirv, ErrorCode as SpirvErrorCode};
 
 use std::borrow::Borrow;
 use std::cell::RefCell;
@@ -18,27 +42,6 @@ use std::path::Path;
 use std::sync::Arc;
 use std::{cmp, iter, mem, ptr, slice, thread, time};
 
-use self::hal::device::{
-    AllocationError, BindError, DeviceLost, OomOrDeviceLost, OutOfMemory, ShaderError,
-};
-use self::hal::memory::Properties;
-use self::hal::pool::CommandPoolCreateFlags;
-use self::hal::pso::VertexInputRate;
-use self::hal::queue::{QueueFamilyId, Queues};
-use self::hal::range::RangeArg;
-use self::hal::{buffer, error, format, image, mapping, memory, pass, pso, query, window};
-
-use cocoa::foundation::{NSRange, NSUInteger};
-use foreign_types::ForeignType;
-use metal::{
-    self, CaptureManager, MTLArgumentAccess, MTLCPUCacheMode, MTLDataType, MTLLanguageVersion,
-    MTLPrimitiveTopologyClass, MTLPrimitiveType, MTLResourceOptions, MTLSamplerBorderColor,
-    MTLSamplerMipFilter, MTLStorageMode, MTLTextureType, MTLVertexStepFunction,
-};
-use objc::rc::autoreleasepool;
-use objc::runtime::{Object, BOOL, NO};
-use parking_lot::Mutex;
-use spirv_cross::{msl, spirv, ErrorCode as SpirvErrorCode};
 
 const PUSH_CONSTANTS_DESC_SET: u32 = !0;
 const PUSH_CONSTANTS_DESC_BINDING: u32 = 0;
@@ -63,7 +66,7 @@ enum FunctionError {
 fn get_final_function(
     library: &metal::LibraryRef,
     entry: &str,
-    specialization: pso::Specialization,
+    specialization: &pso::Specialization,
     function_specialization: bool,
 ) -> Result<metal::Function, FunctionError> {
     type MTLFunctionConstant = Object;
@@ -135,7 +138,7 @@ impl VisibilityShared {
     }
 }
 
-//#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Device {
     pub(crate) shared: Arc<Shared>,
     memory_types: Vec<hal::MemoryType>,
@@ -179,6 +182,7 @@ impl MemoryTypes {
     }
 }
 
+#[derive(Debug)]
 pub struct PhysicalDevice {
     pub(crate) shared: Arc<Shared>,
     memory_types: Vec<hal::MemoryType>,
@@ -254,6 +258,7 @@ impl hal::PhysicalDevice<Backend> for PhysicalDevice {
         // TODO: Query supported features by feature set rather than hard coding in the supported
         // features. https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf
         if !self.features().contains(requested_features) {
+            warn!("Features missing: {:?}", requested_features - self.features());
             return Err(error::DeviceCreationError::MissingFeature);
         }
 
@@ -332,8 +337,12 @@ impl hal::PhysicalDevice<Backend> for PhysicalDevice {
             // Can't create 2D/2DArray views of 3D textures
             return None;
         }
-        //TODO: actually query this data
-        let max_dimension = 4096u32;
+        let max_dimension = if dimensions == 3 {
+            self.shared.private_caps.max_texture_3d_size as _
+        } else {
+            self.shared.private_caps.max_texture_size as _
+        };
+
         let max_extent = image::Extent {
             width: max_dimension,
             height: if dimensions >= 2 { max_dimension } else { 1 },
@@ -347,7 +356,11 @@ impl hal::PhysicalDevice<Backend> for PhysicalDevice {
                 max_extent,
                 max_levels: if dimensions == 1 { 1 } else { 12 },
                 // 3D images enforce a single layer
-                max_layers: if dimensions == 3 { 1 } else { 2048 },
+                max_layers: if dimensions == 3 {
+                    1
+                } else {
+                    self.shared.private_caps.max_texture_layers as _
+                },
                 sample_count_mask: 0x1,
                 //TODO: buffers and textures have separate limits
                 // Max buffer size is determined by feature set
@@ -388,28 +401,54 @@ impl hal::PhysicalDevice<Backend> for PhysicalDevice {
             } else {
                 hal::Features::empty()
             }
+            | hal::Features::SHADER_CLIP_DISTANCE
     }
 
     fn limits(&self) -> hal::Limits {
+        let pc = &self.shared.private_caps;
         hal::Limits {
-            max_texture_size: self.shared.private_caps.max_texture_size as usize,
-            max_texel_elements: (self.shared.private_caps.max_texture_size
-                * self.shared.private_caps.max_texture_size)
-                as usize,
+            max_image_1d_size: pc.max_texture_size as _,
+            max_image_2d_size: pc.max_texture_size as _,
+            max_image_3d_size: pc.max_texture_3d_size as _,
+            max_image_cube_size: pc.max_texture_size as _,
+            max_image_array_layers: pc.max_texture_layers as _,
+            max_texel_elements: (pc.max_texture_size * pc.max_texture_size) as usize,
+            max_uniform_buffer_range: pc.max_buffer_size,
+            max_storage_buffer_range: pc.max_buffer_size,
+            // "Maximum length of an inlined constant data buffer, per graphics or compute function"
+            max_push_constants_size: 0x1000,
+            max_memory_allocation_count: !0,
+            max_sampler_allocation_count: !0,
+            max_bound_descriptor_sets: 0x100, // arbitrary
+
+            max_per_stage_descriptor_samplers: pc.max_samplers_per_stage as usize,
+            max_per_stage_descriptor_uniform_buffers: pc.max_buffers_per_stage as usize,
+            max_per_stage_descriptor_storage_buffers: pc.max_buffers_per_stage as usize,
+            max_per_stage_descriptor_sampled_images: pc.max_textures_per_stage as usize,
+            max_per_stage_descriptor_storage_images: pc.max_textures_per_stage as usize,
+            max_per_stage_descriptor_input_attachments: pc.max_textures_per_stage as usize, //TODO
+            max_per_stage_resources: 0x100, //TODO
+
             max_patch_size: 0, // No tessellation
 
             // Note: The maximum number of supported viewports and scissor rectangles varies by device.
             // TODO: read from Metal Feature Sets.
             max_viewports: 1,
+            max_viewport_dimensions: [pc.max_texture_size as _; 2],
+            max_framebuffer_extent: hal::image::Extent { //TODO
+                width: pc.max_texture_size as _,
+                height: pc.max_texture_size as _,
+                depth: pc.max_texture_layers as _,
+            },
 
-            min_buffer_copy_offset_alignment: self.shared.private_caps.buffer_alignment,
-            min_buffer_copy_pitch_alignment: 4,
-            min_texel_buffer_offset_alignment: self.shared.private_caps.buffer_alignment,
-            min_uniform_buffer_offset_alignment: self.shared.private_caps.buffer_alignment,
-            min_storage_buffer_offset_alignment: self.shared.private_caps.buffer_alignment,
+            optimal_buffer_copy_offset_alignment: pc.buffer_alignment,
+            optimal_buffer_copy_pitch_alignment: 4,
+            min_texel_buffer_offset_alignment: pc.buffer_alignment,
+            min_uniform_buffer_offset_alignment: pc.buffer_alignment,
+            min_storage_buffer_offset_alignment: pc.buffer_alignment,
 
-            max_compute_group_count: [16; 3], // TODO
-            max_compute_group_size: [64; 3],  // TODO
+            max_compute_work_group_count: [16; 3], // TODO
+            max_compute_work_group_size: [64; 3],  // TODO
 
             max_vertex_input_attributes: 31,
             max_vertex_input_bindings: 31,
@@ -420,13 +459,16 @@ impl hal::PhysicalDevice<Backend> for PhysicalDevice {
             framebuffer_color_samples_count: 0b101,   // TODO
             framebuffer_depth_samples_count: 0b101,   // TODO
             framebuffer_stencil_samples_count: 0b101, // TODO
-            max_color_attachments: 1,                 // TODO
+            max_color_attachments: MAX_COLOR_ATTACHMENTS,
 
+            buffer_image_granularity: 1,
             // Note: we issue Metal buffer-to-buffer copies on memory flush/invalidate,
             // and those need to operate on sizes being multiples of 4.
             non_coherent_atom_size: 4,
             max_sampler_anisotropy: 16.,
             min_vertex_input_binding_stride_alignment: STRIDE_GRANULARITY as u64,
+
+            .. hal::Limits::default() // TODO!
         }
     }
 }
@@ -663,7 +705,7 @@ impl Device {
         let mtl_function = get_final_function(
             &lib,
             name,
-            ep.specialization,
+            &ep.specialization,
             self.shared.private_caps.function_specialization,
         )
         .map_err(|e| {
@@ -791,7 +833,7 @@ impl hal::Device<Backend> for Device {
     }
 
     unsafe fn destroy_command_pool(&self, mut pool: command::CommandPool) {
-        use self::hal::pool::RawCommandPool;
+        use hal::pool::RawCommandPool;
         pool.reset();
     }
 
@@ -932,7 +974,7 @@ impl hal::Device<Backend> for Device {
                             .content
                             .contains(n::DescriptorContent::DYNAMIC_BUFFER)
                         {
-                            dynamic_buffers.push(n::MultiStageData {
+                            dynamic_buffers.alloc().init(n::MultiStageData {
                                 vs: if layout.stages.contains(pso::ShaderStageFlags::VERTEX) {
                                     stage_infos[0].2.buffers
                                 } else {
@@ -980,7 +1022,6 @@ impl hal::Device<Backend> for Device {
                                 } else {
                                     !0
                                 },
-                                force_used: false,
                             };
                             if layout.array_index == 0 {
                                 let location = msl::ResourceBindingLocation {
@@ -1007,7 +1048,6 @@ impl hal::Device<Backend> for Device {
                             buffer_id: counters.buffers as _,
                             texture_id: !0,
                             sampler_id: !0,
-                            force_used: false,
                         };
                         res_overrides.insert(location, res_binding);
                         counters.buffers += 1;
@@ -1015,7 +1055,7 @@ impl hal::Device<Backend> for Device {
                 }
             }
 
-            infos.push(n::DescriptorSetInfo {
+            infos.alloc().init(n::DescriptorSetInfo {
                 offsets,
                 dynamic_buffers,
             });
@@ -1053,7 +1093,6 @@ impl hal::Device<Backend> for Device {
                         buffer_id: index as _,
                         texture_id: !0,
                         sampler_id: !0,
-                        force_used: false,
                     },
                 );
             }
@@ -1338,7 +1377,7 @@ impl hal::Device<Backend> for Device {
                 .iter()
                 .position(|(ref vb, offset)| vb.binding == binding && base_offset == *offset)
                 .unwrap_or_else(|| {
-                    vertex_buffers.push((original.clone(), base_offset));
+                    vertex_buffers.alloc().init((original.clone(), base_offset));
                     vertex_buffers.len() - 1
                 });
             let mtl_buffer_index = attribute_buffer_index as usize + relative_index;
@@ -1428,6 +1467,14 @@ impl hal::Device<Backend> for Device {
             .service_pipes
             .depth_stencil_states
             .prepare(&pipeline_desc.depth_stencil, &*device);
+
+        if let Some(multisampling) = &pipeline_desc.multisampling {
+            pipeline.set_sample_count(multisampling.rasterization_samples as u64);
+            pipeline.set_alpha_to_coverage_enabled(multisampling.alpha_coverage);
+            pipeline.set_alpha_to_one_enabled(multisampling.alpha_to_one);
+            // TODO: sample_mask
+            // TODO: sample_shading
+        }
 
         device
             .new_render_pipeline_state(&pipeline)
@@ -1672,7 +1719,7 @@ impl hal::Device<Backend> for Device {
 
             let device = self.shared.device.lock();
             let arg_array = metal::Array::from_owned_slice(&arguments);
-            let encoder = device.new_argument_encoder(&arg_array);
+            let encoder = device.new_argument_encoder(arg_array);
 
             let total_size = encoder.encoded_length();
             let raw = device.new_buffer(total_size, MTLResourceOptions::empty());
@@ -1715,7 +1762,7 @@ impl hal::Device<Backend> for Device {
                 })
                 .collect::<Vec<_>>();
             let arg_array = metal::Array::from_owned_slice(&arguments);
-            let encoder = self.shared.device.lock().new_argument_encoder(&arg_array);
+            let encoder = self.shared.device.lock().new_argument_encoder(arg_array);
 
             Ok(n::DescriptorSetLayout::ArgumentBuffer(encoder, stage_flags))
         } else {
@@ -1730,9 +1777,9 @@ impl hal::Device<Backend> for Device {
 
             for set_layout_binding in binding_iter {
                 let slb = set_layout_binding.borrow();
-                let mut content = native::DescriptorContent::from(slb.ty);
+                let mut content = n::DescriptorContent::from(slb.ty);
                 if slb.immutable_samplers {
-                    content |= native::DescriptorContent::IMMUTABLE_SAMPLER;
+                    content |= n::DescriptorContent::IMMUTABLE_SAMPLER;
                     tmp_samplers.extend(
                         immutable_sampler_iter
                             .by_ref()
@@ -1745,7 +1792,7 @@ impl hal::Device<Backend> for Device {
                             }),
                     );
                 }
-                desc_layouts.extend((0..slb.count).map(|array_index| native::DescriptorLayout {
+                desc_layouts.extend((0..slb.count).map(|array_index| n::DescriptorLayout {
                     content,
                     stages: slb.stage_flags,
                     binding: slb.binding,
@@ -2442,10 +2489,13 @@ impl hal::Device<Backend> for Device {
     unsafe fn destroy_image_view(&self, _view: n::ImageView) {}
 
     fn create_fence(&self, signaled: bool) -> Result<n::Fence, OutOfMemory> {
-        Ok(n::Fence(RefCell::new(n::FenceInner::Idle { signaled })))
+        let cell = RefCell::new(n::FenceInner::Idle { signaled });
+        debug!("Creating fence ptr {:?} with signal={}", cell.as_ptr(), signaled);
+        Ok(n::Fence(cell))
     }
     unsafe fn reset_fence(&self, fence: &n::Fence) -> Result<(), OutOfMemory> {
-        *fence.0.borrow_mut() = n::FenceInner::Idle { signaled: false };
+        debug!("Resetting fence ptr {:?}", fence.0.as_ptr());
+        fence.0.replace(n::FenceInner::Idle { signaled: false });
         Ok(())
     }
     unsafe fn wait_for_fence(
@@ -2458,34 +2508,51 @@ impl hal::Device<Backend> for Device {
         }
 
         debug!("wait_for_fence {:?} for {} ms", fence, timeout_ns);
-        let inner = fence.0.borrow();
-        let cmd_buf = match *inner {
-            native::FenceInner::Idle { signaled } => return Ok(signaled),
-            native::FenceInner::Pending(ref cmd_buf) => cmd_buf,
-        };
-        if timeout_ns == !0 {
-            cmd_buf.wait_until_completed();
-            return Ok(true);
-        }
-
-        let start = time::Instant::now();
-        loop {
-            if let metal::MTLCommandBufferStatus::Completed = cmd_buf.status() {
-                return Ok(true);
+        match *fence.0.borrow() {
+            n::FenceInner::Idle { signaled } => {
+                if !signaled {
+                    warn!("Fence ptr {:?} is not pending, waiting not possible", fence.0.as_ptr());
+                }
+                Ok(signaled)
             }
-            if to_ns(start.elapsed()) >= timeout_ns {
-                return Ok(false);
+            n::FenceInner::PendingSubmission(ref cmd_buf) => {
+                if timeout_ns == !0 {
+                    cmd_buf.wait_until_completed();
+                    return Ok(true);
+                }
+                let start = time::Instant::now();
+                loop {
+                    if let metal::MTLCommandBufferStatus::Completed = cmd_buf.status() {
+                        return Ok(true);
+                    }
+                    if to_ns(start.elapsed()) >= timeout_ns {
+                        return Ok(false);
+                    }
+                    thread::sleep(time::Duration::from_millis(1));
+                }
             }
-            thread::sleep(time::Duration::from_millis(1));
+            n::FenceInner::AcquireFrame { ref swapchain_image, iteration } => {
+                if swapchain_image.iteration() > iteration {
+                    Ok(true)
+                } else if timeout_ns == 0 {
+                    Ok(false)
+                } else {
+                    swapchain_image.wait_until_ready();
+                    Ok(true)
+                }
+            }
         }
     }
     unsafe fn get_fence_status(&self, fence: &n::Fence) -> Result<bool, DeviceLost> {
         Ok(match *fence.0.borrow() {
-            native::FenceInner::Idle { signaled } => signaled,
-            native::FenceInner::Pending(ref cmd_buf) => match cmd_buf.status() {
+            n::FenceInner::Idle { signaled } => signaled,
+            n::FenceInner::PendingSubmission(ref cmd_buf) => match cmd_buf.status() {
                 metal::MTLCommandBufferStatus::Completed => true,
                 _ => false,
             },
+            n::FenceInner::AcquireFrame { ref swapchain_image, iteration } => {
+                swapchain_image.iteration() > iteration
+            }
         })
     }
     unsafe fn destroy_fence(&self, _fence: n::Fence) {}
@@ -2533,7 +2600,7 @@ impl hal::Device<Backend> for Device {
         flags: query::ResultFlags,
     ) -> Result<bool, OomOrDeviceLost> {
         let is_ready = match *pool {
-            native::QueryPool::Occlusion(ref pool_range) => {
+            n::QueryPool::Occlusion(ref pool_range) => {
                 let visibility = &self.shared.visibility;
                 let is_ready = if flags.contains(query::ResultFlags::WAIT) {
                     let mut guard = visibility.allocator.lock();
@@ -2594,7 +2661,7 @@ impl hal::Device<Backend> for Device {
         surface: &mut Surface,
         config: hal::SwapchainConfig,
         old_swapchain: Option<Swapchain>,
-    ) -> Result<(Swapchain, hal::Backbuffer<Backend>), window::CreationError> {
+    ) -> Result<(Swapchain, Vec<n::Image>), window::CreationError> {
         Ok(self.build_swapchain(surface, config, old_swapchain))
     }
 

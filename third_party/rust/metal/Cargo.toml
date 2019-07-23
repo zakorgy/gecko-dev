@@ -1,6 +1,6 @@
 [package]
 name = "metal"
-version = "0.14.0"
+version = "0.15.0"
 description = "Rust bindings for Metal"
 documentation = "https://docs.rs/crate/metal"
 homepage = "https://github.com/gfx-rs/metal-rs"
@@ -9,6 +9,7 @@ authors = ["GFX Developers"]
 readme = "README.md"
 keywords = ["metal", "graphics", "bindings"]
 license = "MIT OR Apache-2.0"
+edition = "2018"
 
 [package.metadata.docs.rs]
 default-target = "x86_64-apple-darwin"
@@ -21,15 +22,12 @@ private = []
 cocoa = "0.18"
 core-graphics = "0.17"
 bitflags = "1"
-libc = "0.2"
 log = "0.4"
-objc-foundation = "0.1"
-objc_id = "0.1"
 block = "0.1.5"
 foreign-types = "0.3"
 
 [dependencies.objc]
-version = "0.2.3"
+version = "0.2.4"
 
 [dev-dependencies]
 winit = "0.17"
