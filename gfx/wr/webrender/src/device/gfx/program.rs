@@ -457,12 +457,12 @@ impl<B: hal::Backend> Program<B> {
 
     pub(super) fn deinit(mut self, device: &B::Device, heaps: &mut Heaps<B>) {
         if let Some(vertex_buffer) = self.vertex_buffer {
-            for mut vertex_buffer in vertex_buffer {
+            for vertex_buffer in vertex_buffer {
                 vertex_buffer.deinit(device, heaps);
             }
         }
         if let Some(index_buffer) = self.index_buffer {
-            for mut index_buffer in index_buffer {
+            for index_buffer in index_buffer {
                 index_buffer.deinit(device, heaps);
             }
         }

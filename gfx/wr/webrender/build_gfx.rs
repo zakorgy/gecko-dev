@@ -310,7 +310,7 @@ fn extend_sampler_definition(
 
     // If the sampler is in the map we only update the shader code.
     if let Some(&(_, set, binding)) = sampler_mapping.get(*sampler_name) {
-        let mut layout_str = format!(
+        let layout_str = format!(
             "layout(set = {}, binding = {}) {}{} {};\n",
             set, binding, code_str, sampler_type, sampler_name
         );
@@ -318,7 +318,7 @@ fn extend_sampler_definition(
 
     // Replace sampler definition with a texture and a sampler.
     } else {
-        let mut layout_str = format!(
+        let layout_str = format!(
             "layout(set = {}, binding = {}) {}{} {};\n",
             set, binding, code_str, sampler_type, sampler_name
         );

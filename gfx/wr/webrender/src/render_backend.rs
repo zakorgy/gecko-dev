@@ -60,7 +60,7 @@ use tiling::Frame;
 use time::precise_time_ns;
 use util::{Recycler, drain_filter};
 
-#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 #[derive(Clone)]
 pub struct DocumentView {
@@ -84,7 +84,7 @@ impl DocumentView {
 }
 
 #[derive(Copy, Clone, Hash, MallocSizeOf, PartialEq, PartialOrd, Debug, Eq, Ord)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct FrameId(usize);
 
@@ -138,7 +138,7 @@ impl ::std::ops::Sub<usize> for FrameId {
 /// we should never have two `FrameStamps` with the same id but different
 /// timestamps.
 #[derive(Copy, Clone, Debug, MallocSizeOf)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct FrameStamp {
     id: FrameId,
@@ -212,7 +212,7 @@ macro_rules! declare_data_stores {
     ( $( $name: ident, )+ ) => {
         /// A collection of resources that are shared by clips, primitives
         /// between display lists.
-        #[cfg_attr(feature = "capture", derive(Serialize))]
+        #[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
         #[cfg_attr(feature = "replay", derive(Deserialize))]
         #[derive(Default)]
         pub struct DataStores {
@@ -648,7 +648,7 @@ impl DocumentOps {
 static NEXT_NAMESPACE_ID: AtomicUsize = AtomicUsize::new(1);
 
 #[cfg(any(feature = "capture", feature = "replay"))]
-#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 struct PlainRenderBackend {
     default_device_pixel_ratio: f32,
@@ -679,9 +679,9 @@ pub struct RenderBackend {
     frame_config: FrameBuilderConfig,
     documents: FastHashMap<DocumentId, Document>,
 
-    notifier: Box<RenderNotifier>,
-    recorder: Option<Box<ApiRecordingReceiver>>,
-    sampler: Option<Box<AsyncPropertySampler + Send>>,
+    notifier: Box<dyn RenderNotifier>,
+    recorder: Option<Box<dyn ApiRecordingReceiver>>,
+    sampler: Option<Box<dyn AsyncPropertySampler + Send>>,
     size_of_ops: Option<MallocSizeOfOps>,
     debug_flags: DebugFlags,
     namespace_alloc_by_client: bool,
@@ -699,10 +699,10 @@ impl RenderBackend {
         scene_rx: Receiver<SceneBuilderResult>,
         default_device_pixel_ratio: f32,
         resource_cache: ResourceCache,
-        notifier: Box<RenderNotifier>,
+        notifier: Box<dyn RenderNotifier>,
         frame_config: FrameBuilderConfig,
-        recorder: Option<Box<ApiRecordingReceiver>>,
-        sampler: Option<Box<AsyncPropertySampler + Send>>,
+        recorder: Option<Box<dyn ApiRecordingReceiver>>,
+        sampler: Option<Box<dyn AsyncPropertySampler + Send>>,
         size_of_ops: Option<MallocSizeOfOps>,
         debug_flags: DebugFlags,
         namespace_alloc_by_client: bool,
@@ -857,7 +857,7 @@ impl RenderBackend {
 
                             doc.removed_pipelines.append(&mut txn.removed_pipelines);
 
-                            if let Some(mut built_scene) = txn.built_scene.take() {
+                            if let Some(built_scene) = txn.built_scene.take() {
                                 doc.new_async_scene_ready(
                                     built_scene,
                                     &mut self.recycler,
@@ -1730,7 +1730,7 @@ impl RenderBackend {
             let data_stores = CaptureConfig::deserialize::<DataStores, _>(root, &data_stores_name)
                 .expect(&format!("Unable to open {}.ron", data_stores_name));
 
-            let mut doc = Document {
+            let doc = Document {
                 scene: scene.clone(),
                 removed_pipelines: Vec::new(),
                 view: view.clone(),

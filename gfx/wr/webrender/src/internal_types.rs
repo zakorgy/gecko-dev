@@ -39,7 +39,7 @@ pub type PlaneSplitter = BspSplitter<f64, WorldPixel>;
 ///
 /// We never reuse IDs, so we use a u64 here to be safe.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct CacheTextureId(pub u64);
 
@@ -63,7 +63,7 @@ pub type LayerIndex = usize;
 /// preserved in a list until the end of the frame, and this type specifies the
 /// index in that list.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct SavedTargetIndex(pub usize);
 
@@ -73,7 +73,7 @@ impl SavedTargetIndex {
 
 /// Identifies the source of an input texture to a shader.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub enum TextureSource {
     /// Equivalent to `None`, allowing us to avoid using `Option`s everywhere.
@@ -99,13 +99,14 @@ pub const ORTHO_FAR_PLANE: f32 = 100000.0;
 pub const ORTHO_FAR_PLANE: f32 = 000000.0;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct RenderTargetInfo {
     pub has_depth: bool,
 }
 
 #[derive(Debug)]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 pub enum TextureUpdateSource {
     External {
         id: ExternalImageId,
@@ -119,6 +120,7 @@ pub enum TextureUpdateSource {
 
 /// Command to allocate, reallocate, or free a texture for the texture cache.
 #[derive(Debug)]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 pub struct TextureCacheAllocation {
     /// The virtual ID (i.e. distinct from device ID) of the texture.
     pub id: CacheTextureId,
@@ -128,6 +130,7 @@ pub struct TextureCacheAllocation {
 
 /// Information used when allocating / reallocating.
 #[derive(Debug)]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 pub struct TextureCacheAllocInfo {
     pub width: i32,
     pub height: i32,
@@ -140,6 +143,7 @@ pub struct TextureCacheAllocInfo {
 
 /// Sub-operation-specific information for allocation operations.
 #[derive(Debug)]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 pub enum TextureCacheAllocationKind {
     /// Performs an initial texture allocation.
     Alloc(TextureCacheAllocInfo),
@@ -153,6 +157,7 @@ pub enum TextureCacheAllocationKind {
 
 /// Command to update the contents of the texture cache.
 #[derive(Debug)]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 pub struct TextureCacheUpdate {
     pub id: CacheTextureId,
     pub rect: DeviceIntRect,
@@ -168,6 +173,7 @@ pub struct TextureCacheUpdate {
 /// The list of allocation operations is processed before the updates. This is
 /// important to allow coalescing of certain allocation operations.
 #[derive(Default)]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 pub struct TextureUpdateList {
     /// Commands to alloc/realloc/free the textures. Processed first.
     pub allocations: Vec<TextureCacheAllocation>,

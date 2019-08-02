@@ -102,7 +102,7 @@ impl Notifier {
 }
 
 impl RenderNotifier for Notifier {
-    fn clone(&self) -> Box<RenderNotifier> {
+    fn clone(&self) -> Box<dyn RenderNotifier> {
         Box::new(Notifier(self.0.clone()))
     }
 
@@ -184,7 +184,7 @@ impl Wrench {
         disable_dual_source_blending: bool,
         zoom_factor: f32,
         chase_primitive: webrender::ChasePrimitive,
-        notifier: Option<Box<RenderNotifier>>,
+        notifier: Option<Box<dyn RenderNotifier>>,
         init: webrender::DeviceInit<back::Backend>,
         instance: back::Instance,
     ) -> Self {

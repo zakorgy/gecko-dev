@@ -311,7 +311,7 @@ pub trait BlobImageHandler: Send {
     /// are not bundled in the blob recording itself.
     fn prepare_resources(
         &mut self,
-        services: &BlobImageResources,
+        services: &dyn BlobImageResources,
         requests: &[BlobImageParams],
     );
 

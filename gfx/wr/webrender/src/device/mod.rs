@@ -94,7 +94,7 @@ pub struct TextureSlot(pub usize);
 
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub enum TextureFilter {
     Nearest,
@@ -442,11 +442,11 @@ pub struct ProgramCache {
     /// Optional trait object that allows the client
     /// application to handle ProgramCache updating
     #[cfg(feature="gleam")]
-    program_cache_handler: Option<Box<ProgramCacheObserver>>,
+    program_cache_handler: Option<Box<dyn ProgramCacheObserver>>,
 }
 
 impl ProgramCache {
-    pub fn new(_program_cache_observer: Option<Box<ProgramCacheObserver>>) -> Rc<Self> {
+    pub fn new(_program_cache_observer: Option<Box<dyn ProgramCacheObserver>>) -> Rc<Self> {
         Rc::new(
             ProgramCache {
                 entries: RefCell::new(FastHashMap::default()),

@@ -434,7 +434,7 @@ struct Notifier {
 
 // setup a notifier so we can wait for frames to be finished
 impl RenderNotifier for Notifier {
-    fn clone(&self) -> Box<RenderNotifier> {
+    fn clone(&self) -> Box<dyn RenderNotifier> {
         Box::new(Notifier {
             tx: self.tx.clone(),
         })
@@ -459,7 +459,7 @@ impl RenderNotifier for Notifier {
     }
 }
 
-fn create_notifier() -> (Box<RenderNotifier>, Receiver<NotifierEvent>) {
+fn create_notifier() -> (Box<dyn RenderNotifier>, Receiver<NotifierEvent>) {
     let (tx, rx) = channel();
     (Box::new(Notifier { tx: tx }), rx)
 }

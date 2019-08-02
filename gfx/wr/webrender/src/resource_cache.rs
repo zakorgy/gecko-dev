@@ -457,7 +457,7 @@ pub struct ResourceCache {
     /// both blobs and regular images.
     pending_image_requests: FastHashSet<ImageRequest>,
 
-    blob_image_handler: Option<Box<BlobImageHandler>>,
+    blob_image_handler: Option<Box<dyn BlobImageHandler>>,
     rasterized_blob_images: FastHashMap<BlobImageKey, RasterizedBlob>,
     blob_image_templates: FastHashMap<BlobImageKey, BlobImageTemplate>,
 
@@ -465,7 +465,7 @@ pub struct ResourceCache {
     /// rasterize, add them to this list and rasterize them synchronously.
     missing_blob_images: Vec<BlobImageParams>,
     /// The rasterizer associated with the current scene.
-    blob_image_rasterizer: Option<Box<AsyncBlobImageRasterizer>>,
+    blob_image_rasterizer: Option<Box<dyn AsyncBlobImageRasterizer>>,
     /// An epoch of the stored blob image rasterizer, used to skip the ones
     /// coming from low-priority scene builds if the current one is newer.
     /// This is to be removed when we get rid of the whole "missed" blob
@@ -484,7 +484,7 @@ impl ResourceCache {
     pub fn new(
         texture_cache: TextureCache,
         glyph_rasterizer: GlyphRasterizer,
-        blob_image_handler: Option<Box<BlobImageHandler>>,
+        blob_image_handler: Option<Box<dyn BlobImageHandler>>,
     ) -> Self {
         ResourceCache {
             cached_glyphs: GlyphCache::new(),
@@ -681,7 +681,7 @@ impl ResourceCache {
     }
 
     pub fn set_blob_rasterizer(
-        &mut self, rasterizer: Box<AsyncBlobImageRasterizer>,
+        &mut self, rasterizer: Box<dyn AsyncBlobImageRasterizer>,
         supp: AsyncBlobImageInfo,
     ) {
         if self.blob_image_rasterizer_consumed_epoch.0 < supp.epoch.0 {
@@ -1156,7 +1156,7 @@ impl ResourceCache {
     pub fn create_blob_scene_builder_requests(
         &mut self,
         keys: &[BlobImageKey]
-    ) -> (Option<(Box<AsyncBlobImageRasterizer>, AsyncBlobImageInfo)>, Vec<BlobImageParams>) {
+    ) -> (Option<(Box<dyn AsyncBlobImageRasterizer>, AsyncBlobImageInfo)>, Vec<BlobImageParams>) {
         if self.blob_image_handler.is_none() || keys.is_empty() {
             return (None, Vec::new());
         }

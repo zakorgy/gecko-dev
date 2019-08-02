@@ -96,7 +96,7 @@ const QUAD: [vertex_types::Vertex; 6] = [
 ];
 
 pub struct DeviceInit<B: hal::Backend> {
-    pub instance: Box<hal::Instance<Backend = B>>,
+    pub instance: Box<dyn hal::Instance<Backend = B>>,
     pub adapter: hal::Adapter<B>,
     pub surface: Option<B::Surface>,
     pub window_size: (i32, i32),
@@ -152,7 +152,7 @@ pub struct Device<B: hal::Backend> {
     pub limits: hal::Limits,
     adapter: hal::Adapter<B>,
     surface: Option<B::Surface>,
-    _instance: Box<hal::Instance<Backend = B>>,
+    _instance: Box<dyn hal::Instance<Backend = B>>,
     pub surface_format: ImageFormat,
     pub depth_format: hal::format::Format,
     pub queue_group_family: QueueFamilyId,
@@ -3640,11 +3640,11 @@ impl<B: hal::Backend> Device<B> {
             for command_pool in self.command_pool {
                 command_pool.destroy(&self.device);
             }
-            for mut staging_buffer_pool in self.staging_buffer_pool {
+            for staging_buffer_pool in self.staging_buffer_pool {
                 staging_buffer_pool.deinit(&self.device, &mut self.heaps);
             }
             self.quad_buffer.deinit(&self.device, &mut self.heaps);
-            for mut instance_buffer in self.instance_buffers {
+            for instance_buffer in self.instance_buffers {
                 instance_buffer.deinit(&self.device, &mut self.heaps);
             }
             for buffer in self.free_instance_buffers {
