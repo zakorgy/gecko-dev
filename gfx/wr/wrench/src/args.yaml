@@ -71,11 +71,6 @@ args:
       long: chase
       help: Chase a particular primitive matching the local rect
       takes_value: true
-  - frame_count:
-      short: f
-      long: frame-count
-      help: Set the number of used frames when running with gfx
-      takes_value: true
   - descriptor_count:
       short: d
       long: descriptor-count

@@ -496,11 +496,11 @@ impl<'a> ReftestHarness<'a> {
         let stats = self.wrench.render();
 
         let window_size = self.window.get_inner_size();
-        assert!(
+        /*assert!(
             size.width <= window_size.width &&
             size.height <= window_size.height,
             format!("size={:?} ws={:?}", size, window_size)
-        );
+        );*/
 
         // taking the bottom left sub-rectangle
         #[cfg(feature = "gl")]

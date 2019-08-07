@@ -39,8 +39,8 @@ bitflags = "1.0"
 byteorder = "1.0"
 cfg-if = "0.1.2"
 fxhash = "0.2.1"
-gfx-hal = { version = "0.2", features = ["serde"] }
-gfx-backend-empty = { git = "https://github.com/zakorgy/gfx.git", branch = "metal_for_gecko" }
+gfx-hal = { version = "0.2.1", features = ["serde"] }
+gfx-backend-empty = "0.2"
 gleam = { optional = true, version = "0.6.8" }
 image = { optional = true, version = "0.21" }
 lazy_static = "1"

@@ -1306,12 +1306,11 @@ impl Renderer {
     #[cfg(not(feature = "gecko"))]
     pub fn new(
         init: DeviceInit<back::Backend>,
-        instance: back::Instance,
         notifier: Box<dyn RenderNotifier>,
         options: RendererOptions,
         shaders: Option<&mut WrShaders>
     ) -> Result<(Self, RenderApiSender), RendererError> {
-        Self::init(init, instance, notifier, options, shaders)
+        Self::init(init, notifier, options, shaders)
     }
 
     #[cfg(all(feature = "gecko", not(feature = "gleam")))]

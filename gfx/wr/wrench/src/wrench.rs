@@ -186,21 +186,20 @@ impl Wrench {
         chase_primitive: webrender::ChasePrimitive,
         notifier: Option<Box<dyn RenderNotifier>>,
         init: webrender::DeviceInit<back::Backend>,
-        instance: back::Instance,
     ) -> Self {
         println!("Shader override path: {:?}", shader_override_path);
 
         let recorder = save_type.map(|save_type| match save_type {
             SaveType::Yaml => Box::new(
                 YamlFrameWriterReceiver::new(&PathBuf::from("yaml_frames")),
-            ) as Box<webrender::ApiRecordingReceiver>,
+            ) as Box<dyn webrender::ApiRecordingReceiver>,
             SaveType::Json => Box::new(JsonFrameWriter::new(&PathBuf::from("json_frames"))) as
-                Box<webrender::ApiRecordingReceiver>,
+                Box<dyn webrender::ApiRecordingReceiver>,
             SaveType::Ron => Box::new(RonFrameWriter::new(&PathBuf::from("ron_frames"))) as
-                Box<webrender::ApiRecordingReceiver>,
+                Box<dyn webrender::ApiRecordingReceiver>,
             SaveType::Binary => Box::new(webrender::BinaryRecorder::new(
                 &PathBuf::from("wr-record.bin"),
-            )) as Box<webrender::ApiRecordingReceiver>,
+            )) as Box<dyn webrender::ApiRecordingReceiver>,
         });
 
         let mut debug_flags = DebugFlags::ECHO_DRIVER_MESSAGES;
@@ -225,6 +224,17 @@ impl Wrench {
             blob_image_handler: Some(Box::new(blob::CheckerboardRenderer::new(callbacks.clone()))),
             disable_dual_source_blending,
             chase_primitive,
+            #[cfg(feature = "gfx")]
+            heaps_config: webrender::HeapsConfig {
+                linear: Some(webrender::LinearConfig {
+                    linear_size: 128 * 1024 * 1024,
+                }),
+                dynamic: Some(webrender::DynamicConfig {
+                    min_device_allocation: 1024 * 1024,
+                    block_size_granularity: 256,
+                    max_chunk_size: 32 * 1024 * 1024,
+                })
+            },
             ..Default::default()
         };
 
@@ -240,7 +250,7 @@ impl Wrench {
             Box::new(Notifier(data))
         });
 
-        let (renderer, sender) = webrender::Renderer::new(init, instance, notifier, opts, None).unwrap();
+        let (renderer, sender) = webrender::Renderer::new(init, notifier, opts, None).unwrap();
         let api = sender.create_api();
         let document_id = api.add_document(size, 0);
 

@@ -29,6 +29,7 @@ extern crate env_logger;
 extern crate euclid;
 #[cfg(all(unix, not(target_os = "android")))]
 extern crate font_loader;
+extern crate gfx_hal;
 extern crate image;
 #[macro_use]
 extern crate lazy_static;
@@ -46,22 +47,26 @@ extern crate time;
 extern crate webrender;
 extern crate winit;
 extern crate yaml_rust;
+use webrender::back;
 
 cfg_if! {
-    if #[cfg(feature = "gfx")] {
-        use webrender::hal::Instance;
+    if #[cfg(feature = "dx12")] {
+        use gfx_hal::Instance;
+    } else if #[cfg(feature = "metal")] {
+        use gfx_hal::Instance;
+    } else if #[cfg(feature = "vulkan")] {
+        use gfx_hal::Instance;
     } else if #[cfg(feature = "gl")] {
         extern crate gleam;
         extern crate glutin;
         mod angle;
         mod egl;
         use gleam::gl;
-        use glutin::GlContext;
+        use glutin::ContextTrait;
         use std::marker::PhantomData;
         use std::os::raw::c_void;
         use std::ptr;
         use std::rc::Rc;
-    } else {
     }
 }
 
@@ -99,7 +104,6 @@ use webrender::DebugFlags;
 use webrender::api::*;
 use winit::dpi::{LogicalPosition, LogicalSize};
 use winit::VirtualKeyCode;
-use webrender::back;
 use wrench::{Wrench, WrenchThing};
 use yaml_frame_reader::YamlFrameReader;
 
@@ -192,9 +196,9 @@ pub enum WindowWrapper {}
 
 #[cfg(feature = "gl")]
 pub enum WindowWrapper {
-    Window(glutin::GlWindow, Rc<gl::Gl>),
-    Angle(winit::Window, angle::Context, Rc<gl::Gl>),
-    Headless(HeadlessContext, Rc<gl::Gl>),
+    Window(glutin::WindowedContext, Rc<dyn gl::Gl>),
+    Angle(winit::Window, angle::Context, Rc<dyn gl::Gl>),
+    Headless(HeadlessContext, Rc<dyn gl::Gl>),
 }
 
 pub struct HeadlessEventIterater;
@@ -214,7 +218,7 @@ impl WindowWrapper {
             let size = window
                 .get_inner_size()
                 .unwrap()
-                .to_physical(window.get_hidpi_factor());
+                .to_physical(1.0);
             DeviceIntSize::new(size.width as i32, size.height as i32)
         }
         #[cfg(feature = "gfx")]
@@ -237,10 +241,10 @@ impl WindowWrapper {
     fn hidpi_factor(&self) -> f32 {
         #[cfg(any(feature = "gfx", feature = "gl"))]
         match *self {
-            WindowWrapper::Window(ref window, ..) => window.get_hidpi_factor() as f32,
+            WindowWrapper::Window(ref window, ..) => 1.0,
             WindowWrapper::Headless(..) => 1.0,
             #[cfg(feature = "gl")]
-            WindowWrapper::Angle(ref window, ..) => window.get_hidpi_factor() as f32,
+            WindowWrapper::Angle(ref window, ..) => 1.0,
         }
         #[cfg(not(any(feature = "gfx", feature = "gl")))]
         0.0
@@ -271,7 +275,7 @@ impl WindowWrapper {
     }
 
     #[cfg(feature = "gl")]
-    pub fn gl(&self) -> &gl::Gl {
+    pub fn gl(&self) -> &dyn gl::Gl {
         match *self {
             WindowWrapper::Window(_, ref gl) |
             WindowWrapper::Angle(_, _, ref gl) |
@@ -280,7 +284,7 @@ impl WindowWrapper {
     }
 
     #[cfg(feature = "gl")]
-    pub fn clone_gl(&self) -> Rc<gl::Gl> {
+    pub fn clone_gl(&self) -> Rc<dyn gl::Gl> {
         match *self {
             WindowWrapper::Window(_, ref gl) |
             WindowWrapper::Angle(_, _, ref gl) |
@@ -289,10 +293,10 @@ impl WindowWrapper {
     }
 
     #[cfg(feature = "gfx")]
-    fn get_window(&self) -> &winit::Window {
+    fn get_window(&self) -> Option<&winit::Window> {
         match *self {
-            WindowWrapper::Window(ref window) => &window,
-            _ => unreachable!(),
+            WindowWrapper::Window(ref window) => Some(&window),
+            WindowWrapper::Headless(..) => None,
         }
     }
 }
@@ -318,7 +322,7 @@ fn make_window(
                 .with_multitouch()
                 .with_dimensions(LogicalSize::new(size.width as f64, size.height as f64));
 
-            let init = |context: &glutin::GlWindow| {
+            let init = |context: &glutin::WindowedContext| {
                 unsafe {
                     context
                         .make_current()
@@ -361,7 +365,7 @@ fn make_window(
                 let gl = _init_angle(&_context);
                 WindowWrapper::Angle(_window, _context, gl)
             } else {
-                let window = glutin::GlWindow::new(window_builder, context_builder, events_loop)
+                let window = glutin::WindowedContext::new_windowed(window_builder, context_builder, events_loop)
                     .unwrap();
                 let gl = init(&window);
                 WindowWrapper::Window(window, gl)
@@ -403,23 +407,31 @@ fn make_window(
 #[cfg(feature = "gfx")]
 fn make_window(
     size: DeviceIntSize,
-    _dp_ratio: Option<f32>,
+    dp_ratio: Option<f32>,
     _vsync: bool,
     events_loop: &Option<winit::EventsLoop>,
     _angle: bool,
 ) -> WindowWrapper {
     let lsize = LogicalSize::new(size.width as f64, size.height as f64);
-    match *events_loop {
+    let mut wrapper = match *events_loop {
         Some(ref events_loop) => {
             let window = winit::WindowBuilder::new()
                 .with_title("WRench")
                 .with_multitouch()
-                .with_min_dimensions(lsize)
+                .with_dimensions(lsize)
                 .build(events_loop).unwrap();
-            return WindowWrapper::Window(window);
+            WindowWrapper::Window(window)
         },
-        None => return WindowWrapper::Headless(HeadlessContext::new(size.width, size.height)),
-    }
+        None => WindowWrapper::Headless(HeadlessContext::new(size.width, size.height)),
+    };
+
+    let dp_ratio = dp_ratio.unwrap_or(wrapper.hidpi_factor());
+    println!(
+        "hidpi factor: {} (native {})",
+        dp_ratio,
+        wrapper.hidpi_factor()
+    );
+    wrapper
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -528,7 +540,7 @@ fn main() {
     let zoom_factor = args.value_of("zoom").map(|z| z.parse::<f32>().unwrap());
     let chase_primitive = match args.value_of("chase") {
         Some(s) => {
-            let mut items = s
+            let items = s
                 .split(',')
                 .map(|s| s.parse::<f32>().unwrap())
                 .collect::<Vec<_>>();
@@ -550,8 +562,13 @@ fn main() {
     let mut window = make_window(
         size, dp_ratio, args.is_present("vsync"), &events_loop, args.is_present("angle"),
     );
-    let dp_ratio = dp_ratio.unwrap_or(window.hidpi_factor());
-    let dim = window.get_inner_size();
+    let mut dim = size;
+    let dp_ratio = if args.is_present("headless") {
+        dp_ratio.unwrap_or(1.0)
+    } else {
+        dim = window.get_inner_size();
+        1.0
+    };
 
     let needs_frame_notifier = ["perf", "reftest", "png", "rawtest"]
         .iter()
@@ -564,23 +581,35 @@ fn main() {
     };
 
     #[cfg(feature = "gfx")]
-    let instance = back::Instance::create("gfx-rs instance", 1);
-
-    #[cfg(not(feature = "gfx"))]
-    let instance = back::Instance{};
-
-    #[cfg(feature = "gfx")]
     let init = {
         let cache_dir = dirs::cache_dir().expect("User's cache directory not found");
         let cache_path = Some(PathBuf::from(&cache_dir).join("pipeline_cache.bin"));
+        let instance = back::Instance::create("gfx-rs instance", 1);
+        let adapter = instance.enumerate_adapters().remove(0);
+        let surface = if args.is_present("headless") {
+            None
+        } else {
+            let surface = instance.create_surface(window.get_window().unwrap());
+            dim = window.get_inner_size();
+            Some(surface)
+        };
+
+        #[cfg(feature = "vulkan")]
+        let backend_api = webrender::BackendApiType::Vulkan;
+        #[cfg(feature = "metal")]
+        let backend_api = webrender::BackendApiType::Metal;
+        #[cfg(feature = "dx12")]
+        let backend_api = webrender::BackendApiType::Dx12;
+
         webrender::DeviceInit {
-            adapter: instance.enumerate_adapters().remove(0),
-            surface: instance.create_surface(window.get_window()),
+            instance: Box::new(instance),
+            adapter,
+            surface,
             window_size: (dim.width, dim.height),
-            frame_count: args.value_of("frame_count").map(|f| f.parse::<usize>().unwrap()),
-            descriptor_count: args.value_of("descriptor_count").map(|d| d.parse::<usize>().unwrap()),
+            descriptor_count: args.value_of("descriptor_count").map(|d| d.parse::<u32>().unwrap()),
             cache_path,
             save_cache: true,
+            backend_api,
         }
     };
 
@@ -607,11 +636,10 @@ fn main() {
         chase_primitive,
         notifier,
         init,
-        instance,
     );
 
     if let Some(window_title) = wrench.take_title() {
-        if !cfg!(windows) {
+        if cfg!(not(windows)) {
             window.set_title(&window_title);
         }
     }
@@ -677,7 +705,7 @@ fn render<'a>(
 
         #[cfg(feature = "gfx")]
         {
-            let dims = window.get_window().get_inner_size().unwrap();
+            let dims = window.get_inner_size();
             let framebuffer_size = DeviceIntSize::new(
                 (dims.width as f32 * wrench.device_pixel_ratio) as i32,
                 (dims.height as f32 * wrench.device_pixel_ratio) as i32);
@@ -690,7 +718,7 @@ fn render<'a>(
         }
 
         wrench.document_id = captured.document_id;
-        Box::new(captured) as Box<WrenchThing>
+        Box::new(captured) as Box<dyn WrenchThing>
     } else {
         let extension = input_path
             .extension()
@@ -699,8 +727,8 @@ fn render<'a>(
             .expect("Tried to render with an unknown file type.");
 
         match extension {
-            "yaml" => Box::new(YamlFrameReader::new_from_args(subargs)) as Box<WrenchThing>,
-            "bin" => Box::new(BinaryFrameReader::new_from_args(subargs)) as Box<WrenchThing>,
+            "yaml" => Box::new(YamlFrameReader::new_from_args(subargs)) as Box<dyn WrenchThing>,
+            "bin" => Box::new(BinaryFrameReader::new_from_args(subargs)) as Box<dyn WrenchThing>,
             _ => panic!("Tried to render with an unknown file type."),
         }
     };
