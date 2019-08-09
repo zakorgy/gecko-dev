@@ -1281,11 +1281,16 @@ impl ClipIdMapper {
     }
 
     fn map_clip_id(&self, id: &ClipId) -> Yaml {
-        assert!(id.is_valid());
+        //assert!(id.is_valid());
         if id.is_root() {
             Yaml::String("root_clip".to_owned())
-        } else {
-            Yaml::Integer(self.clip_map[id] as i64)
+        } /*else if !id.is_valid() {
+            Yaml::String("invalid".to_owned())
+        } */else {
+            match self.clip_map.get(id) {
+                Some(id) => Yaml::Integer(*id as i64),
+                None => Yaml::String("notfound".to_owned()),
+            }
         }
     }
 

@@ -414,7 +414,7 @@ impl YamlFrameReader {
 
     pub fn add_spatial_id_mapping(&mut self, numeric_id: u64, real_id: SpatialId) {
         assert_ne!(numeric_id, 0, "id=0 is reserved for the root reference frame");
-        assert_ne!(numeric_id, 1, "id=1 is reserved for the root scroll node");
+        //assert_ne!(numeric_id, 1, "id=1 is reserved for the root scroll node");
         self.user_spatial_id_map.insert(numeric_id, real_id);
     }
 
