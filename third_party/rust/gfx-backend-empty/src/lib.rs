@@ -7,7 +7,7 @@ extern crate winit;
 
 use crate::hal::range::RangeArg;
 use crate::hal::{
-    buffer, command, device, error, format, image, mapping, memory, pass, pool, pso, query, queue,
+    buffer, command, device, error, format, image, mapping, memory, pass, pool, pso, query, queue, window,
 };
 use std::borrow::Borrow;
 use std::ops::Range;
@@ -53,6 +53,7 @@ impl hal::Backend for Backend {
 }
 
 /// Dummy physical device.
+#[derive(Debug)]
 pub struct PhysicalDevice;
 impl hal::PhysicalDevice<Backend> for PhysicalDevice {
     unsafe fn open(
@@ -92,6 +93,7 @@ impl hal::PhysicalDevice<Backend> for PhysicalDevice {
 }
 
 /// Dummy command queue doing nothing.
+#[derive(Debug)]
 pub struct RawCommandQueue;
 impl queue::RawCommandQueue<Backend> for RawCommandQueue {
     unsafe fn submit<'a, T, Ic, S, Iw, Is>(
@@ -108,7 +110,7 @@ impl queue::RawCommandQueue<Backend> for RawCommandQueue {
         unimplemented!()
     }
 
-    unsafe fn present<'a, W, Is, S, Iw>(&mut self, _: Is, _: Iw) -> Result<(), ()>
+    unsafe fn present<'a, W, Is, S, Iw>(&mut self, _: Is, _: Iw) -> Result<Option<window::Suboptimal>, window::PresentError>
     where
         W: 'a + Borrow<Swapchain>,
         Is: IntoIterator<Item = (&'a W, hal::SwapImageIndex)>,
@@ -124,6 +126,7 @@ impl queue::RawCommandQueue<Backend> for RawCommandQueue {
 }
 
 /// Dummy device doing nothing.
+#[derive(Debug)]
 pub struct Device;
 impl hal::Device<Backend> for Device {
     unsafe fn create_command_pool(
@@ -452,7 +455,7 @@ impl hal::Device<Backend> for Device {
         _: &mut Surface,
         _: hal::SwapchainConfig,
         _: Option<Swapchain>,
-    ) -> Result<(Swapchain, hal::Backbuffer<Backend>), hal::window::CreationError> {
+    ) -> Result<(Swapchain, Vec<()>), hal::window::CreationError> {
         unimplemented!()
     }
 
@@ -480,6 +483,7 @@ impl queue::QueueFamily for QueueFamily {
 }
 
 /// Dummy raw command pool.
+#[derive(Debug)]
 pub struct RawCommandPool;
 impl pool::RawCommandPool<Backend> for RawCommandPool {
     unsafe fn reset(&mut self) {
@@ -495,6 +499,7 @@ impl pool::RawCommandPool<Backend> for RawCommandPool {
 }
 
 /// Dummy command buffer, which ignores all the calls.
+#[derive(Debug)]
 pub struct RawCommandBuffer;
 impl command::RawCommandBuffer<Backend> for RawCommandBuffer {
     unsafe fn begin(
@@ -824,6 +829,7 @@ impl pso::DescriptorPool<Backend> for DescriptorPool {
 }
 
 /// Dummy surface.
+#[derive(Debug)]
 pub struct Surface;
 impl hal::Surface<Backend> for Surface {
     fn kind(&self) -> hal::image::Kind {
@@ -847,17 +853,20 @@ impl hal::Surface<Backend> for Surface {
 }
 
 /// Dummy swapchain.
+#[derive(Debug)]
 pub struct Swapchain;
 impl hal::Swapchain<Backend> for Swapchain {
     unsafe fn acquire_image(
         &mut self,
         _: u64,
-        _: hal::FrameSync<Backend>,
-    ) -> Result<hal::SwapImageIndex, hal::AcquireError> {
+        _: Option<&()>,
+        _: Option<&()>,
+    ) -> Result<(hal::SwapImageIndex, Option<hal::window::Suboptimal>), hal::AcquireError> {
         unimplemented!()
     }
 }
 
+#[derive(Debug)]
 pub struct Instance;
 
 impl Instance {
