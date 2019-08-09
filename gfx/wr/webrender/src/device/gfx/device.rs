@@ -1181,6 +1181,18 @@ impl<B: hal::Backend> Device<B> {
                 .. hal::image::Layout::ColorAttachmentOptimal,
         };
 
+        let attachment_rgbaf32 = hal::pass::Attachment {
+            format: Some(hal::format::Format::Rgba32Sfloat),
+            samples: 1,
+            ops: hal::pass::AttachmentOps::new(
+                hal::pass::AttachmentLoadOp::DontCare,
+                hal::pass::AttachmentStoreOp::Store,
+            ),
+            stencil_ops: hal::pass::AttachmentOps::DONT_CARE,
+            layouts: hal::image::Layout::ColorAttachmentOptimal
+                .. hal::image::Layout::ColorAttachmentOptimal,
+        };
+
         let attachment_depth = hal::pass::Attachment {
             format: Some(depth_format),
             samples: 1,
@@ -1225,6 +1237,22 @@ impl<B: hal::Backend> Device<B> {
             preserves: &[],
         };
 
+        let subpass_rgbaf32 = hal::pass::SubpassDesc {
+            colors: &[(0, hal::image::Layout::ColorAttachmentOptimal)],
+            depth_stencil: None,
+            inputs: &[],
+            resolves: &[],
+            preserves: &[],
+        };
+
+        let subpass_depth_rgbaf32 = hal::pass::SubpassDesc {
+            colors: &[(0, hal::image::Layout::ColorAttachmentOptimal)],
+            depth_stencil: Some(&(1, hal::image::Layout::DepthStencilAttachmentOptimal)),
+            inputs: &[],
+            resolves: &[],
+            preserves: &[],
+        };
+
         let dependency = hal::pass::SubpassDependency {
             passes: hal::pass::SubpassRef::External .. hal::pass::SubpassRef::Pass(0),
             stages: PipelineStage::COLOR_ATTACHMENT_OUTPUT
@@ -1260,6 +1288,24 @@ impl<B: hal::Backend> Device<B> {
                 )
             }
             .expect("create_render_pass failed"),
+
+            rgbaf32: unsafe {
+                device.create_render_pass(
+                    iter::once(&attachment_rgbaf32),
+                    &[subpass_rgbaf32],
+                    iter::once(&dependency),
+                )
+            }
+            .expect("create_render_pass failed"),
+            rgbaf32_depth: unsafe {
+                device.create_render_pass(
+                    iter::once(&attachment_rgbaf32).chain(iter::once(&attachment_depth)),
+                    &[subpass_depth_rgbaf32],
+                    iter::once(&dependency).chain(iter::once(&depth_dependency)),
+                )
+            }
+            .expect("create_render_pass failed"),
+
             bgra8: unsafe {
                 device.create_render_pass(
                     iter::once(&attachment_bgra8),

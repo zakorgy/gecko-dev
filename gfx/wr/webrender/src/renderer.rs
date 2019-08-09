@@ -2313,6 +2313,7 @@ impl Renderer {
             samplers
         };
 
+        #[cfg(not(feature="gleam"))]
         self.device.set_next_frame_id();
 
         let cpu_frame_id = profile_timers.cpu_time.profile(|| {

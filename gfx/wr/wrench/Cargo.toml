@@ -16,7 +16,7 @@ euclid = "0.19"
 gfx-backend-empty = "0.2"
 gfx-hal = "0.2"
 gleam = { optional = true, version = "0.6.2" }
-glutin = { optional = true, version = "0.19" }
+glutin = { optional = true, version = "0.20" }
 app_units = "0.7"
 image = "0.21"
 clap = { version = "2", features = ["yaml"] }
@@ -43,7 +43,7 @@ default = []
 headless = ["gl", "osmesa-sys", "osmesa-src"]
 pathfinder = ["webrender/pathfinder"]
 gfx = ["dirs"]
-gl = ["gleam", "glutin", "webrender/gleam", "webrender/gfx-backend-empty"]
+gl = ["gleam", "glutin", "webrender/gleam"]
 dx12 = ["webrender/dx12", "gfx"]
 metal = ["webrender/metal", "gfx"]
 vulkan = ["webrender/vulkan", "gfx"]

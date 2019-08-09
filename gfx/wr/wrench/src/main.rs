@@ -247,7 +247,7 @@ impl WindowWrapper {
             WindowWrapper::Angle(ref window, ..) => 1.0,
         }
         #[cfg(not(any(feature = "gfx", feature = "gl")))]
-        0.0
+        1.0
     }
 
     fn resize(&mut self, size: DeviceIntSize) {

@@ -235,6 +235,7 @@ impl Wrench {
                     max_chunk_size: 32 * 1024 * 1024,
                 })
             },
+            texture_cahce_size: 128 << 20,
             ..Default::default()
         };
 

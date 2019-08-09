@@ -321,6 +321,7 @@ impl<B: hal::Backend> Framebuffer<B> {
         let format = match texture.format {
             ImageFormat::R8 => hal::format::Format::R8Unorm,
             ImageFormat::BGRA8 => hal::format::Format::Bgra8Unorm,
+            ImageFormat::RGBAF32 => hal::format::Format::Rgba32Sfloat,
             f => unimplemented!("TODO image format missing {:?}", f),
         };
         let image_view = unsafe {
