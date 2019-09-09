@@ -37,6 +37,8 @@ const bool alpha_pass =
     false;
 #endif
 
+const bool push_constants = false;
+
 #if defined(GL_ES)
     #if GL_ES == 1
         #ifdef GL_FRAGMENT_PRECISION_HIGH

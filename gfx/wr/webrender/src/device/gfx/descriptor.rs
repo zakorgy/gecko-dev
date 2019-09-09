@@ -5,6 +5,7 @@
 use arrayvec::ArrayVec;
 use hal::Device;
 use hal::pso::{DescriptorSetLayoutBinding, DescriptorType as DT, ShaderStageFlags as SSF};
+use hal::command::RawCommandBuffer;
 use internal_types::FastHashMap;
 use rendy_descriptor::{DescriptorAllocator, DescriptorRanges, DescriptorSet};
 use rendy_memory::Heaps;
@@ -14,7 +15,7 @@ use std::cmp::Eq;
 use std::collections::hash_map::Entry;
 use std::hash::{Hash, Hasher};
 use std::marker::Copy;
-use super::buffer::UniformBufferHandler;
+use super::buffer::{UniformBufferHandler, PMBuffer};
 use super::image::Image;
 use super::TextureId;
 use super::super::{ShaderKind, TextureFilter, VertexArrayKind};
@@ -30,13 +31,11 @@ pub(super) const PER_PASS_TEXTURE_COUNT: usize = 2; // PrevPassAlpha, PrevPassCo
 pub(super) const PER_GROUP_TEXTURE_COUNT: usize = 6; // GpuCache, TransformPalette, RenderTasks, Dither, PrimitiveHeadersF, PrimitiveHeadersI
 pub(super) const RENDERER_TEXTURE_COUNT: usize = 11;
 pub(super) const PER_GROUP_RANGE_DEFAULT: std::ops::Range<usize> = 8..9; // Dither
-pub(super) const PER_GROUP_RANGE_CLIP: std::ops::Range<usize> = 5..9; // GpuCache, TransformPalette, RenderTasks, Dither
-pub(super) const PER_GROUP_RANGE_PRIMITIVE: std::ops::Range<usize> = 5..11; // GpuCache, TransformPalette, RenderTasks, Dither, PrimitiveHeadersF, PrimitiveHeadersI
+pub(super) const PER_GROUP_RANGE_CLIP: std::ops::Range<usize> = 6..9; //TransformPalette, RenderTasks, Dither
+pub(super) const PER_GROUP_RANGE_PRIMITIVE: std::ops::Range<usize> = 6..11; // TransformPalette, RenderTasks, Dither, PrimitiveHeadersF, PrimitiveHeadersI
+const GPU_CACHE_BINDING: u32 = 5;
 
-#[cfg(feature = "push_constants")]
-pub(super) const DESCRIPTOR_SET_COUNT: usize = 3;
-#[cfg(not(feature = "push_constants"))]
-pub(super) const DESCRIPTOR_SET_COUNT: usize = 4;
+pub(super) const MAX_DESCRIPTOR_SET_COUNT: usize = 4;
 
 const fn descriptor_set_layout_binding(
     binding: u32,
@@ -67,7 +66,6 @@ pub(super) const COMMON_SET_2: &'static [DescriptorSetLayoutBinding] = &[
     descriptor_set_layout_binding(2, DT::CombinedImageSampler, SSF::ALL, false),
 ];
 
-#[cfg(not(feature = "push_constants"))]
 pub(super) const COMMON_SET_3: &'static [DescriptorSetLayoutBinding] = &[
     // Locals
     descriptor_set_layout_binding(0, DT::UniformBuffer, SSF::VERTEX, false),
@@ -75,7 +73,7 @@ pub(super) const COMMON_SET_3: &'static [DescriptorSetLayoutBinding] = &[
 
 pub(super) const CLIP_SET_1: &'static [DescriptorSetLayoutBinding] = &[
     // GpuCache
-    descriptor_set_layout_binding(5, DT::CombinedImageSampler, SSF::ALL, true),
+    descriptor_set_layout_binding(5, DT::StorageBuffer, SSF::ALL, false),
     // TransformPalette
     descriptor_set_layout_binding(6, DT::CombinedImageSampler, SSF::VERTEX, true),
     // RenderTasks
@@ -86,7 +84,7 @@ pub(super) const CLIP_SET_1: &'static [DescriptorSetLayoutBinding] = &[
 
 pub(super) const PRIMITIVE_SET_1: &'static [DescriptorSetLayoutBinding] = &[
     // GpuCache
-    descriptor_set_layout_binding(5, DT::CombinedImageSampler, SSF::ALL, true),
+    descriptor_set_layout_binding(5, DT::StorageBuffer, SSF::ALL, false),
     // TransformPalette
     descriptor_set_layout_binding(6, DT::CombinedImageSampler, SSF::VERTEX, true),
     // RenderTasks
@@ -170,8 +168,8 @@ pub(super) struct PerPassBindings(pub [TextureId; PER_PASS_TEXTURE_COUNT]);
 pub(super) struct PerGroupBindings(pub [TextureId; PER_GROUP_TEXTURE_COUNT]);
 
 pub(super) struct DescriptorGroupData<B: hal::Backend> {
-    pub(super) set_layouts: ArrayVec<[B::DescriptorSetLayout; DESCRIPTOR_SET_COUNT]>,
-    pub(super) ranges: ArrayVec<[DescriptorRanges; DESCRIPTOR_SET_COUNT]>,
+    pub(super) set_layouts: ArrayVec<[B::DescriptorSetLayout; MAX_DESCRIPTOR_SET_COUNT]>,
+    pub(super) ranges: ArrayVec<[DescriptorRanges; MAX_DESCRIPTOR_SET_COUNT]>,
     pub(super) pipeline_layout: B::PipelineLayout,
 }
 
@@ -340,9 +338,10 @@ impl<K, B, F> DescriptorSetHandler<K, B, F>
         &mut self,
         bound_textures: &[u32; RENDERER_TEXTURE_COUNT],
         bound_samplers: &[TextureFilter; RENDERER_TEXTURE_COUNT],
-        cmd_buffer: &mut hal::command::CommandBuffer<B, hal::Graphics>,
+        cmd_buffer: &mut B::CommandBuffer,
         bindings: K,
         images: &FastHashMap<TextureId, Image<B>>,
+        storage_buffer: Option<&PMBuffer<B>>,
         desc_allocator: &mut DescriptorAllocator<B>,
         device: &B::Device,
         group_data: &DescriptorData<B>,
@@ -375,6 +374,19 @@ impl<K, B, F> DescriptorSetHandler<K, B, F>
             }
         };
         let mut descriptor_writes: SmallVec<[hal::pso::DescriptorSetWrite<_, _>; RENDERER_TEXTURE_COUNT]> = SmallVec::new();
+        if let Some(buffer) = storage_buffer {
+            if let Some(ref set) = new_set {
+                descriptor_writes.push(hal::pso::DescriptorSetWrite {
+                    set: set.raw(),
+                    binding: GPU_CACHE_BINDING,
+                    array_offset: 0,
+                    descriptors: Some(hal::pso::Descriptor::Buffer(
+                        &buffer.buffer,
+                        None .. None,
+                    )),
+                });
+            }
+        }
         for index in range {
             let image = &images[&bound_textures[index]].core;
             // We need to transit the image, even though it's bound in the descriptor set

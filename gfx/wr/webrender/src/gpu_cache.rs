@@ -82,6 +82,8 @@ pub struct GpuBlockData {
 
 impl GpuBlockData {
     pub const EMPTY: Self = GpuBlockData { data: [0.0; 4] };
+    #[cfg(not(feature= "gleam"))]
+    pub const SIZE: u64 = 16;
 }
 
 /// Conversion helpers for GpuBlockData

@@ -70,6 +70,8 @@ fn create_shaders(out_dir: &str, shaders: &HashMap<String, String>) -> Vec<Strin
                 for mut import in imports {
                     if import == "base" {
                         import = "base_gfx";
+                    } else if import == "gpu_cache" {
+                        import = "gpu_cache_gfx";
                     }
                     if let Some(include) = get_shader_source(import, shaders) {
                         parse_shader_source(&include, shaders, output);
@@ -252,14 +254,17 @@ fn process_glsl_for_spirv(file_path: &Path, file_name: &str) -> Option<PipelineR
                 new_data.push_str(&line);
                 new_data.push('\n');
         } else {
-            #[cfg(feature = "push_constants")]
+            if l.contains("uTransform") {
+                new_data.push_str("\t\t\tmat4 _transform;\n\t\t\tif (push_constants) { _transform =  pushConstants.uTransform; } else { _transform = uTransform; }\n");
+            }
+            if l.contains("uMode") {
+                new_data.push_str("\t\t\tint _umode;\n\t\t\tif (push_constants) { _umode =  pushConstants.uMode; } else { _umode = uMode; }\n");
+            }
             new_data.push_str(
                 &l
-                    .replace("uTransform", "pushConstants.uTransform")
-                    .replace("uMode", "pushConstants.uMode")
+                    .replace("uTransform", "_transform")
+                    .replace("uMode", "_umode")
             );
-            #[cfg(not(feature = "push_constants"))]
-            new_data.push_str(&l);
             new_data.push('\n');
         }
     }
@@ -307,7 +312,7 @@ fn extend_sampler_definition(
 
     // If the sampler is in the map we only update the shader code.
     if let Some(&(_, set, binding)) = sampler_mapping.get(*sampler_name) {
-        let mut layout_str = format!(
+        let layout_str = format!(
             "layout(set = {}, binding = {}) {}{} {};\n",
             set, binding, code_str, sampler_type, sampler_name
         );
@@ -315,7 +320,7 @@ fn extend_sampler_definition(
 
     // Replace sampler definition with a texture and a sampler.
     } else {
-        let mut layout_str = format!(
+        let layout_str = format!(
             "layout(set = {}, binding = {}) {}{} {};\n",
             set, binding, code_str, sampler_type, sampler_name
         );
@@ -334,7 +339,6 @@ fn extend_sampler_definition(
     }
 }
 
-#[cfg(feature = "push_constants")]
 fn replace_non_sampler_uniforms(new_data: &mut String) {
     new_data.push_str(
         "\tlayout(push_constant) uniform PushConsts {\n\
@@ -344,10 +348,6 @@ fn replace_non_sampler_uniforms(new_data: &mut String) {
          \t\tint uMode;\n\
          \t} pushConstants;\n",
     );
-}
-
-#[cfg(not(feature = "push_constants"))]
-fn replace_non_sampler_uniforms(new_data: &mut String) {
     new_data.push_str(&format!(
         "\tlayout(set = {}, binding = 0) uniform Locals {{\n\
          \t\tuniform mat4 uTransform;       // Orthographic projection\n\

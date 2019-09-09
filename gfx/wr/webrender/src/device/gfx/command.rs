@@ -3,46 +3,44 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use hal::Device as BackendDevice;
+use hal::pool::RawCommandPool;
 
 pub struct CommandPool<B: hal::Backend> {
-    command_pool: hal::CommandPool<B, hal::Graphics>,
-    command_buffers: Vec<hal::command::CommandBuffer<B, hal::Graphics>>,
-    size: usize,
+    command_pool: B::CommandPool,
+    command_buffers: Vec<B::CommandBuffer>,
 }
 
 impl<B: hal::Backend> CommandPool<B> {
-    pub(super) fn new(mut command_pool: hal::CommandPool<B, hal::Graphics>) -> Self {
-        let command_buffer = command_pool.acquire_command_buffer::<hal::command::OneShot>();
+    pub(super) fn new(command_pool: B::CommandPool) -> Self {
         CommandPool {
             command_pool,
-            command_buffers: vec![command_buffer],
-            size: 0,
+            command_buffers: vec![],
         }
     }
 
-    pub(super) fn acquire_command_buffer(
-        &mut self,
-    ) -> &mut hal::command::CommandBuffer<B, hal::Graphics> {
-        if self.size >= self.command_buffers.len() {
+    pub(super) fn create_command_buffer(&mut self) {
+        if self.command_buffers.is_empty() {
             let command_buffer = self
                 .command_pool
-                .acquire_command_buffer::<hal::command::OneShot>();
+                .allocate_one(hal::command::RawLevel::Primary);
             self.command_buffers.push(command_buffer);
         }
-        self.size += 1;
-        &mut self.command_buffers[self.size - 1]
     }
 
-    pub(super) fn command_buffers(&self) -> &[hal::command::CommandBuffer<B, hal::Graphics>] {
-        &self.command_buffers[0 .. self.size]
+    pub(super) fn command_buffers(&self) -> &[B::CommandBuffer] {
+        &self.command_buffers
+    }
+
+    pub fn command_buffer_mut(&mut self) -> &mut B::CommandBuffer {
+        // 1 command_pool/frame, 1 command_buffer/command_pool
+        &mut self.command_buffers[0]
     }
 
     pub(super) unsafe fn reset(&mut self) {
         self.command_pool.reset();
-        self.size = 0;
     }
 
     pub(super) unsafe fn destroy(self, device: &B::Device) {
-        device.destroy_command_pool(self.command_pool.into_raw());
+        device.destroy_command_pool(self.command_pool);
     }
 }

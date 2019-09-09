@@ -16,17 +16,14 @@ struct SplitGeometry {
 };
 
 SplitGeometry fetch_split_geometry(int address) {
-    ivec2 uv = get_gpu_cache_uv(address);
-
-    vec4 data0 = TEXEL_FETCH(sGpuCache, uv, 0, ivec2(0, 0));
-    vec4 data1 = TEXEL_FETCH(sGpuCache, uv, 0, ivec2(1, 0));
+    vec4[2] data = fetch_from_gpu_cache_2(address);
 
     SplitGeometry geo;
     geo.local = vec2[4](
-        data0.xy,
-        data0.zw,
-        data1.xy,
-        data1.zw
+        data[0].xy,
+        data[0].zw,
+        data[1].xy,
+        data[1].zw
     );
 
     return geo;
