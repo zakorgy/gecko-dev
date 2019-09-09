@@ -1,16 +1,19 @@
+use crate::hal::image::SubresourceRange;
+use crate::hal::pso;
+use crate::{Backend, RawDevice};
 use ash::version::DeviceV1_0;
 use ash::vk;
-use hal::image::SubresourceRange;
-use hal::pso;
 use std::borrow::Borrow;
 use std::sync::Arc;
-use {Backend, RawDevice};
 
 #[derive(Debug, Hash)]
 pub struct Semaphore(pub vk::Semaphore);
 
 #[derive(Debug, Hash, PartialEq, Eq)]
 pub struct Fence(pub vk::Fence);
+
+#[derive(Debug, Hash)]
+pub struct Event(pub vk::Event);
 
 #[derive(Debug, Hash)]
 pub struct GraphicsPipeline(pub vk::Pipeline);

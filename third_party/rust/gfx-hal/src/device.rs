@@ -354,7 +354,10 @@ pub trait Device<B: Backend>: fmt::Debug + Any + Send + Sync {
     /// which references the compute pipeline, has finished execution.
     unsafe fn destroy_compute_pipeline(&self, pipeline: B::ComputePipeline);
 
-    /// Create a new framebuffer object
+    /// Create a new framebuffer object.
+    ///
+    /// # Safety
+    /// - `extent.width`, `extent.height` and `extent.depth` **must** be greater than `0`.
     unsafe fn create_framebuffer<I>(
         &self,
         pass: &B::RenderPass,
@@ -377,7 +380,7 @@ pub trait Device<B: Backend>: fmt::Debug + Any + Send + Sync {
     /// shader stages as described in *Compute Pipelines* and *Graphics Pipelines*.
     unsafe fn create_shader_module(
         &self,
-        spirv_data: &[u8],
+        spirv_data: &[u32],
     ) -> Result<B::ShaderModule, ShaderError>;
 
     /// Destroy a shader module module
@@ -725,6 +728,23 @@ pub trait Device<B: Backend>: fmt::Debug + Any + Send + Sync {
 
     /// Destroy a fence object
     unsafe fn destroy_fence(&self, fence: B::Fence);
+
+    /// Create an event object.
+    fn create_event(&self) -> Result<B::Event, OutOfMemory>;
+
+    /// Destroy an event object.
+    unsafe fn destroy_event(&self, event: B::Event);
+
+    /// Query the status of an event.
+    ///
+    /// Returns `true` if the event is set, or `false` if it is reset.
+    unsafe fn get_event_status(&self, event: &B::Event) -> Result<bool, OomOrDeviceLost>;
+
+    /// Sets an event.
+    unsafe fn set_event(&self, event: &B::Event) -> Result<(), OutOfMemory>;
+
+    /// Resets an event.
+    unsafe fn reset_event(&self, event: &B::Event) -> Result<(), OutOfMemory>;
 
     /// Create a new query pool object
     ///

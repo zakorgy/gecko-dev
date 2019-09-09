@@ -116,7 +116,8 @@ pub type MappedRwLockWriteGuard<'a, T> = lock_api::MappedRwLockWriteGuard<'a, Ra
 
 /// RAII structure used to release the upgradable read access of a lock when
 /// dropped.
-pub type RwLockUpgradableReadGuard<'a, T> = lock_api::RwLockUpgradableReadGuard<'a, RawRwLock, T>;
+pub type RwLockUpgradableReadGuard<'a, T> =
+    lock_api::RwLockUpgradableReadGuard<'a, RawRwLock, T>;
 
 #[cfg(test)]
 mod tests {
@@ -177,8 +178,7 @@ mod tests {
         let _: Result<(), _> = thread::spawn(move || {
             let _lock = arc2.write();
             panic!();
-        })
-        .join();
+        }).join();
         let lock = arc.read();
         assert_eq!(*lock, 1);
     }
@@ -190,8 +190,7 @@ mod tests {
         let _: Result<(), _> = thread::spawn(move || {
             let _lock = arc2.write();
             panic!();
-        })
-        .join();
+        }).join();
         let lock = arc.write();
         assert_eq!(*lock, 1);
     }
@@ -203,8 +202,7 @@ mod tests {
         let _: Result<(), _> = thread::spawn(move || {
             let _lock = arc2.read();
             panic!();
-        })
-        .join();
+        }).join();
         let lock = arc.read();
         assert_eq!(*lock, 1);
     }
@@ -216,8 +214,7 @@ mod tests {
         let _: Result<(), _> = thread::spawn(move || {
             let _lock = arc2.read();
             panic!()
-        })
-        .join();
+        }).join();
         let lock = arc.write();
         assert_eq!(*lock, 1);
     }
@@ -332,8 +329,7 @@ mod tests {
             }
             let _u = Unwinder { i: arc2 };
             panic!();
-        })
-        .join();
+        }).join();
         let lock = arc.read();
         assert_eq!(*lock, 2);
     }

@@ -11,8 +11,9 @@
 # will likely look very different (and much more reasonable)
 
 [package]
+edition = "2018"
 name = "gfx-backend-vulkan"
-version = "0.2.3"
+version = "0.3.3"
 authors = ["The Gfx-rs Developers"]
 description = "Vulkan API backend for gfx-rs"
 homepage = "https://github.com/gfx-rs/gfx"
@@ -34,13 +35,16 @@ version = "1"
 version = "1.0"
 
 [dependencies.gfx-hal]
-version = "0.2"
+version = "0.3.1"
 
 [dependencies.lazy_static]
 version = "1"
 
 [dependencies.log]
 version = "0.4"
+
+[dependencies.raw-window-handle]
+version = "0.1"
 
 [dependencies.shared_library]
 version = "0.1.9"
@@ -54,14 +58,16 @@ version = "0.19"
 optional = true
 
 [features]
-default = ["winit"]
+default = []
 use-rtld-next = ["shared_library"]
 [target."cfg(all(unix, not(target_os = \"macos\"), not(target_os = \"ios\"), not(target_os = \"android\")))".dependencies.x11]
 version = "2.15"
 features = ["xlib"]
+optional = true
 
 [target."cfg(all(unix, not(target_os = \"macos\"), not(target_os = \"ios\"), not(target_os = \"android\")))".dependencies.xcb]
 version = "0.8"
+optional = true
 [target."cfg(target_os = \"macos\")".dependencies.core-graphics]
 version = "0.17"
 

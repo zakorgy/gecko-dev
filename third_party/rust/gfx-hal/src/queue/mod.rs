@@ -11,9 +11,9 @@ pub mod family;
 
 use std::any::Any;
 use std::borrow::Borrow;
+use std::fmt;
 use std::iter;
 use std::marker::PhantomData;
-use std::fmt;
 
 use crate::command::{Primary, Submittable};
 use crate::error::HostExecutionError;
@@ -139,7 +139,7 @@ impl<B: Backend, C: Capability> CommandQueue<B, C> {
     }
 
     /// Submit command buffers without any semaphore waits or signals.
-    pub unsafe fn submit_nosemaphores<'a, T, I>(
+    pub unsafe fn submit_without_semaphores<'a, T, I>(
         &mut self,
         command_buffers: I,
         fence: Option<&B::Fence>,

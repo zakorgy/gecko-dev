@@ -5,20 +5,19 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use rand::rngs::SmallRng;
-use rand::{FromEntropy, Rng};
-use smallvec::SmallVec;
-use std::cell::{Cell, UnsafeCell};
-use std::mem;
-#[cfg(not(has_localkey_try_with))]
-use std::panic;
-use std::ptr;
 use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
-use std::thread::LocalKey;
 use std::time::{Duration, Instant};
+use std::cell::{Cell, UnsafeCell};
+use std::ptr;
+use std::mem;
+use std::thread::LocalKey;
+#[cfg(not(feature = "nightly"))]
+use std::panic;
+use smallvec::SmallVec;
+use rand::{self, Rng, XorShiftRng};
 use thread_parker::ThreadParker;
-use util::UncheckedOptionExt;
 use word_lock::WordLock;
+use util::UncheckedOptionExt;
 
 static NUM_THREADS: AtomicUsize = ATOMIC_USIZE_INIT;
 static HASHTABLE: AtomicUsize = ATOMIC_USIZE_INIT;
@@ -92,14 +91,14 @@ struct FairTimeout {
     timeout: Instant,
 
     // Random number generator for calculating the next timeout
-    rng: SmallRng,
+    rng: XorShiftRng,
 }
 
 impl FairTimeout {
     fn new() -> FairTimeout {
         FairTimeout {
             timeout: Instant::now(),
-            rng: SmallRng::from_entropy(),
+            rng: rand::weak_rng(),
         }
     }
 
@@ -136,8 +135,7 @@ struct ThreadData {
 
     // Extra data for deadlock detection
     // TODO: once supported in stable replace with #[cfg...] & remove dummy struct/impl
-    #[allow(dead_code)]
-    deadlock_data: deadlock::DeadlockData,
+    #[allow(dead_code)] deadlock_data: deadlock::DeadlockData,
 }
 
 impl ThreadData {
@@ -165,11 +163,11 @@ impl ThreadData {
 unsafe fn get_thread_data(local: &mut Option<ThreadData>) -> &ThreadData {
     // Try to read from thread-local storage, but return None if the TLS has
     // already been destroyed.
-    #[cfg(has_localkey_try_with)]
+    #[cfg(feature = "nightly")]
     fn try_get_tls(key: &'static LocalKey<ThreadData>) -> Option<*const ThreadData> {
         key.try_with(|x| x as *const ThreadData).ok()
     }
-    #[cfg(not(has_localkey_try_with))]
+    #[cfg(not(feature = "nightly"))]
     fn try_get_tls(key: &'static LocalKey<ThreadData>) -> Option<*const ThreadData> {
         panic::catch_unwind(|| key.with(|x| x as *const ThreadData)).ok()
     }
@@ -439,13 +437,10 @@ impl ParkResult {
 }
 
 /// Result of an unpark operation.
-#[derive(Copy, Clone, Default, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct UnparkResult {
     /// The number of threads that were unparked.
     pub unparked_threads: usize,
-
-    /// The number of threads that were requeued.
-    pub requeued_threads: usize,
 
     /// Whether there are any threads remaining in the queue. This only returns
     /// true if a thread was unparked.
@@ -455,9 +450,6 @@ pub struct UnparkResult {
     /// should be used to switch to a fair unlocking mechanism for a particular
     /// unlock.
     pub be_fair: bool,
-
-    /// Private field so new fields can be added without breakage.
-    _sealed: (),
 }
 
 /// Operation that `unpark_requeue` should perform.
@@ -471,12 +463,6 @@ pub enum RequeueOp {
 
     /// Requeue all threads onto the target queue.
     RequeueAll,
-
-    /// Unpark one thread and leave the rest parked. No requeuing is done.
-    UnparkOne,
-
-    /// Requeue one thread and leave the rest parked on the original queue.
-    RequeueOne,
 }
 
 /// Operation that `unpark_filter` should perform for each thread.
@@ -713,7 +699,11 @@ unsafe fn unpark_one_internal(
     let mut link = &bucket.queue_head;
     let mut current = bucket.queue_head.get();
     let mut previous = ptr::null();
-    let mut result = UnparkResult::default();
+    let mut result = UnparkResult {
+        unparked_threads: 0,
+        have_more_threads: false,
+        be_fair: false,
+    };
     while !current.is_null() {
         if (*current).key.load(Ordering::Relaxed) == key {
             // Remove the thread from the queue
@@ -826,10 +816,11 @@ pub unsafe fn unpark_all(key: usize, unpark_token: UnparkToken) -> usize {
 /// unparks the first one and requeues the rest onto the queue associated with
 /// `key_to`.
 ///
-/// The `validate` function is called while both queues are locked. Its return
-/// value will determine which operation is performed, or whether the operation
-/// should be aborted. See `RequeueOp` for details about the different possible
-/// return values.
+/// The `validate` function is called while both queues are locked and can abort
+/// the operation by returning `RequeueOp::Abort`. It can also choose to
+/// unpark the first thread in the source queue while moving the rest by
+/// returning `RequeueOp::UnparkFirstRequeueRest`. Returning
+/// `RequeueOp::RequeueAll` will move all threads to the destination queue.
 ///
 /// The `callback` function is also called while both queues are locked. It is
 /// passed the `RequeueOp` returned by `validate` and an `UnparkResult`
@@ -881,7 +872,11 @@ unsafe fn unpark_requeue_internal(
     let (bucket_from, bucket_to) = lock_bucket_pair(key_from, key_to);
 
     // If the validation function fails, just return
-    let mut result = UnparkResult::default();
+    let mut result = UnparkResult {
+        unparked_threads: 0,
+        have_more_threads: false,
+        be_fair: false,
+    };
     let op = validate();
     if op == RequeueOp::Abort {
         unlock_bucket_pair(bucket_from, bucket_to);
@@ -905,9 +900,7 @@ unsafe fn unpark_requeue_internal(
             }
 
             // Prepare the first thread for wakeup and requeue the rest.
-            if (op == RequeueOp::UnparkOneRequeueRest || op == RequeueOp::UnparkOne)
-                && wakeup_thread.is_none()
-            {
+            if op == RequeueOp::UnparkOneRequeueRest && wakeup_thread.is_none() {
                 wakeup_thread = Some(current);
                 result.unparked_threads = 1;
             } else {
@@ -918,20 +911,7 @@ unsafe fn unpark_requeue_internal(
                 }
                 requeue_threads_tail = current;
                 (*current).key.store(key_to, Ordering::Relaxed);
-                result.requeued_threads += 1;
-            }
-            if op == RequeueOp::UnparkOne || op == RequeueOp::RequeueOne {
-                // Scan the rest of the queue to see if there are any other
-                // entries with the given key.
-                let mut scan = next;
-                while !scan.is_null() {
-                    if (*scan).key.load(Ordering::Relaxed) == key_from {
-                        result.have_more_threads = true;
-                        break;
-                    }
-                    scan = (*scan).next_in_queue.get();
-                }
-                break;
+                result.have_more_threads = true;
             }
             current = next;
         } else {
@@ -1023,7 +1003,11 @@ unsafe fn unpark_filter_internal(
     let mut current = bucket.queue_head.get();
     let mut previous = ptr::null();
     let mut threads = SmallVec::<[_; 8]>::new();
-    let mut result = UnparkResult::default();
+    let mut result = UnparkResult {
+        unparked_threads: 0,
+        have_more_threads: false,
+        be_fair: false,
+    };
     while !current.is_null() {
         if (*current).key.load(Ordering::Relaxed) == key {
             // Call the filter function with the thread's ParkToken
@@ -1084,7 +1068,7 @@ unsafe fn unpark_filter_internal(
     result
 }
 
-/// \[Experimental\] Deadlock detection
+/// [Experimental] Deadlock detection
 ///
 /// Enabled via the `deadlock_detection` feature flag.
 pub mod deadlock {
@@ -1142,14 +1126,14 @@ pub mod deadlock {
 #[cfg(feature = "deadlock_detection")]
 mod deadlock_impl {
     use super::{get_hashtable, get_thread_data, lock_bucket, ThreadData, NUM_THREADS};
+    use std::cell::{Cell, UnsafeCell};
+    use std::sync::mpsc;
+    use std::sync::atomic::Ordering;
+    use std::collections::HashSet;
+    use thread_id;
     use backtrace::Backtrace;
     use petgraph;
     use petgraph::graphmap::DiGraphMap;
-    use std::cell::{Cell, UnsafeCell};
-    use std::collections::HashSet;
-    use std::sync::atomic::Ordering;
-    use std::sync::mpsc;
-    use thread_id;
 
     /// Representation of a deadlocked thread
     pub struct DeadlockedThread {
@@ -1279,7 +1263,7 @@ mod deadlock_impl {
 
     use self::WaitGraphNode::*;
 
-    // Contrary to the _fast variant this locks the entries table before looking for cycles.
+    // Contrary to the _fast variant this locks the entrie table before looking for cycles.
     // Returns all detected thread wait cycles.
     // Note that once a cycle is reported it's never reported again.
     unsafe fn check_wait_graph_slow() -> Vec<Vec<DeadlockedThread>> {
@@ -1378,15 +1362,14 @@ mod deadlock_impl {
 
     // returns all thread cycles in the wait graph
     fn graph_cycles(g: &DiGraphMap<WaitGraphNode, ()>) -> Vec<Vec<*const ThreadData>> {
+        use petgraph::visit::NodeIndexable;
         use petgraph::visit::depth_first_search;
         use petgraph::visit::DfsEvent;
-        use petgraph::visit::NodeIndexable;
 
         let mut cycles = HashSet::new();
         let mut path = Vec::with_capacity(g.node_bound());
         // start from threads to get the correct threads cycle
-        let threads = g
-            .nodes()
+        let threads = g.nodes()
             .filter(|n| if let &Thread(_) = n { true } else { false });
 
         depth_first_search(g, threads, |e| match e {

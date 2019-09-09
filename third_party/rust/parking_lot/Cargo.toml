@@ -12,7 +12,7 @@
 
 [package]
 name = "parking_lot"
-version = "0.7.1"
+version = "0.6.3"
 authors = ["Amanieu d'Antras <amanieu@gmail.com>"]
 description = "More compact and efficient implementations of the standard synchronization primitives."
 readme = "README.md"
@@ -24,9 +24,9 @@ repository = "https://github.com/Amanieu/parking_lot"
 version = "0.1"
 
 [dependencies.parking_lot_core]
-version = "0.4"
+version = "0.2"
 [dev-dependencies.rand]
-version = "0.6"
+version = "0.5"
 
 [features]
 deadlock_detection = ["parking_lot_core/deadlock_detection"]
