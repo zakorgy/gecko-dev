@@ -347,6 +347,10 @@ pub struct Texture {
 }
 
 impl Texture {
+    pub fn id(&self) -> IdType {
+        self.id
+    }
+
     pub fn get_dimensions(&self) -> DeviceIntSize {
         self.size
     }

@@ -13,6 +13,7 @@ mod render_pass;
 pub(crate) mod vertex_types;
 
 pub use self::device::*;
+pub use self::buffer::{BufferMemorySlice, GpuCacheBuffer, PersistentlyMappedBuffer};
 
 use gpu_types;
 use hal;

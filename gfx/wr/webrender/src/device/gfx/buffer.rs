@@ -4,51 +4,87 @@
 
 use hal;
 use hal::Device as BackendDevice;
-use rendy_memory::{Block, Heaps, MappedRange, MemoryBlock, MemoryUsageValue, Write};
+use rendy_memory::{Block, Heaps, Kind, MappedRange, MemoryBlock, MemoryUsage, MemoryUsageValue, Write};
 use smallvec::SmallVec;
 
 use std::cell::Cell;
+use std::sync::Arc;
 use std::mem;
 
 pub const DOWNLOAD_BUFFER_SIZE: usize = 10 << 20; // 10MB
 
-pub(crate) struct PMBuffer<B: hal::Backend> {
-    pub buffer: B::Buffer,
-    pub memory_block: MemoryBlock<B>,
-    pub coherent: bool,
-    pub height: u64,
-    pub size: u64,
-    pub state: Cell<hal::buffer::State>,
-    pub non_coherent_atom_size_mask: u64,
-    pub transit_range_end: u64,
+#[derive(MallocSizeOf)]
+pub struct BufferMemorySlice {
+    #[ignore_malloc_size_of = "ptr"]
+    ptr: *mut u8,
+    size: usize,
 }
 
-impl<B: hal::Backend> PMBuffer<B> {
-    pub(super) fn map<'a>(&'a mut self, device: &B::Device, size: Option<u64>) -> (MappedRange<'a, B>, u64) {
-        assert!(size.unwrap_or(0) <= self.size);
-        let size = size.unwrap_or(self.size);
-        (self.memory_block.map(&device, 0..size).expect("Mapping memory block failed"), size)
-    }
+unsafe impl Send for BufferMemorySlice {}
+unsafe impl Sync for BufferMemorySlice {}
 
-    pub(super) fn unmap(&mut self, device: &B::Device) {
-        self.memory_block.unmap(device);
-    }
-
-    pub(super) unsafe fn update_transit_range(
-        &mut self,
-        address_max: u64,
-    ) {
-        self.transit_range_end = self.transit_range_end.max(address_max);
-    }
-
-    pub(super) fn deinit(self, device: &B::Device, heaps: &mut Heaps<B>) {
-        unsafe {
-            device.destroy_buffer(self.buffer);
-            heaps.free(device, self.memory_block);
+impl BufferMemorySlice {
+    pub fn new(ptr: *mut u8, size: usize) -> Self {
+        BufferMemorySlice {
+            ptr,
+            size
         }
     }
 
-    pub(super) fn transit(&self, access: hal::buffer::Access, with_range: bool) -> Option<hal::memory::Barrier<B>> {
+    pub(crate) fn slice_mut<T>(&mut self) -> &mut [T] {
+        use std::slice;
+        let size_of_t = mem::size_of::<T>();
+        assert_eq!(self.ptr as usize % size_of_t, 0);
+        assert_eq!(self.size % size_of_t, 0);
+        unsafe { slice::from_raw_parts_mut(self.ptr as _, self.size / size_of_t) }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PMBufferMemoryUsage;
+impl MemoryUsage for PMBufferMemoryUsage {
+    fn properties_required(&self) -> hal::memory::Properties {
+        hal::memory::Properties::CPU_VISIBLE
+    }
+
+    #[inline]
+    fn memory_fitness(&self, properties: hal::memory::Properties) -> u32 {
+        assert!(properties.contains(hal::memory::Properties::CPU_VISIBLE));
+        assert!(!properties.contains(hal::memory::Properties::LAZILY_ALLOCATED));
+
+        0 | (properties.contains(hal::memory::Properties::CPU_CACHED) as u32) << 2
+            | (properties.contains(hal::memory::Properties::COHERENT) as u32) << 1
+    }
+
+    fn allocator_fitness(&self, kind: Kind) -> u32 {
+        match kind {
+            Kind::Dedicated => 2,
+            Kind::Dynamic => 1,
+            Kind::Linear => 0,
+        }
+    }
+}
+
+#[derive(MallocSizeOf)]
+pub struct GpuCacheBuffer<B: hal::Backend> {
+    #[ignore_malloc_size_of = "handle"]
+    pub buffer: Arc<B::Buffer>,
+    pub transit_range_end: u64,
+    #[ignore_malloc_size_of = "State does not implement size_of"]
+    pub state: Cell<hal::buffer::State>,
+}
+
+unsafe impl<B: hal::Backend> Send for GpuCacheBuffer<B> {}
+unsafe impl<B: hal::Backend> Sync for GpuCacheBuffer<B> {}
+
+impl<B: hal::Backend> GpuCacheBuffer<B> {
+    pub fn update_transit_range(&mut self, range_end: u64) {
+        if range_end > self.transit_range_end {
+            self.transit_range_end = range_end;
+        }
+    }
+
+    pub fn transit(&self, access: hal::buffer::Access, with_range: bool) -> Option<hal::memory::Barrier<B>> {
         let src_state = self.state.get();
         if src_state == access {
             None
@@ -60,6 +96,128 @@ impl<B: hal::Backend> PMBuffer<B> {
                 families: None,
                 range: None .. if with_range { Some(self.transit_range_end) } else { None },
             })
+        }
+    }
+}
+
+#[derive(Debug)]
+#[derive(MallocSizeOf)]
+pub struct PersistentlyMappedBuffer<B: hal::Backend> {
+    #[ignore_malloc_size_of = "buffer handle"]
+    pub buffer: Arc<B::Buffer>,
+    #[ignore_malloc_size_of = "memory handle"]
+    pub memory_block: MemoryBlock<B>,
+    pub coherent: bool,
+    pub height: u64,
+    pub size: u64,
+    pub non_coherent_atom_size_mask: u64,
+}
+
+unsafe impl<B: hal::Backend> Send for PersistentlyMappedBuffer<B> {}
+unsafe impl<B: hal::Backend> Sync for PersistentlyMappedBuffer<B> {}
+
+impl<B: hal::Backend> PersistentlyMappedBuffer<B> {
+    pub(crate) fn new<T>(
+        device: &B::Device,
+        heaps: &mut Heaps<B>,
+        non_coherent_atom_size_mask: u64,
+        width: u64,
+        height: u64,
+        copy_src: Option<&mut PersistentlyMappedBuffer<B>>,
+    ) -> Self {
+        let buffer_stride = std::mem::size_of::<T>() as u64;
+        let buffer_len = height * width * buffer_stride;
+
+        assert_ne!(buffer_len, 0);
+        let mut storage_buffer =
+            unsafe { device.create_buffer(buffer_len, hal::buffer::Usage::STORAGE) }.unwrap();
+
+        let buffer_req = unsafe { device.get_buffer_requirements(&storage_buffer) };
+        //let alignment = ((buffer_req.alignment - 1) | non_coherent_atom_size_mask) +1;
+        let alignment = buffer_req.alignment;
+        let memory_block = heaps
+            .allocate(
+                device,
+                buffer_req.type_mask as u32,
+                PMBufferMemoryUsage,
+                buffer_req.size,
+                alignment,
+            )
+            .expect("Allocate memory failed");
+
+        assert!(memory_block.properties().contains(hal::memory::Properties::CPU_CACHED));
+        let coherent = memory_block.properties().contains(hal::memory::Properties::COHERENT);
+
+        unsafe {
+            device.bind_buffer_memory(
+                &memory_block.memory(),
+                memory_block.range().start,
+                &mut storage_buffer,
+            )
+        }
+        .expect("Bind buffer memory failed");
+        let mut buffer = PersistentlyMappedBuffer {
+            buffer: Arc::new(storage_buffer),
+            memory_block,
+            coherent,
+            height,
+            size: buffer_req.size,
+            non_coherent_atom_size_mask,
+        };
+
+        if let Some(src) = copy_src {
+            unsafe { buffer.copy_from(src, device) };
+        }
+
+        buffer
+    }
+
+    unsafe fn copy_from(&mut self, copy_src: &mut Self, device: &B::Device) {
+        {
+            let (mut mapped, read_size) = copy_src.map(device, None);
+            let read_slice = mapped.read::<u8>(device, 0..read_size).unwrap();
+            let (mut mapped, _) = self.map(device, Some(read_size));
+            let mut writer = mapped.write::<u8>(device, 0..read_size).unwrap();
+            let writer_slice = writer.slice();
+            writer_slice.copy_from_slice(read_slice);
+        }
+        copy_src.unmap(device);
+        self.unmap(device);
+    }
+
+    pub fn buffer_memory_slice(
+        &mut self,
+        device: &B::Device,
+    ) -> BufferMemorySlice {
+        let (mapped, size) = self.map(device, None);
+        BufferMemorySlice::new(
+            mapped.ptr().as_ptr(),
+            size as usize,
+        )
+    }
+
+    pub fn map<'a>(&'a mut self, device: &B::Device, size: Option<u64>) -> (MappedRange<'a, B>, u64) {
+        assert!(size.unwrap_or(0) <= self.size, "size {:?} <= self.size {:?}", size.unwrap_or(0), self.size);
+        let size = size.unwrap_or(self.size);
+        (self.memory_block.map(&device, 0..size).expect("Mapping memory block failed"), size)
+    }
+
+    pub fn unmap(&mut self, device: &B::Device) {
+        self.memory_block.unmap(device);
+    }
+
+    pub fn deinit(self, device: &B::Device, heaps: &mut Heaps<B>) {
+        unsafe {
+            device.destroy_buffer(Arc::try_unwrap(self.buffer).unwrap());
+            heaps.free(device, self.memory_block);
+        }
+    }
+
+    pub fn get_buffer_info(&self, transit_range_end: u64) -> GpuCacheBuffer<B> {
+        GpuCacheBuffer {
+            buffer: Arc::clone(&self.buffer),
+            transit_range_end: transit_range_end,
+            state: Cell::new(hal::buffer::Access::empty()),
         }
     }
 }

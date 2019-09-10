@@ -12,7 +12,7 @@ use arrayvec::ArrayVec;
 use euclid::Transform3D;
 use internal_types::{FastHashMap, RenderTargetInfo};
 use rand::{self, Rng};
-use rendy_memory::{Block, Kind, Heaps, HeapsConfig, MemoryUsage, MappedRange, MemoryUsageValue, Write};
+use rendy_memory::{Block, Heaps, HeapsConfig, MemoryUsageValue};
 use rendy_descriptor::{DescriptorAllocator, DescriptorRanges, DescriptorSet};
 use ron::de::from_str;
 use smallvec::SmallVec;
@@ -25,6 +25,7 @@ use std::mem;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::slice;
+use std::sync::{Arc, Mutex};
 
 use super::blend_state::*;
 use super::buffer::*;
@@ -146,35 +147,9 @@ struct Fence<B: hal::Backend> {
     is_submitted: bool,
 }
 
-#[derive(Clone, Copy, Debug)]
-struct PMBufferMemoryUsage;
-impl MemoryUsage for PMBufferMemoryUsage {
-    fn properties_required(&self) -> hal::memory::Properties {
-        hal::memory::Properties::CPU_VISIBLE
-    }
-
-    #[inline]
-    fn memory_fitness(&self, properties: hal::memory::Properties) -> u32 {
-        assert!(properties.contains(hal::memory::Properties::CPU_VISIBLE));
-        assert!(!properties.contains(hal::memory::Properties::LAZILY_ALLOCATED));
-
-        0 | ((!properties.contains(hal::memory::Properties::DEVICE_LOCAL)) as u32) << 1
-            | (properties.contains(hal::memory::Properties::CPU_CACHED) as u32) << 2
-            | (properties.contains(hal::memory::Properties::COHERENT) as u32) << 0
-    }
-
-    fn allocator_fitness(&self, kind: Kind) -> u32 {
-        match kind {
-            Kind::Dedicated => 1,
-            Kind::Dynamic => 2,
-            Kind::Linear => 0,
-        }
-    }
-}
-
 pub struct Device<B: hal::Backend> {
-    pub device: B::Device,
-    heaps: Heaps<B>,
+    pub device: Arc<B::Device>,
+    pub heaps: Arc<Mutex<Heaps<B>>>,
     pub limits: hal::Limits,
     adapter: hal::Adapter<B>,
     surface: Option<B::Surface>,
@@ -203,8 +178,8 @@ pub struct Device<B: hal::Backend> {
     programs: FastHashMap<ProgramId, Program<B>>,
     shader_modules: FastHashMap<String, (B::ShaderModule, B::ShaderModule)>,
     images: FastHashMap<TextureId, Image<B>>,
-    pub bound_gpu_cache: TextureId,
-    pub(crate) gpu_cache_buffers: FastHashMap<TextureId, PMBuffer<B>>,
+    pub(crate) gpu_cache_buffer: Option<GpuCacheBuffer<B>>,
+    pub(crate) gpu_cache_buffers: FastHashMap<TextureId, PersistentlyMappedBuffer<B>>,
     retained_textures: Vec<Texture>,
     fbos: FastHashMap<FBOId, Framebuffer<B>>,
     rbos: FastHashMap<RBOId, DepthBuffer<B>>,
@@ -461,7 +436,6 @@ impl<B: hal::Backend> Device<B> {
                 )
             }
         };
-        println!("#Frame count {:?}", frame_count);
 
         // Samplers
         let sampler_linear = unsafe {
@@ -654,8 +628,8 @@ impl<B: hal::Backend> Device<B> {
         };
 
         Device {
-            device,
-            heaps,
+            device: Arc::new(device),
+            heaps: Arc::new(Mutex::new(heaps)),
             limits,
             surface_format,
             adapter,
@@ -696,7 +670,7 @@ impl<B: hal::Backend> Device<B> {
             programs: FastHashMap::default(),
             shader_modules: FastHashMap::default(),
             images: FastHashMap::default(),
-            bound_gpu_cache: INVALID_TEXTURE_ID,
+            gpu_cache_buffer: None,
             gpu_cache_buffers: FastHashMap::default(),
             retained_textures: Vec::new(),
             fbos: FastHashMap::default(),
@@ -785,12 +759,13 @@ impl<B: hal::Backend> Device<B> {
     pub(crate) fn recreate_swapchain(&mut self, window_size: Option<(i32, i32)>) -> DeviceIntSize {
         self.device.wait_idle().unwrap();
 
+        let ref mut heaps = *self.heaps.lock().unwrap();
         for image in self.frame_images.drain(..) {
-            image.deinit(&self.device, &mut self.heaps);
+            image.deinit(self.device.as_ref(), heaps);
         }
 
         for depth in self.frame_depths.drain(..) {
-            depth.deinit(&self.device, &mut self.heaps);
+            depth.deinit(self.device.as_ref(), heaps);
         }
 
         self.bound_per_draw_bindings = PerDrawBindings::default();
@@ -840,8 +815,8 @@ impl<B: hal::Backend> Device<B> {
                 viewport,
                 frame_count,
             ) = Device::init_swapchain_resources(
-                &self.device,
-                &mut self.heaps,
+                self.device.as_ref(),
+                heaps,
                 &self.adapter,
                 surface,
                 window_size,
@@ -870,8 +845,8 @@ impl<B: hal::Backend> Device<B> {
                 viewport,
                 frame_count,
             ) = Device::init_resources_without_surface(
-                &self.device,
-                &mut self.heaps,
+                self.device.as_ref(),
+                heaps,
                 window_size.unwrap_or((0,0)),
                 self.render_pass.as_ref().unwrap()
             );
@@ -1433,9 +1408,9 @@ impl<B: hal::Backend> Device<B> {
                 .get(&name)
                 .expect(&format!("Can't load pipeline data for: {}!", name))
                 .clone(),
-            &self.device,
+            self.device.as_ref(),
             self.descriptor_data.pipeline_layout(&desc_group),
-            &mut self.heaps,
+            &mut *self.heaps.lock().unwrap(),
             &self.limits,
             &name,
             features,
@@ -1485,11 +1460,11 @@ impl<B: hal::Backend> Device<B> {
 
         self.locals_descriptors.bind_locals(
             if self.use_push_consts { Locals::default() } else { self.bound_locals },
-            &self.device,
+            self.device.as_ref(),
             &mut self.desc_allocator,
             &self.descriptor_data,
             &mut self.locals_buffer,
-            &mut self.heaps,
+            &mut *self.heaps.lock().unwrap(),
         );
     }
 
@@ -1533,7 +1508,7 @@ impl<B: hal::Backend> Device<B> {
             &self.images,
             None,
             &mut self.desc_allocator,
-            &self.device,
+            self.device.as_ref(),
             &self.descriptor_data,
             &descriptor_group,
             DESCRIPTOR_SET_PER_DRAW,
@@ -1560,7 +1535,7 @@ impl<B: hal::Backend> Device<B> {
                 &self.images,
                 None,
                 &mut self.desc_allocator,
-                &self.device,
+                self.device.as_ref(),
                 &self.descriptor_data,
                 &descriptor_group,
                 DESCRIPTOR_SET_PER_PASS,
@@ -1574,7 +1549,7 @@ impl<B: hal::Backend> Device<B> {
         // Per frame textures
         let per_group_bindings = PerGroupBindings(
             [
-                self.bound_gpu_cache,
+                self.bound_textures[5],
                 self.bound_textures[6],
                 self.bound_textures[7],
                 self.bound_textures[8],
@@ -1591,10 +1566,10 @@ impl<B: hal::Backend> Device<B> {
             &self.images,
             match descriptor_group {
                 DescriptorGroup::Default => None,
-                _ => Some(&self.gpu_cache_buffers[&self.bound_gpu_cache]),
+                _ => self.gpu_cache_buffer.as_ref().map(|b| b.buffer.as_ref()),
             },
             &mut self.desc_allocator,
-            &self.device,
+            self.device.as_ref(),
             &self.descriptor_data,
             &descriptor_group,
             DESCRIPTOR_SET_PER_GROUP,
@@ -1618,7 +1593,7 @@ impl<B: hal::Backend> Device<B> {
             .expect("Program not found.");
 
         if let Some(ref mut index_buffer) = program.index_buffer {
-            index_buffer[self.next_id].update(&self.device, indices, &mut self.heaps);
+            index_buffer[self.next_id].update(self.device.as_ref(), indices, &mut *self.heaps.lock().unwrap());
         } else {
             warn!("This function is for debug shaders only!");
         }
@@ -1633,14 +1608,14 @@ impl<B: hal::Backend> Device<B> {
             .expect("Program not found.");
 
         if program.shader_kind.is_debug() {
-            program.vertex_buffer.as_mut().unwrap()[self.next_id].update(&self.device, vertices, &mut self.heaps);
+            program.vertex_buffer.as_mut().unwrap()[self.next_id].update(self.device.as_ref(), vertices, &mut *self.heaps.lock().unwrap());
         } else {
             warn!("This function is for debug shaders only!");
         }
     }
 
     fn update_instances<T: Copy>(&mut self, instances: &[T]) {
-        self.instance_range = self.instance_buffers[self.next_id].add(&self.device, instances, &mut self.heaps, &mut self.free_instance_buffers);
+        self.instance_range = self.instance_buffers[self.next_id].add(self.device.as_ref(), instances, &mut *self.heaps.lock().unwrap(), &mut self.free_instance_buffers);
     }
 
     fn draw(&mut self) {
@@ -1820,31 +1795,6 @@ impl<B: hal::Backend> Device<B> {
         texture.bound_in_frame.set(self.frame_id);
     }
 
-    pub fn bind_cache_buffer(&mut self, texture: &Texture) {
-        use hal::pso::PipelineStage as PS;
-        self.bound_gpu_cache = texture.id;
-        let ref buffer = self.gpu_cache_buffers[&self.bound_gpu_cache];
-        let cmd_buffer = self.command_pool[self.next_id].command_buffer_mut();
-        if let Some(barrier) = buffer.transit(hal::buffer::Access::SHADER_READ, true) {
-            unsafe {
-                cmd_buffer.pipeline_barrier(
-                    PS::HOST .. PS::VERTEX_SHADER | PS::FRAGMENT_SHADER,
-                    hal::memory::Dependencies::empty(),
-                    &[barrier],
-                );
-            }
-        }
-        if let Some(barrier) = buffer.transit(hal::buffer::Access::HOST_WRITE | hal::buffer::Access::HOST_READ, false) {
-            unsafe {
-                cmd_buffer.pipeline_barrier(
-                    PS::VERTEX_SHADER | PS::FRAGMENT_SHADER .. PS::HOST,
-                    hal::memory::Dependencies::empty(),
-                    &[barrier],
-                );
-            }
-        }
-    }
-
     pub fn bind_external_texture<S>(&mut self, sampler: S, external_texture: &ExternalTexture)
     where
         S: Into<TextureSlot>,
@@ -2001,90 +1951,12 @@ impl<B: hal::Backend> Device<B> {
         rbo_id
     }
 
-    fn create_cache_buffer(
-        &mut self,
-        width: u64,
-        height: u64,
-    ) -> PMBuffer<B> {
-        let buffer_stride = std::mem::size_of::<[f32; 4]>() as u64;
-        let buffer_len = height * width * buffer_stride;
-
-        assert_ne!(buffer_len, 0);
-        let mut storage_buffer =
-            unsafe { self.device.create_buffer(buffer_len, hal::buffer::Usage::STORAGE) }.unwrap();
-
-        let buffer_req = unsafe { self.device.get_buffer_requirements(&storage_buffer) };
-        let non_coherent_atom_size_mask = self.limits.non_coherent_atom_size as u64 - 1;
-        let alignment = ((buffer_req.alignment - 1) | (non_coherent_atom_size_mask)) +1;
-        let memory_block = self.heaps
-            .allocate(
-                &self.device,
-                buffer_req.type_mask as u32,
-                PMBufferMemoryUsage,
-                buffer_req.size,
-                alignment,
-            )
-            .expect("Allocate memory failed");
-
-        assert!(memory_block.properties().contains(hal::memory::Properties::CPU_CACHED));
-        let coherent = memory_block.properties().contains(hal::memory::Properties::COHERENT);
-
-        unsafe {
-            self.device.bind_buffer_memory(
-                &memory_block.memory(),
-                memory_block.range().start,
-                &mut storage_buffer,
-            )
-        }
-        .expect("Bind buffer memory failed");
-        PMBuffer {
-            buffer: storage_buffer,
-            memory_block,
-            coherent,
-            height,
-            size: buffer_req.size,
-            state: Cell::new(hal::buffer::Access::empty()),
-            non_coherent_atom_size_mask,
-            transit_range_end: 0,
-        }
-    }
-
-    pub(crate) fn map_gpu_cache_memory<'a>(
-        gpu_cache_buffers: &'a mut FastHashMap<TextureId, PMBuffer<B>>,
-        buffer_id: TextureId,
-        device: &'a B::Device,
-    ) -> (MappedRange<'a, B>, u64) {
-        gpu_cache_buffers
-            .get_mut(&buffer_id)
-            .unwrap()
-            .map(device, None)
-    }
-
-    pub fn update_gpu_cache_transit_range(
-        &mut self,
-        address_max: u64,
-    ) {
-        unsafe {
-            self.gpu_cache_buffers
-                .get_mut(&self.bound_gpu_cache)
-                .unwrap()
-                .update_transit_range(address_max)
-        };
-    }
-
-    pub fn create_gpu_cache_texture(
-        &mut self,
-        width: i32,
-        height: i32,
-    ) -> Texture {
+    pub fn create_dummy_gpu_cache_texture(&self) -> Texture {
         debug_assert!(self.inside_frame);
-        assert!(!(width == 0 || height == 0));
-
-        // Set up the texture book-keeping.
         let texture = Texture {
             id: self.generate_texture_id(),
             target: TextureTarget::Default as _,
-            size: DeviceIntSize::new(width, height),
+            size: DeviceIntSize::new(1, 1),
             layer_count: 1,
             format: ImageFormat::RGBAF32,
             filter: Default::default(),
@@ -2095,9 +1967,14 @@ impl<B: hal::Backend> Device<B> {
             flags: TextureFlags::default(),
             is_buffer: true,
         };
+        record_gpu_alloc(texture.size_in_bytes());
+        texture
+    }
 
-        self.bound_gpu_cache = texture.id;
-        let buffer = self.create_cache_buffer(width as u64, height as u64);
+    pub fn set_gpu_cache_buffer(
+        &mut self,
+        buffer: GpuCacheBuffer<B>,
+    ) {
         if let Some(barrier) = buffer.transit(hal::buffer::Access::HOST_WRITE | hal::buffer::Access::HOST_READ, false) {
             use hal::pso::PipelineStage as PS;
             let cmd_buffer = self.command_pool[self.next_id].command_buffer_mut();
@@ -2109,10 +1986,22 @@ impl<B: hal::Backend> Device<B> {
                 );
             }
         }
-        self.gpu_cache_buffers.insert(texture.id, buffer);
-        record_gpu_alloc(texture.size_in_bytes());
+        self.gpu_cache_buffer = Some(buffer);
+    }
 
-        texture
+    pub fn transit_gpu_cache_buffer(&mut self) {
+        use hal::pso::PipelineStage as PS;
+        let ref buffer = self.gpu_cache_buffer.as_ref().unwrap();
+        let cmd_buffer = self.command_pool[self.next_id].command_buffer_mut();
+        if let Some(barrier) = buffer.transit(hal::buffer::Access::SHADER_READ, true) {
+            unsafe {
+                cmd_buffer.pipeline_barrier(
+                    PS::HOST .. PS::VERTEX_SHADER | PS::FRAGMENT_SHADER,
+                    hal::memory::Dependencies::empty(),
+                    &[barrier],
+                );
+            }
+        }
     }
 
     pub fn create_texture(
@@ -2178,8 +2067,8 @@ impl<B: hal::Backend> Device<B> {
             ),
         };
         let img = Image::new(
-            &self.device,
-            &mut self.heaps,
+            self.device.as_ref(),
+            &mut *self.heaps.lock().unwrap(),
             texture.format,
             texture.size.width,
             texture.size.height,
@@ -2234,7 +2123,7 @@ impl<B: hal::Backend> Device<B> {
 
         for i in 0 .. texture.layer_count as u16 {
             let fbo = Framebuffer::new(
-                &self.device,
+                self.device.as_ref(),
                 &texture,
                 &self.images.get(&texture.id).unwrap(),
                 i,
@@ -2250,25 +2139,6 @@ impl<B: hal::Backend> Device<B> {
                 texture.fbos.push(new_fbos[i as usize])
             }
         }
-    }
-
-    pub fn copy_cache_buffer(&mut self, dst: &Texture, src: &Texture) {
-        let mut src_buffer = self.gpu_cache_buffers.remove(&src.id).unwrap();
-        {
-            let dst_buffer = self.gpu_cache_buffers.get_mut(&dst.id).unwrap();
-            let (mut mapped, read_size) = src_buffer.map(&self.device, None);
-            unsafe {
-                let read_slice = mapped.read::<u8>(&self.device, 0..read_size).unwrap();
-                let (mut mapped, _) = dst_buffer.map(&self.device, Some(read_size));
-                let mut writer = mapped.write::<u8>(&self.device, 0..read_size).unwrap();
-                let writer_slice = writer.slice();
-
-                writer_slice.copy_from_slice(read_slice);
-            }
-            dst_buffer.unmap(&self.device);
-        }
-        src_buffer.unmap(&self.device);
-        self.gpu_cache_buffers.insert(src.id, src_buffer);
     }
 
     /// Copies the contents from one renderable texture to another.
@@ -2512,8 +2382,8 @@ impl<B: hal::Backend> Device<B> {
 
         let rbo_id = self.generate_rbo_id();
         let rbo = DepthBuffer::new(
-            &self.device,
-            &mut self.heaps,
+            self.device.as_ref(),
+            &mut *self.heaps.lock().unwrap(),
             dimensions.width as _,
             dimensions.height as _,
             self.depth_format,
@@ -2538,7 +2408,7 @@ impl<B: hal::Backend> Device<B> {
         if entry.get().refcount == 0 {
             let t = entry.remove();
             let old_rbo = self.rbos.remove(&t.rbo_id).unwrap();
-            old_rbo.deinit(&self.device, &mut self.heaps);
+            old_rbo.deinit(self.device.as_ref(), &mut *self.heaps.lock().unwrap());
             record_gpu_free(depth_target_size_in_bytes(&dimensions));
         }
     }
@@ -2774,7 +2644,7 @@ impl<B: hal::Backend> Device<B> {
             for old in texture.fbos_with_depth.drain(..) {
                 debug_assert!(self.bound_draw_fbo != old || self.bound_read_fbo != old);
                 let old_fbo = self.fbos.remove(&old).unwrap();
-                old_fbo.deinit(&self.device);
+                old_fbo.deinit(self.device.as_ref());
             }
         }
 
@@ -2782,7 +2652,7 @@ impl<B: hal::Backend> Device<B> {
             for old in texture.fbos.drain(..) {
                 debug_assert!(self.bound_draw_fbo != old || self.bound_read_fbo != old);
                 let old_fbo = self.fbos.remove(&old).unwrap();
-                old_fbo.deinit(&self.device);
+                old_fbo.deinit(self.device.as_ref());
             }
         }
 
@@ -2792,11 +2662,12 @@ impl<B: hal::Backend> Device<B> {
 
 
         if texture.is_buffer {
-            let buffer = self.gpu_cache_buffers.remove(&texture.id).expect("Texture not found.");
-            buffer.deinit(&self.device, &mut self.heaps);
+            if let Some(buffer) = self.gpu_cache_buffers.remove(&texture.id) {
+                buffer.deinit(self.device.as_ref(), &mut *self.heaps.lock().unwrap());
+            }
         } else {
             let image = self.images.remove(&texture.id).expect("Texture not found.");
-            image.deinit(&self.device, &mut self.heaps);
+            image.deinit(self.device.as_ref(), &mut *self.heaps.lock().unwrap());
         }
         record_gpu_free(texture.size_in_bytes());
         texture.id = 0;
@@ -2866,7 +2737,7 @@ impl<B: hal::Backend> Device<B> {
                 .get_mut(&texture.id)
                 .expect("Texture not found.")
                 .update(
-                    &self.device,
+                    self.device.as_ref(),
                     self.command_pool[self.next_id].command_buffer_mut(),
                     &mut self.staging_buffer_pool[self.next_id],
                     DeviceIntRect::new(DeviceIntPoint::new(0, 0), texture.size),
@@ -2941,8 +2812,8 @@ impl<B: hal::Backend> Device<B> {
         assert!(output.len() <= DOWNLOAD_BUFFER_SIZE, "output len {:?} buffer size {:?}", output.len(), DOWNLOAD_BUFFER_SIZE);
         if self.download_buffer.is_none() {
             self.download_buffer = Some(Buffer::new(
-                &self.device,
-                &mut self.heaps,
+                self.device.as_ref(),
+                &mut *self.heaps.lock().unwrap(),
                 MemoryUsageValue::Download,
                 hal::buffer::Usage::TRANSFER_DST,
                 (self.limits.optimal_buffer_copy_pitch_alignment - 1) as usize,
@@ -3057,12 +2928,12 @@ impl<B: hal::Backend> Device<B> {
             unsafe {
                 let mut mapped = download_buffer
                     .memory_block
-                    .map(&self.device, range.clone())
+                    .map(self.device.as_ref(), range.clone())
                     .expect("Mapping memory block failed");
-                let slice = mapped.read(&self.device, range).expect("Read failed");
+                let slice = mapped.read(self.device.as_ref(), range).expect("Read failed");
                 f32_data[0 .. slice.len()].copy_from_slice(&slice);
             }
-            download_buffer.memory_block.unmap(&self.device);
+            download_buffer.memory_block.unmap(self.device.as_ref());
             for i in 0 .. f32_data.len() {
                 data[i] = round_to_int(f32_data[i].min(0f32).max(1f32));
             }
@@ -3070,12 +2941,12 @@ impl<B: hal::Backend> Device<B> {
             unsafe {
                 let mut mapped = download_buffer
                     .memory_block
-                    .map(&self.device, range.clone())
+                    .map(self.device.as_ref(), range.clone())
                     .expect("Mapping memory block failed");
-                let slice = mapped.read(&self.device, range).expect("Read failed");
+                let slice = mapped.read(self.device.as_ref(), range).expect("Read failed");
                 data[0 .. slice.len()].copy_from_slice(&slice);
             }
-            download_buffer.memory_block.unmap(&self.device);
+            download_buffer.memory_block.unmap(self.device.as_ref());
         }
         data.truncate(output.len());
         if !capture_read && self.surface_format == ImageFormat::BGRA8 {
@@ -3823,36 +3694,38 @@ impl<B: hal::Backend> Device<B> {
                 }
             }
 
+            let mut heaps = Arc::try_unwrap(self.heaps).unwrap().into_inner().unwrap();
+
             for command_pool in self.command_pool {
-                command_pool.destroy(&self.device);
+                command_pool.destroy(self.device.as_ref());
             }
             for staging_buffer_pool in self.staging_buffer_pool {
-                staging_buffer_pool.deinit(&self.device, &mut self.heaps);
+                staging_buffer_pool.deinit(self.device.as_ref(), &mut heaps);
             }
-            self.quad_buffer.deinit(&self.device, &mut self.heaps);
+            self.quad_buffer.deinit(self.device.as_ref(), &mut heaps);
             for instance_buffer in self.instance_buffers {
-                instance_buffer.deinit(&self.device, &mut self.heaps);
+                instance_buffer.deinit(self.device.as_ref(), &mut heaps);
             }
             for buffer in self.free_instance_buffers {
-                buffer.deinit(&self.device, &mut self.heaps);
+                buffer.deinit(self.device.as_ref(), &mut heaps);
             }
             if let Some(buffer) = self.download_buffer {
-                buffer.deinit(&self.device, &mut self.heaps);
+                buffer.deinit(self.device.as_ref(), &mut heaps);
             }
             for image in self.frame_images {
-                image.deinit(&self.device, &mut self.heaps);
+                image.deinit(self.device.as_ref(), &mut heaps);
             }
             for depth in self.frame_depths {
-                depth.deinit(&self.device, &mut self.heaps);
+                depth.deinit(self.device.as_ref(), &mut heaps);
             }
             for (_, image) in self.images {
-                image.deinit(&self.device, &mut self.heaps);
+                image.deinit(self.device.as_ref(), &mut heaps);
             }
             for (_, rbo) in self.fbos {
-                rbo.deinit(&self.device);
+                rbo.deinit(self.device.as_ref());
             }
             for (_, rbo) in self.rbos {
-                rbo.deinit(&self.device, &mut self.heaps);
+                rbo.deinit(self.device.as_ref(), &mut heaps);
             }
             for framebuffer in self.framebuffers {
                 self.device.destroy_framebuffer(framebuffer);
@@ -3861,8 +3734,12 @@ impl<B: hal::Backend> Device<B> {
                 self.device.destroy_framebuffer(framebuffer_depth);
             }
 
-            for (_ , buffer) in self.gpu_cache_buffers {
-                buffer.deinit(&self.device, &mut self.heaps);
+            if let Some(buffer) = self.gpu_cache_buffer {
+                self.device.as_ref().destroy_buffer(Arc::try_unwrap(buffer.buffer).unwrap());
+            }
+
+            for (_ , buffer) in self.gpu_cache_buffers.into_iter() {
+                buffer.deinit(self.device.as_ref(), &mut heaps);
             }
             self.device.destroy_sampler(self.sampler_linear);
             self.device.destroy_sampler(self.sampler_nearest);
@@ -3872,18 +3749,18 @@ impl<B: hal::Backend> Device<B> {
             self.per_pass_descriptors.free(&mut self.desc_allocator);
             self.locals_descriptors.free(&mut self.desc_allocator);
 
-            self.desc_allocator.dispose(&self.device);
-            self.locals_buffer.deinit(&self.device, &mut self.heaps);
+            self.desc_allocator.dispose(self.device.as_ref());
+            self.locals_buffer.deinit(self.device.as_ref(), &mut heaps);
             for (_, program) in self.programs {
-                program.deinit(&self.device, &mut self.heaps)
+                program.deinit(self.device.as_ref(), &mut heaps)
             }
-            self.heaps.dispose(&self.device);
+            heaps.dispose(self.device.as_ref());
             for (_, (vs_module, fs_module)) in self.shader_modules {
                 self.device.destroy_shader_module(vs_module);
                 self.device.destroy_shader_module(fs_module);
             }
-            self.descriptor_data.deinit(&self.device);
-            self.render_pass.unwrap().deinit(&self.device);
+            self.descriptor_data.deinit(self.device.as_ref());
+            self.render_pass.unwrap().deinit(self.device.as_ref());
             for fence in self.frame_fence {
                 self.device.destroy_fence(fence.inner);
             }
@@ -3976,7 +3853,7 @@ impl<'a, B: hal::Backend> TextureUploader<'a, B> {
             .get_mut(&self.texture.id)
             .expect("Texture not found.")
             .update(
-                &self.device.device,
+                self.device.device.as_ref(),
                 self.device.command_pool[self.device.next_id].command_buffer_mut(),
                 &mut self.device.staging_buffer_pool[self.device.next_id],
                 rect,

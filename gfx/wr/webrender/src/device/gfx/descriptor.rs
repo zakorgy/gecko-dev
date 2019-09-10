@@ -15,7 +15,7 @@ use std::cmp::Eq;
 use std::collections::hash_map::Entry;
 use std::hash::{Hash, Hasher};
 use std::marker::Copy;
-use super::buffer::{UniformBufferHandler, PMBuffer};
+use super::buffer::UniformBufferHandler;
 use super::image::Image;
 use super::TextureId;
 use super::super::{ShaderKind, TextureFilter, VertexArrayKind};
@@ -341,7 +341,7 @@ impl<K, B, F> DescriptorSetHandler<K, B, F>
         cmd_buffer: &mut B::CommandBuffer,
         bindings: K,
         images: &FastHashMap<TextureId, Image<B>>,
-        storage_buffer: Option<&PMBuffer<B>>,
+        storage_buffer: Option<&B::Buffer>,
         desc_allocator: &mut DescriptorAllocator<B>,
         device: &B::Device,
         group_data: &DescriptorData<B>,
@@ -381,7 +381,7 @@ impl<K, B, F> DescriptorSetHandler<K, B, F>
                     binding: GPU_CACHE_BINDING,
                     array_offset: 0,
                     descriptors: Some(hal::pso::Descriptor::Buffer(
-                        &buffer.buffer,
+                        buffer,
                         None .. None,
                     )),
                 });
