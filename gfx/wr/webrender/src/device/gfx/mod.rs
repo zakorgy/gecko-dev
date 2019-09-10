@@ -21,12 +21,12 @@ use tiling;
 
 pub type TextureId = u32;
 
-pub const LESS_EQUAL_TEST: hal::pso::DepthTest = hal::pso::DepthTest::On {
+pub const LESS_EQUAL_TEST: hal::pso::DepthTest = hal::pso::DepthTest {
     fun: hal::pso::Comparison::LessEqual,
     write: false,
 };
 
-pub const LESS_EQUAL_WRITE: hal::pso::DepthTest = hal::pso::DepthTest::On {
+pub const LESS_EQUAL_WRITE: hal::pso::DepthTest = hal::pso::DepthTest {
     fun: hal::pso::Comparison::LessEqual,
     write: true,
 };

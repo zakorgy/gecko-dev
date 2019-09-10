@@ -4,7 +4,7 @@
 
 use hal::pso::{BlendOp, BlendState, Factor};
 
-pub(super) const ALPHA: BlendState = BlendState::On {
+pub(super) const ALPHA: BlendState = BlendState {
     color: BlendOp::Add {
         src: Factor::SrcAlpha,
         dst: Factor::OneMinusSrcAlpha,
@@ -15,7 +15,7 @@ pub(super) const ALPHA: BlendState = BlendState::On {
     },
 };
 
-pub(super) const PREMULTIPLIED_DEST_OUT: BlendState = BlendState::On {
+pub(super) const PREMULTIPLIED_DEST_OUT: BlendState = BlendState {
     color: BlendOp::Add {
         src: Factor::Zero,
         dst: Factor::OneMinusSrcAlpha,
@@ -26,7 +26,7 @@ pub(super) const PREMULTIPLIED_DEST_OUT: BlendState = BlendState::On {
     },
 };
 
-pub(super) const MAX: BlendState = BlendState::On {
+pub(super) const MAX: BlendState = BlendState {
     color: BlendOp::Max,
     alpha: BlendOp::Add {
         src: Factor::One,
@@ -34,7 +34,7 @@ pub(super) const MAX: BlendState = BlendState::On {
     },
 };
 
-pub(super) const MIN: BlendState = BlendState::On {
+pub(super) const MIN: BlendState = BlendState {
     color: BlendOp::Min,
     alpha: BlendOp::Add {
         src: Factor::One,
@@ -42,7 +42,7 @@ pub(super) const MIN: BlendState = BlendState::On {
     },
 };
 
-pub(super) const SUBPIXEL_PASS0: BlendState = BlendState::On {
+pub(super) const SUBPIXEL_PASS0: BlendState = BlendState {
     color: BlendOp::Add {
         src: Factor::Zero,
         dst: Factor::OneMinusSrcColor,
@@ -53,7 +53,7 @@ pub(super) const SUBPIXEL_PASS0: BlendState = BlendState::On {
     },
 };
 
-pub(super) const SUBPIXEL_PASS1: BlendState = BlendState::On {
+pub(super) const SUBPIXEL_PASS1: BlendState = BlendState {
     color: BlendOp::Add {
         src: Factor::One,
         dst: Factor::One,
@@ -64,7 +64,7 @@ pub(super) const SUBPIXEL_PASS1: BlendState = BlendState::On {
     },
 };
 
-pub(super) const SUBPIXEL_WITH_BG_COLOR_PASS0: BlendState = BlendState::On {
+pub(super) const SUBPIXEL_WITH_BG_COLOR_PASS0: BlendState = BlendState {
     color: BlendOp::Add {
         src: Factor::Zero,
         dst: Factor::OneMinusSrcColor,
@@ -75,7 +75,7 @@ pub(super) const SUBPIXEL_WITH_BG_COLOR_PASS0: BlendState = BlendState::On {
     },
 };
 
-pub(super) const SUBPIXEL_WITH_BG_COLOR_PASS1: BlendState = BlendState::On {
+pub(super) const SUBPIXEL_WITH_BG_COLOR_PASS1: BlendState = BlendState {
     color: BlendOp::Add {
         src: Factor::OneMinusDstAlpha,
         dst: Factor::One,
@@ -86,7 +86,7 @@ pub(super) const SUBPIXEL_WITH_BG_COLOR_PASS1: BlendState = BlendState::On {
     },
 };
 
-pub(super) const SUBPIXEL_WITH_BG_COLOR_PASS2: BlendState = BlendState::On {
+pub(super) const SUBPIXEL_WITH_BG_COLOR_PASS2: BlendState = BlendState {
     color: BlendOp::Add {
         src: Factor::One,
         dst: Factor::One,
@@ -98,7 +98,7 @@ pub(super) const SUBPIXEL_WITH_BG_COLOR_PASS2: BlendState = BlendState::On {
 };
 
 // This requires blend color to be set
-pub(super) const SUBPIXEL_CONSTANT_TEXT_COLOR: BlendState = BlendState::On {
+pub(super) const SUBPIXEL_CONSTANT_TEXT_COLOR: BlendState = BlendState {
     color: BlendOp::Add {
         src: Factor::ConstColor,
         dst: Factor::OneMinusSrcColor,
@@ -109,7 +109,7 @@ pub(super) const SUBPIXEL_CONSTANT_TEXT_COLOR: BlendState = BlendState::On {
     },
 };
 
-pub(super) const SUBPIXEL_DUAL_SOURCE: BlendState = BlendState::On {
+pub(super) const SUBPIXEL_DUAL_SOURCE: BlendState = BlendState {
     color: BlendOp::Add {
         src: Factor::One,
         dst: Factor::OneMinusSrc1Color,
@@ -120,7 +120,7 @@ pub(super) const SUBPIXEL_DUAL_SOURCE: BlendState = BlendState::On {
     },
 };
 
-pub(super) const OVERDRAW: BlendState = BlendState::On {
+pub(super) const OVERDRAW: BlendState = BlendState {
     color: BlendOp::Add {
         src: Factor::One,
         dst: Factor::OneMinusSrcAlpha,

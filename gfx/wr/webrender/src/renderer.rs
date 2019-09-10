@@ -1461,7 +1461,16 @@ impl Renderer {
             options.upload_method.clone(),
             options.cached_programs.take(),
             #[cfg(not(feature = "gleam"))]
-            options.heaps_config,
+            HeapsConfig {
+                linear: Some(LinearConfig {
+                    linear_size: 128 * 1024 * 1024,
+                }),
+                dynamic: Some(DynamicConfig {
+                    min_device_allocation: 1024 * 1024,
+                    block_size_granularity: 256,
+                    max_chunk_size: 32 * 1024 * 1024,
+                })
+            },
             #[cfg(not(feature = "gleam"))]
             options.instance_buffer_size,
             #[cfg(not(feature = "gleam"))]

@@ -34,7 +34,7 @@ const SPECIALIZATION_FEATURES: &'static [&'static str] = &[
 
 
 pub(crate) struct Program<B: hal::Backend> {
-    pipelines: FastHashMap<(hal::pso::BlendState, hal::pso::DepthTest), B::GraphicsPipeline>,
+    pipelines: FastHashMap<(Option<hal::pso::BlendState>, Option<hal::pso::DepthTest>), B::GraphicsPipeline>,
     pub(super) vertex_buffer: Option<SmallVec<[VertexBufferHandler<B>; 1]>>,
     pub(super) index_buffer: Option<SmallVec<[VertexBufferHandler<B>; 1]>>,
     pub(super) shader_name: String,
@@ -137,83 +137,83 @@ impl<B: hal::Backend> Program<B> {
                 fragment: Some(fs_entry),
             };
 
-            use hal::pso::{BlendState, DepthTest};
+            use hal::pso::{BlendState};
             use super::blend_state::*;
             use super::{LESS_EQUAL_TEST, LESS_EQUAL_WRITE};
 
             let pipeline_states = match shader_kind {
                 ShaderKind::Cache(VertexArrayKind::Scale) => [
-                    (BlendState::Off, DepthTest::Off),
-                    (BlendState::MULTIPLY, DepthTest::Off),
+                    (None, None),
+                    (Some(BlendState::MULTIPLY), None),
                 ]
                 .into_iter(),
                 ShaderKind::Cache(VertexArrayKind::Blur) => [
-                    (BlendState::Off, DepthTest::Off),
-                    (BlendState::Off, LESS_EQUAL_TEST),
+                    (None, None),
+                    (None, Some(LESS_EQUAL_TEST)),
                 ]
                 .into_iter(),
                 ShaderKind::Cache(VertexArrayKind::Border)
                 | ShaderKind::Cache(VertexArrayKind::LineDecoration) => {
-                    [(BlendState::PREMULTIPLIED_ALPHA, DepthTest::Off)].into_iter()
+                    [(Some(BlendState::PREMULTIPLIED_ALPHA), None)].into_iter()
                 }
-                ShaderKind::ClipCache => [(BlendState::MULTIPLY, DepthTest::Off)].into_iter(),
+                ShaderKind::ClipCache => [(Some(BlendState::MULTIPLY), None)].into_iter(),
                 ShaderKind::Text => {
                     if features.contains(&"DUAL_SOURCE_BLENDING") {
                         [
-                            (BlendState::PREMULTIPLIED_ALPHA, DepthTest::Off),
-                            (BlendState::PREMULTIPLIED_ALPHA, LESS_EQUAL_TEST),
-                            (SUBPIXEL_CONSTANT_TEXT_COLOR, DepthTest::Off),
-                            (SUBPIXEL_CONSTANT_TEXT_COLOR, LESS_EQUAL_TEST),
-                            (SUBPIXEL_PASS0, DepthTest::Off),
-                            (SUBPIXEL_PASS0, LESS_EQUAL_TEST),
-                            (SUBPIXEL_PASS1, DepthTest::Off),
-                            (SUBPIXEL_PASS1, LESS_EQUAL_TEST),
-                            (SUBPIXEL_WITH_BG_COLOR_PASS0, DepthTest::Off),
-                            (SUBPIXEL_WITH_BG_COLOR_PASS0, LESS_EQUAL_TEST),
-                            (SUBPIXEL_WITH_BG_COLOR_PASS1, DepthTest::Off),
-                            (SUBPIXEL_WITH_BG_COLOR_PASS1, LESS_EQUAL_TEST),
-                            (SUBPIXEL_WITH_BG_COLOR_PASS2, DepthTest::Off),
-                            (SUBPIXEL_WITH_BG_COLOR_PASS2, LESS_EQUAL_TEST),
-                            (SUBPIXEL_DUAL_SOURCE, DepthTest::Off),
-                            (SUBPIXEL_DUAL_SOURCE, LESS_EQUAL_TEST),
+                            (Some(BlendState::PREMULTIPLIED_ALPHA), None),
+                            (Some(BlendState::PREMULTIPLIED_ALPHA), Some(LESS_EQUAL_TEST)),
+                            (Some(SUBPIXEL_CONSTANT_TEXT_COLOR), None),
+                            (Some(SUBPIXEL_CONSTANT_TEXT_COLOR), Some(LESS_EQUAL_TEST)),
+                            (Some(SUBPIXEL_PASS0), None),
+                            (Some(SUBPIXEL_PASS0), Some(LESS_EQUAL_TEST)),
+                            (Some(SUBPIXEL_PASS1), None),
+                            (Some(SUBPIXEL_PASS1), Some(LESS_EQUAL_TEST)),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS0), None),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS0), Some(LESS_EQUAL_TEST)),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS1), None),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS1), Some(LESS_EQUAL_TEST)),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS2), None),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS2), Some(LESS_EQUAL_TEST)),
+                            (Some(SUBPIXEL_DUAL_SOURCE), None),
+                            (Some(SUBPIXEL_DUAL_SOURCE), Some(LESS_EQUAL_TEST)),
                         ]
                         .into_iter()
                     } else {
                         [
-                            (BlendState::PREMULTIPLIED_ALPHA, DepthTest::Off),
-                            (BlendState::PREMULTIPLIED_ALPHA, LESS_EQUAL_TEST),
-                            (SUBPIXEL_CONSTANT_TEXT_COLOR, DepthTest::Off),
-                            (SUBPIXEL_CONSTANT_TEXT_COLOR, LESS_EQUAL_TEST),
-                            (SUBPIXEL_PASS0, DepthTest::Off),
-                            (SUBPIXEL_PASS0, LESS_EQUAL_TEST),
-                            (SUBPIXEL_PASS1, DepthTest::Off),
-                            (SUBPIXEL_PASS1, LESS_EQUAL_TEST),
-                            (SUBPIXEL_WITH_BG_COLOR_PASS0, DepthTest::Off),
-                            (SUBPIXEL_WITH_BG_COLOR_PASS0, LESS_EQUAL_TEST),
-                            (SUBPIXEL_WITH_BG_COLOR_PASS1, DepthTest::Off),
-                            (SUBPIXEL_WITH_BG_COLOR_PASS1, LESS_EQUAL_TEST),
-                            (SUBPIXEL_WITH_BG_COLOR_PASS2, DepthTest::Off),
-                            (SUBPIXEL_WITH_BG_COLOR_PASS2, LESS_EQUAL_TEST),
+                            (Some(BlendState::PREMULTIPLIED_ALPHA), None),
+                            (Some(BlendState::PREMULTIPLIED_ALPHA), Some(LESS_EQUAL_TEST)),
+                            (Some(SUBPIXEL_CONSTANT_TEXT_COLOR), None),
+                            (Some(SUBPIXEL_CONSTANT_TEXT_COLOR), Some(LESS_EQUAL_TEST)),
+                            (Some(SUBPIXEL_PASS0), None),
+                            (Some(SUBPIXEL_PASS0), Some(LESS_EQUAL_TEST)),
+                            (Some(SUBPIXEL_PASS1), None),
+                            (Some(SUBPIXEL_PASS1), Some(LESS_EQUAL_TEST)),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS0), None),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS0), Some(LESS_EQUAL_TEST)),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS1), None),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS1), Some(LESS_EQUAL_TEST)),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS2), None),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS2), Some(LESS_EQUAL_TEST)),
                         ]
                         .into_iter()
                     }
                 }
                 ShaderKind::DebugColor | ShaderKind::DebugFont => {
-                    [(BlendState::PREMULTIPLIED_ALPHA, DepthTest::Off)].into_iter()
+                    [(Some(BlendState::PREMULTIPLIED_ALPHA), None)].into_iter()
                 }
                 _ => [
-                    (BlendState::Off, DepthTest::Off),
-                    (BlendState::Off, LESS_EQUAL_TEST),
-                    (BlendState::Off, LESS_EQUAL_WRITE),
-                    (ALPHA, DepthTest::Off),
-                    (ALPHA, LESS_EQUAL_TEST),
-                    (ALPHA, LESS_EQUAL_WRITE),
-                    (BlendState::PREMULTIPLIED_ALPHA, DepthTest::Off),
-                    (BlendState::PREMULTIPLIED_ALPHA, LESS_EQUAL_TEST),
-                    (BlendState::PREMULTIPLIED_ALPHA, LESS_EQUAL_WRITE),
-                    (PREMULTIPLIED_DEST_OUT, DepthTest::Off),
-                    (PREMULTIPLIED_DEST_OUT, LESS_EQUAL_TEST),
-                    (PREMULTIPLIED_DEST_OUT, LESS_EQUAL_WRITE),
+                    (None, None),
+                    (None, Some(LESS_EQUAL_TEST)),
+                    (None, Some(LESS_EQUAL_WRITE)),
+                    (Some(ALPHA), None),
+                    (Some(ALPHA), Some(LESS_EQUAL_TEST)),
+                    (Some(ALPHA), Some(LESS_EQUAL_WRITE)),
+                    (Some(BlendState::PREMULTIPLIED_ALPHA), None),
+                    (Some(BlendState::PREMULTIPLIED_ALPHA), Some(LESS_EQUAL_TEST)),
+                    (Some(BlendState::PREMULTIPLIED_ALPHA), Some(LESS_EQUAL_WRITE)),
+                    (Some(PREMULTIPLIED_DEST_OUT), None),
+                    (Some(PREMULTIPLIED_DEST_OUT), Some(LESS_EQUAL_TEST)),
+                    (Some(PREMULTIPLIED_DEST_OUT), Some(LESS_EQUAL_WRITE)),
                 ]
                 .into_iter(),
             };
@@ -233,7 +233,7 @@ impl<B: hal::Backend> Program<B> {
                 let subpass = hal::pass::Subpass {
                     index: 0,
                     main_pass: render_pass
-                        .get_render_pass(format, depth_test != hal::pso::DepthTest::Off),
+                        .get_render_pass(format, depth_test != None),
                 };
                 let mut pipeline_descriptor = hal::pso::GraphicsPipelineDesc::new(
                     shader_entries.clone(),
@@ -245,15 +245,15 @@ impl<B: hal::Backend> Program<B> {
                 pipeline_descriptor
                     .blender
                     .targets
-                    .push(hal::pso::ColorBlendDesc(
-                        hal::pso::ColorMask::ALL,
-                        blend_state,
-                    ));
+                    .push(hal::pso::ColorBlendDesc{
+                        mask: hal::pso::ColorMask::ALL,
+                        blend: blend_state,
+                    });
 
                 pipeline_descriptor.depth_stencil = hal::pso::DepthStencilDesc {
                     depth: depth_test,
                     depth_bounds: false,
-                    stencil: hal::pso::StencilTest::Off,
+                    stencil: None,
                 };
 
                 pipeline_descriptor.vertex_buffers =
@@ -272,10 +272,10 @@ impl<B: hal::Backend> Program<B> {
             let mut states = pipeline_states
                 .cloned()
                 .zip(pipelines.map(|pipeline| pipeline.expect("Pipeline creation failed")))
-                .collect::<FastHashMap<(hal::pso::BlendState, hal::pso::DepthTest), B::GraphicsPipeline>>();
+                .collect::<FastHashMap<(Option<hal::pso::BlendState>, Option<hal::pso::DepthTest>), B::GraphicsPipeline>>();
 
             if features.contains(&"DEBUG_OVERDRAW") {
-                let pipeline_state = (OVERDRAW, LESS_EQUAL_TEST);
+                let pipeline_state = (Some(OVERDRAW), Some(LESS_EQUAL_TEST));
                 let pipeline_descriptor = create_desc(pipeline_state);
                 let pipeline = unsafe {
                     device.create_graphics_pipeline(&pipeline_descriptor, pipeline_cache)
@@ -336,9 +336,9 @@ impl<B: hal::Backend> Program<B> {
         desc_set_per_frame: &B::DescriptorSet,
         desc_set_locals: Option<&B::DescriptorSet>,
         clear_values: &[hal::command::ClearValueRaw],
-        blend_state: hal::pso::BlendState,
+        blend_state: Option<hal::pso::BlendState>,
         blend_color: ColorF,
-        depth_test: hal::pso::DepthTest,
+        depth_test: Option<hal::pso::DepthTest>,
         scissor_rect: Option<DeviceIntRect>,
         next_id: usize,
         pipeline_layout: &B::PipelineLayout,
@@ -397,7 +397,7 @@ impl<B: hal::Backend> Program<B> {
                 &[],
             );
 
-            if blend_state == SUBPIXEL_CONSTANT_TEXT_COLOR {
+            if blend_state == Some(SUBPIXEL_CONSTANT_TEXT_COLOR) {
                 cmd_buffer.set_blend_constants(blend_color.to_array());
             }
 

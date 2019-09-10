@@ -196,9 +196,9 @@ pub struct Device<B: hal::Backend> {
     pub sampler_linear: B::Sampler,
     pub sampler_nearest: B::Sampler,
     pub current_frame_id: usize,
-    current_blend_state: Cell<BlendState>,
+    current_blend_state: Cell<Option<BlendState>>,
     blend_color: Cell<ColorF>,
-    current_depth_test: DepthTest,
+    current_depth_test: Option<DepthTest>,
     // device state
     programs: FastHashMap<ProgramId, Program<B>>,
     shader_modules: FastHashMap<String, (B::ShaderModule, B::ShaderModule)>,
@@ -461,6 +461,7 @@ impl<B: hal::Backend> Device<B> {
                 )
             }
         };
+        println!("#Frame count {:?}", frame_count);
 
         // Samplers
         let sampler_linear = unsafe {
@@ -502,7 +503,7 @@ impl<B: hal::Backend> Device<B> {
                 )
             }
             .expect("create_command_pool failed");
-            unsafe { hal_cp.reset() };
+            unsafe { hal_cp.reset(false) };
             let mut cp = CommandPool::new(hal_cp);
             cp.create_command_buffer();
             // Start recording for the 1st frame
@@ -676,8 +677,8 @@ impl<B: hal::Backend> Device<B> {
             sampler_linear,
             sampler_nearest,
             current_frame_id: 0,
-            current_blend_state: Cell::new(BlendState::Off),
-            current_depth_test: DepthTest::Off,
+            current_blend_state: Cell::new(None),
+            current_depth_test: None,
             blend_color: Cell::new(ColorF::new(0.0, 0.0, 0.0, 0.0)),
             _resource_override_path: resource_override_path,
             // This is initialized to 1 by default, but it is reset
@@ -951,11 +952,11 @@ impl<B: hal::Backend> Device<B> {
         let mut extent =
             hal::window::Extent2D {
                 width: (window_size.unwrap_or(ext).0 as u32)
-                        .min(caps.extents.end.width)
-                        .max(caps.extents.start.width),
+                        .min(caps.extents.end().width)
+                        .max(caps.extents.start().width),
                 height: (window_size.unwrap_or(ext).1 as u32)
-                        .min(caps.extents.end.height)
-                        .max(caps.extents.start.height),
+                        .min(caps.extents.end().height)
+                        .max(caps.extents.start().height),
             };
 
         if extent.width == 0 {
@@ -968,7 +969,7 @@ impl<B: hal::Backend> Device<B> {
             extent.width,
             extent.height,
             surface_format,
-            caps.image_count.start,
+            *caps.image_count.start(),
         )
         .with_image_usage(
             hal::image::Usage::TRANSFER_SRC
@@ -1070,9 +1071,9 @@ impl<B: hal::Backend> Device<B> {
             frame_images,
             viewport,
             if present_mode == hal::window::PresentMode::Mailbox {
-                (caps.image_count.end - 1).min(3) as usize
+                *caps.image_count.end().min(&3) as usize
             } else {
-                (caps.image_count.end - 1).min(2) as usize
+                *caps.image_count.end().min(&2) as usize
             },
         )
     }
@@ -1657,8 +1658,8 @@ impl<B: hal::Backend> Device<B> {
                 } else {
                     let mut depth_test_changed =  false;
                     // This is needed to avoid validation layer errors for different attachments between frambuffer renderpass and pipelinelayout
-                    if self.current_depth_test == DepthTest::Off {
-                        self.current_depth_test = LESS_EQUAL_TEST;
+                    if self.current_depth_test == None {
+                        self.current_depth_test = Some(LESS_EQUAL_TEST);
                         depth_test_changed = true;
                     }
                     (Some(&self.rbos[&rbo_id].core), depth_test_changed)
@@ -1666,7 +1667,7 @@ impl<B: hal::Backend> Device<B> {
             )
         } else {
             let (frame_buffer, depth_image) = match self.current_depth_test {
-                DepthTest::Off => (&self.framebuffers[self.current_frame_id], None),
+                None => (&self.framebuffers[self.current_frame_id], None),
                 _ => (&self.framebuffers_depth[self.current_frame_id], Some(&self.frame_depths[self.current_frame_id].core)),
             };
             (
@@ -1757,7 +1758,7 @@ impl<B: hal::Backend> Device<B> {
             );
 
         if depth_test_changed {
-            self.current_depth_test = DepthTest::Off;
+            self.current_depth_test = None;
         }
 
         unsafe {
@@ -2803,7 +2804,7 @@ impl<B: hal::Backend> Device<B> {
 
     fn delete_retained_textures(&mut self) {
         let textures: Vec<_> = self.retained_textures.drain(..).collect();
-        for mut texture in textures {
+        for texture in textures {
             self.free_texture(texture);
         }
     }
@@ -2957,7 +2958,7 @@ impl<B: hal::Backend> Device<B> {
             )
         }
         .expect("create_command_pool failed");
-        unsafe { command_pool.reset() };
+        unsafe { command_pool.reset(false) };
 
         let mut cmd_buffer = command_pool.allocate_one(RawLevel::Primary);
         unsafe {
@@ -3097,7 +3098,7 @@ impl<B: hal::Backend> Device<B> {
         }
 
         unsafe {
-            command_pool.reset();
+            command_pool.reset(false);
             self.device.destroy_command_pool(command_pool);
         }
     }
@@ -3249,7 +3250,7 @@ impl<B: hal::Backend> Device<B> {
 
         let color_clear = color.map(|c| hal::command::AttachmentClear::Color {
             index: 0,
-            value: hal::command::ClearColor::Float(c),
+            value: hal::command::ClearColor::Sfloat(c),
         });
 
         let depth_clear = depth.map(|d| hal::command::AttachmentClear::DepthStencil {
@@ -3272,7 +3273,7 @@ impl<B: hal::Backend> Device<B> {
             )
         } else {
             let (frame_buffer, depth_image) = match self.current_depth_test {
-                DepthTest::Off => (&self.framebuffers[self.current_frame_id], None),
+                None => (&self.framebuffers[self.current_frame_id], None),
                 _ => (&self.framebuffers_depth[self.current_frame_id], Some(&self.frame_depths[self.current_frame_id].core)),
             };
             (
@@ -3416,7 +3417,7 @@ impl<B: hal::Backend> Device<B> {
             }
 
             if let (Some(depth), Some(dimg)) = (depth, dimg) {
-                assert_ne!(self.current_depth_test, DepthTest::Off);
+                assert_ne!(self.current_depth_test, None);
                 if let Some(barrier) = dimg.transit(
                     hal::image::Access::DEPTH_STENCIL_ATTACHMENT_WRITE,
                     hal::image::Layout::TransferDstOptimal,
@@ -3481,11 +3482,11 @@ impl<B: hal::Backend> Device<B> {
             self.depth_available,
             "Enabling depth test without depth target"
         );
-        self.current_depth_test = LESS_EQUAL_TEST;
+        self.current_depth_test = Some(LESS_EQUAL_TEST);
     }
 
     pub fn disable_depth(&mut self) {
-        self.current_depth_test = DepthTest::Off;
+        self.current_depth_test = None;
     }
 
     pub fn set_depth_func(&mut self, _depth_func: DepthFunction) {
@@ -3498,12 +3499,12 @@ impl<B: hal::Backend> Device<B> {
             self.depth_available,
             "Enabling depth test without depth target"
         );
-        self.current_depth_test = LESS_EQUAL_WRITE;
+        self.current_depth_test = Some(LESS_EQUAL_WRITE);
     }
 
     pub fn disable_depth_write(&mut self) {
-        if self.current_depth_test != DepthTest::Off {
-            self.current_depth_test = LESS_EQUAL_TEST;
+        if self.current_depth_test != None {
+            self.current_depth_test = Some(LESS_EQUAL_TEST);
         }
     }
 
@@ -3523,68 +3524,68 @@ impl<B: hal::Backend> Device<B> {
 
     pub fn set_blend(&self, enable: bool) {
         if !enable {
-            self.current_blend_state.set(BlendState::Off)
+            self.current_blend_state.set(None)
         }
     }
 
     pub fn set_blend_mode_alpha(&self) {
-        self.current_blend_state.set(ALPHA);
+        self.current_blend_state.set(Some(ALPHA));
     }
 
     pub fn set_blend_mode_premultiplied_alpha(&self) {
         self.current_blend_state
-            .set(BlendState::PREMULTIPLIED_ALPHA);
+            .set(Some(BlendState::PREMULTIPLIED_ALPHA));
     }
 
     pub fn set_blend_mode_premultiplied_dest_out(&self) {
-        self.current_blend_state.set(PREMULTIPLIED_DEST_OUT);
+        self.current_blend_state.set(Some(PREMULTIPLIED_DEST_OUT));
     }
 
     pub fn set_blend_mode_multiply(&self) {
-        self.current_blend_state.set(BlendState::MULTIPLY);
+        self.current_blend_state.set(Some(BlendState::MULTIPLY));
     }
 
     pub fn set_blend_mode_max(&self) {
-        self.current_blend_state.set(MAX);
+        self.current_blend_state.set(Some(MAX));
     }
 
     pub fn set_blend_mode_min(&self) {
-        self.current_blend_state.set(MIN);
+        self.current_blend_state.set(Some(MIN));
     }
 
     pub fn set_blend_mode_subpixel_pass0(&self) {
-        self.current_blend_state.set(SUBPIXEL_PASS0);
+        self.current_blend_state.set(Some(SUBPIXEL_PASS0));
     }
 
     pub fn set_blend_mode_subpixel_pass1(&self) {
-        self.current_blend_state.set(SUBPIXEL_PASS1);
+        self.current_blend_state.set(Some(SUBPIXEL_PASS1));
     }
 
     pub fn set_blend_mode_subpixel_with_bg_color_pass0(&self) {
-        self.current_blend_state.set(SUBPIXEL_WITH_BG_COLOR_PASS0);
+        self.current_blend_state.set(Some(SUBPIXEL_WITH_BG_COLOR_PASS0));
     }
 
     pub fn set_blend_mode_subpixel_with_bg_color_pass1(&self) {
-        self.current_blend_state.set(SUBPIXEL_WITH_BG_COLOR_PASS1);
+        self.current_blend_state.set(Some(SUBPIXEL_WITH_BG_COLOR_PASS1));
     }
 
     pub fn set_blend_mode_subpixel_with_bg_color_pass2(&self) {
-        self.current_blend_state.set(SUBPIXEL_WITH_BG_COLOR_PASS2);
+        self.current_blend_state.set(Some(SUBPIXEL_WITH_BG_COLOR_PASS2));
     }
 
     pub fn set_blend_mode_subpixel_constant_text_color(&self, color: ColorF) {
-        self.current_blend_state.set(SUBPIXEL_CONSTANT_TEXT_COLOR);
+        self.current_blend_state.set(Some(SUBPIXEL_CONSTANT_TEXT_COLOR));
         // color is an unpremultiplied color.
         self.blend_color
             .set(ColorF::new(color.r, color.g, color.b, 1.0));
     }
 
     pub fn set_blend_mode_subpixel_dual_source(&self) {
-        self.current_blend_state.set(SUBPIXEL_DUAL_SOURCE);
+        self.current_blend_state.set(Some(SUBPIXEL_DUAL_SOURCE));
     }
 
     pub fn set_blend_mode_show_overdraw(&self) {
-        self.current_blend_state.set(OVERDRAW);
+        self.current_blend_state.set(Some(OVERDRAW));
     }
 
     pub fn supports_features(&self, features: hal::Features) -> bool {
@@ -3649,6 +3650,7 @@ impl<B: hal::Backend> Device<B> {
                                 AcquireError::NotReady => warn!("AcquireError : NotReady"),
                                 AcquireError::DeviceLost(dev) => warn!("AcquireError : DeviceLost => {:?}", dev),
                                 AcquireError::OutOfMemory(mem) => warn!("AcquireError : OutOfMemory => {:?}", mem),
+                                AcquireError::Timeout => warn!("AcquireError : Timeout"),
                             }
                             self.wait_for_resize = true;
                         },

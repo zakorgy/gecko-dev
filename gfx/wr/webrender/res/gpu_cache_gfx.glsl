@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-layout(set = 1, binding = 5, std430) buffer sGpuCache
+layout(set = 1, binding = 5, std430)readonly buffer sGpuCache
 {
     vec4 gpu_cache[];
 };
