@@ -23,39 +23,18 @@ use std::hash::Hash;
 //TODO: reconsider what is publicly exported
 
 pub use self::adapter::{
-    Adapter,
-    AdapterInfo,
-    MemoryProperties,
-    MemoryType,
-    MemoryTypeId,
-    PhysicalDevice,
-    QueuePriority,
+    Adapter, AdapterInfo, MemoryProperties, MemoryType, MemoryTypeId, PhysicalDevice, QueuePriority,
 };
 pub use self::device::Device;
 pub use self::pool::CommandPool;
-pub use self::pso::{read_spirv, DescriptorPool};
+pub use self::pso::DescriptorPool;
 pub use self::queue::{
-    Capability,
-    CommandQueue,
-    Compute,
-    General,
-    Graphics,
-    QueueFamily,
-    QueueGroup,
-    QueueType,
-    Submission,
-    Supports,
-    Transfer,
+    Capability, CommandQueue, Compute, General, Graphics, QueueFamily, QueueGroup, QueueType,
+    Submission, Supports, Transfer,
 };
 pub use self::window::{
-    AcquireError,
-    CompositeAlpha,
-    PresentMode,
-    Surface,
-    SurfaceCapabilities,
-    SwapImageIndex,
-    Swapchain,
-    SwapchainConfig,
+    AcquireError, CompositeAlpha, PresentMode, Surface, SurfaceCapabilities,
+    SwapImageIndex, Swapchain, SwapchainConfig,
 };
 
 pub mod adapter;
@@ -107,8 +86,6 @@ pub type ColorSlot = u8;
 pub type SamplerSlot = u8;
 
 bitflags! {
-    //TODO: add a feature for non-normalized samplers
-    //TODO: add a feature for mutable comparison samplers
     /// Features that the device supports.
     /// These only include features of the core interface and not API extensions.
     #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -275,8 +252,7 @@ pub struct Limits {
     pub max_sampler_allocation_count: usize,
     ///
     pub max_bound_descriptor_sets: pso::DescriptorSetIndex,
-    ///
-    pub max_framebuffer_layers: usize,
+
     ///
     pub max_per_stage_descriptor_samplers: usize,
     ///
@@ -378,11 +354,11 @@ pub struct Limits {
     /// The alignment of the start of buffer used as a storage buffer, in bytes, non-zero.
     pub min_storage_buffer_offset_alignment: buffer::Offset,
     /// Number of samples supported for color attachments of framebuffers (floating/fixed point).
-    pub framebuffer_color_sample_counts: image::NumSamples,
+    pub framebuffer_color_samples_count: image::NumSamples,
     /// Number of samples supported for depth attachments of framebuffers.
-    pub framebuffer_depth_sample_counts: image::NumSamples,
+    pub framebuffer_depth_samples_count: image::NumSamples,
     /// Number of samples supported for stencil attachments of framebuffers.
-    pub framebuffer_stencil_sample_counts: image::NumSamples,
+    pub framebuffer_stencil_samples_count: image::NumSamples,
     /// Maximum number of color attachments that can be used by a subpass in a render pass.
     pub max_color_attachments: usize,
     ///
@@ -524,7 +500,6 @@ pub trait Backend: 'static + Sized + Eq + Clone + Hash + fmt::Debug + Any + Send
 
     type Fence: fmt::Debug + Any + Send + Sync;
     type Semaphore: fmt::Debug + Any + Send + Sync;
-    type Event: fmt::Debug + Any + Send + Sync;
     type QueryPool: fmt::Debug + Any + Send + Sync;
 }
 

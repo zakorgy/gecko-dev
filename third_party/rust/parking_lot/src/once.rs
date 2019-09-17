@@ -7,7 +7,7 @@
 
 use std::sync::atomic::{fence, Ordering};
 #[cfg(feature = "nightly")]
-use std::sync::atomic::{ATOMIC_U8_INIT, AtomicU8};
+use std::sync::atomic::{AtomicU8, ATOMIC_U8_INIT};
 #[cfg(feature = "nightly")]
 type U8 = u8;
 #[cfg(not(feature = "nightly"))]
@@ -38,14 +38,14 @@ pub enum OnceState {
     /// A thread is currently executing a closure.
     InProgress,
 
-    /// A closure has completed sucessfully.
+    /// A closure has completed successfully.
     Done,
 }
 
 impl OnceState {
     /// Returns whether the associated `Once` has been poisoned.
     ///
-    /// Once an initalization routine for a `Once` has panicked it will forever
+    /// Once an initialization routine for a `Once` has panicked it will forever
     /// indicate to future forced initialization routines that it is poisoned.
     #[inline]
     pub fn poisoned(&self) -> bool {
@@ -55,7 +55,7 @@ impl OnceState {
         }
     }
 
-    /// Returns whether the associated `Once` has successfullly executed a
+    /// Returns whether the associated `Once` has successfully executed a
     /// closure.
     #[inline]
     pub fn done(&self) -> bool {

@@ -17,6 +17,7 @@ use raw_mutex::{TOKEN_HANDOFF, TOKEN_NORMAL};
 use std::cell::Cell;
 use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 use std::time::{Duration, Instant};
+use util;
 
 const PARKED_BIT: usize = 0b001;
 const UPGRADING_BIT: usize = 0b010;
@@ -230,7 +231,7 @@ unsafe impl RawRwLockTimed for RawRwLock {
         let result = if self.try_lock_shared_fast(false) {
             true
         } else {
-            self.lock_shared_slow(false, Some(Instant::now() + timeout))
+            self.lock_shared_slow(false, util::to_deadline(timeout))
         };
         if result {
             unsafe { deadlock::acquire_resource(self as *const _ as usize) };
@@ -260,7 +261,7 @@ unsafe impl RawRwLockTimed for RawRwLock {
         {
             true
         } else {
-            self.lock_exclusive_slow(Some(Instant::now() + timeout))
+            self.lock_exclusive_slow(util::to_deadline(timeout))
         };
         if result {
             unsafe { deadlock::acquire_resource(self as *const _ as usize) };
@@ -316,7 +317,7 @@ unsafe impl RawRwLockRecursiveTimed for RawRwLock {
         let result = if self.try_lock_shared_fast(true) {
             true
         } else {
-            self.lock_shared_slow(true, Some(Instant::now() + timeout))
+            self.lock_shared_slow(true, util::to_deadline(timeout))
         };
         if result {
             unsafe { deadlock::acquire_resource(self as *const _ as usize) };
@@ -476,7 +477,7 @@ unsafe impl RawRwLockUpgradeTimed for RawRwLock {
         let result = if self.try_lock_upgradable_fast() {
             true
         } else {
-            self.lock_upgradable_slow(Some(Instant::now() + timeout))
+            self.lock_upgradable_slow(util::to_deadline(timeout))
         };
         if result {
             unsafe { deadlock::acquire_resource(self as *const _ as usize) };
@@ -516,7 +517,7 @@ unsafe impl RawRwLockUpgradeTimed for RawRwLock {
         {
             true
         } else {
-            self.upgrade_slow(Some(Instant::now() + timeout))
+            self.upgrade_slow(util::to_deadline(timeout))
         }
     }
 }
@@ -950,30 +951,30 @@ impl RawRwLock {
         // potential race condition here: another thread might grab a shared
         // lock between now and when we actually release our lock.
         let additional_guards = Cell::new(0usize);
-        let has_upgraded = Cell::new(if state & UPGRADING_BIT == 0 {
-            None
-        } else {
-            Some(false)
-        });
+        let has_upgraded = Cell::new(false);
         unsafe {
             let addr = self as *const _ as usize;
             let filter = |ParkToken(token)| -> FilterOp {
-                match has_upgraded.get() {
-                    None => match additional_guards.get().checked_add(token) {
+                // We need to check UPGRADING_BIT while holding the bucket lock,
+                // otherwise we might miss a thread trying to upgrade.
+                if self.state.load(Ordering::Relaxed) & UPGRADING_BIT == 0 {
+                    match additional_guards.get().checked_add(token) {
                         Some(x) => {
                             additional_guards.set(x);
                             FilterOp::Unpark
                         }
                         None => FilterOp::Stop,
-                    },
-                    Some(false) => if token & UPGRADING_BIT != 0 {
+                    }
+                } else if has_upgraded.get() {
+                    FilterOp::Stop
+                } else {
+                    if token & UPGRADING_BIT != 0 {
                         additional_guards.set(token & !UPGRADING_BIT);
-                        has_upgraded.set(Some(true));
+                        has_upgraded.set(true);
                         FilterOp::Unpark
                     } else {
                         FilterOp::Skip
-                    },
-                    Some(true) => FilterOp::Stop,
+                    }
                 }
             };
             let callback = |result: UnparkResult| {
@@ -989,7 +990,7 @@ impl RawRwLock {
                     }
 
                     // Clear the upgrading bit if we are upgrading a thread.
-                    if let Some(true) = has_upgraded.get() {
+                    if has_upgraded.get() {
                         new_state &= !UPGRADING_BIT;
                     }
 

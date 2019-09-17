@@ -5,9 +5,9 @@ use std::{
 
 pub use gfx_hal::pso::{DescriptorRangeDesc, DescriptorSetLayoutBinding, DescriptorType};
 
-const DESCRIPTOR_TYPES_COUNT: usize = 11;
+const DESCPTOR_TYPES_COUNT: usize = 11;
 
-const DESCRIPTOR_TYPES: [DescriptorType; DESCRIPTOR_TYPES_COUNT] = [
+const DESCRIPTOR_TYPES: [DescriptorType; DESCPTOR_TYPES_COUNT] = [
     DescriptorType::Sampler,
     DescriptorType::CombinedImageSampler,
     DescriptorType::SampledImage,
@@ -24,21 +24,15 @@ const DESCRIPTOR_TYPES: [DescriptorType; DESCRIPTOR_TYPES_COUNT] = [
 /// Number of descriptors per type.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct DescriptorRanges {
-    counts: [u32; DESCRIPTOR_TYPES_COUNT],
+    counts: [u32; DESCPTOR_TYPES_COUNT],
 }
 
 impl DescriptorRanges {
     /// Create new instance without descriptors.
     pub fn zero() -> Self {
         DescriptorRanges {
-            counts: [0; DESCRIPTOR_TYPES_COUNT],
+            counts: [0; DESCPTOR_TYPES_COUNT],
         }
-    }
-
-    /// Add a single layout binding.
-    /// Useful when created with `DescriptorRanges::zero()`.
-    pub fn add_binding(&mut self, binding: DescriptorSetLayoutBinding) {
-        self.counts[binding.ty as usize] += binding.count as u32;
     }
 
     /// Iterate through ranges yelding
@@ -62,21 +56,9 @@ impl DescriptorRanges {
 
     /// Calculate ranges from bindings.
     pub fn from_bindings(bindings: &[DescriptorSetLayoutBinding]) -> Self {
-        let mut descs = Self::zero();
-
-        for binding in bindings {
-            descs.counts[binding.ty as usize] += binding.count as u32;
-        }
-
-        descs
-    }
-
-    /// Calculate ranges from bindings, specified with an iterator.
-    pub fn from_binding_iter<I>(bindings: I) -> Self
-    where
-        I: Iterator<Item = DescriptorSetLayoutBinding>
-    {
-        let mut descs = Self::zero();
+        let mut descs = DescriptorRanges {
+            counts: [0; DESCPTOR_TYPES_COUNT],
+        };
 
         for binding in bindings {
             descs.counts[binding.ty as usize] += binding.count as u32;
@@ -89,7 +71,7 @@ impl DescriptorRanges {
 impl PartialOrd for DescriptorRanges {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         let mut ord = self.counts[0].partial_cmp(&other.counts[0])?;
-        for i in 1..DESCRIPTOR_TYPES_COUNT {
+        for i in 1..DESCPTOR_TYPES_COUNT {
             match (ord, self.counts[i].partial_cmp(&other.counts[i])?) {
                 (Ordering::Less, Ordering::Greater) | (Ordering::Greater, Ordering::Less) => {
                     return None;
@@ -112,7 +94,7 @@ impl Add for DescriptorRanges {
 
 impl AddAssign for DescriptorRanges {
     fn add_assign(&mut self, rhs: Self) {
-        for i in 0..DESCRIPTOR_TYPES_COUNT {
+        for i in 0..DESCPTOR_TYPES_COUNT {
             self.counts[i] += rhs.counts[i];
         }
     }
@@ -128,7 +110,7 @@ impl Sub for DescriptorRanges {
 
 impl SubAssign for DescriptorRanges {
     fn sub_assign(&mut self, rhs: Self) {
-        for i in 0..DESCRIPTOR_TYPES_COUNT {
+        for i in 0..DESCPTOR_TYPES_COUNT {
             self.counts[i] -= rhs.counts[i];
         }
     }
@@ -144,7 +126,7 @@ impl Mul<u32> for DescriptorRanges {
 
 impl MulAssign<u32> for DescriptorRanges {
     fn mul_assign(&mut self, rhs: u32) {
-        for i in 0..DESCRIPTOR_TYPES_COUNT {
+        for i in 0..DESCPTOR_TYPES_COUNT {
             self.counts[i] *= rhs;
         }
     }
@@ -161,7 +143,7 @@ impl<'a> IntoIterator for &'a DescriptorRanges {
 
 /// Iterator over descriptor ranges.
 pub struct DescriptorRangesIter<'a> {
-    counts: &'a [u32; DESCRIPTOR_TYPES_COUNT],
+    counts: &'a [u32; DESCPTOR_TYPES_COUNT],
     index: u8,
 }
 
@@ -171,7 +153,7 @@ impl<'a> Iterator for DescriptorRangesIter<'a> {
     fn next(&mut self) -> Option<DescriptorRangeDesc> {
         loop {
             let index = self.index as usize;
-            if index >= DESCRIPTOR_TYPES_COUNT {
+            if index >= DESCPTOR_TYPES_COUNT {
                 return None;
             } else {
                 self.index += 1;

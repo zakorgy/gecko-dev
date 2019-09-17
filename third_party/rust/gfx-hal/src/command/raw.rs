@@ -4,12 +4,7 @@ use std::fmt;
 use std::ops::Range;
 
 use super::{
-    AttachmentClear,
-    BufferCopy,
-    BufferImageCopy,
-    ImageBlit,
-    ImageCopy,
-    ImageResolve,
+    AttachmentClear, BufferCopy, BufferImageCopy, ImageBlit, ImageCopy, ImageResolve,
     SubpassContents,
 };
 use crate::image::{Filter, Layout, SubresourceRange};
@@ -17,13 +12,7 @@ use crate::memory::{Barrier, Dependencies};
 use crate::range::RangeArg;
 use crate::{buffer, pass, pso, query};
 use crate::{
-    Backend,
-    DrawCount,
-    IndexCount,
-    InstanceCount,
-    VertexCount,
-    VertexOffset,
-    WorkGroupCount,
+    Backend, DrawCount, IndexCount, InstanceCount, VertexCount, VertexOffset, WorkGroupCount,
 };
 
 /// Unsafe variant of `ClearColor`.
@@ -503,29 +492,6 @@ pub trait RawCommandBuffer<B: Backend>: fmt::Debug + Any + Send + Sync {
         draw_count: DrawCount,
         stride: u32,
     );
-
-    /// Signals an event once all specified stages of the shader pipeline have completed.
-    unsafe fn set_event(&mut self, event: &B::Event, stages: pso::PipelineStage);
-
-    /// Resets an event once all specified stages of the shader pipeline have completed.
-    unsafe fn reset_event(&mut self, event: &B::Event, stages: pso::PipelineStage);
-
-    /// Waits at some shader stage(s) until all events have been signalled.
-    ///
-    /// - `src_stages` specifies the shader pipeline stages in which the events were signalled.
-    /// - `dst_stages` specifies the shader pipeline stages at which execution should wait.
-    /// - `barriers` specifies a series of memory barriers to be executed before pipeline execution
-    ///   resumes.
-    unsafe fn wait_events<'a, I, J>(
-        &mut self,
-        events: I,
-        stages: Range<pso::PipelineStage>,
-        barriers: J,
-    ) where
-        I: IntoIterator,
-        I::Item: Borrow<B::Event>,
-        J: IntoIterator,
-        J::Item: Borrow<Barrier<'a, B>>;
 
     /// Begins a query operation.  Queries count operations or record timestamps
     /// resulting from commands that occur between the beginning and end of the query,

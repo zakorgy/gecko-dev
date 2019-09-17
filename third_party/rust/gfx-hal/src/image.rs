@@ -2,16 +2,12 @@
 //!
 //! An image is a block of GPU memory representing a grid of texels.
 
-use crate::{
-    buffer::Offset as RawOffset,
-    device,
-    format,
-    pso::{Comparison, Rect},
-};
-use std::{
-    i16,
-    ops::Range,
-};
+use std::ops::Range;
+
+use crate::buffer::Offset as RawOffset;
+use crate::device;
+use crate::format;
+use crate::pso::{Comparison, Rect};
 
 /// Dimension size.
 pub type Size = u32;
@@ -23,8 +19,6 @@ pub type Layer = u16;
 pub type Level = u8;
 /// Maximum accessible mipmap level of an image.
 pub const MAX_LEVEL: Level = 15;
-/// A texel coordinate in an image.
-pub type TexelCoordinate = i32;
 
 /// Describes the size of an image, which may be up to three dimensional.
 #[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
@@ -62,21 +56,16 @@ impl Extent {
     }
 }
 
-/// An offset into an `Image` used for image-to-image
-/// copy operations.  All offsets are in texels, and
-/// specifying offsets other than 0 for dimensions
-/// that do not exist is undefined behavior -- for
-/// example, specifying a `z` offset of `1` in a
-/// two-dimensional image.
+///
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Offset {
-    /// X offset.
-    pub x: TexelCoordinate,
-    /// Y offset.
-    pub y: TexelCoordinate,
-    /// Z offset.
-    pub z: TexelCoordinate,
+    ///
+    pub x: i32,
+    ///
+    pub y: i32,
+    ///
+    pub z: i32,
 }
 
 impl Offset {
@@ -90,7 +79,7 @@ impl Offset {
             y: self.y + extent.height as i32,
             z: self.z + extent.depth as i32,
         };
-        self .. end
+        self..end
     }
 }
 
@@ -253,9 +242,7 @@ pub const CUBE_FACES: [CubeFace; 6] = [
     CubeFace::NegZ,
 ];
 
-/// Specifies the dimensionality of an image to be allocated,
-/// along with the number of mipmap layers and MSAA samples
-/// if applicable.
+/// Specifies the kind of an image to be allocated.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Kind {
@@ -324,7 +311,7 @@ impl Kind {
             _ => {
                 let extent = self.extent();
                 let dominant = max(max(extent.width, extent.height), extent.depth);
-                (1 ..).find(|level| dominant >> level == 0).unwrap()
+                (1..).find(|level| dominant >> level == 0).unwrap()
             }
         }
     }
@@ -349,7 +336,7 @@ impl Kind {
     }
 }
 
-/// Specifies the kind/dimensionality of an image view.
+/// Specifies the kind of an image view.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ViewKind {
@@ -440,28 +427,19 @@ pub enum WrapMode {
 }
 
 /// A wrapper for the LOD level of an image.
-/// The LOD is stored in base-16 fixed point format. That allows
-/// deriving Hash and Eq for it safely.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Lod(i16);
 
-impl Lod {
-    /// Zero LOD.
-    pub const ZERO: Self = Lod(0);
-    /// Maximum LOD.
-    pub const MAX: Self = Lod(i16::MAX);
-}
-
 impl From<f32> for Lod {
     fn from(v: f32) -> Lod {
-        Lod((v * 16.0).max(0.0).min(i16::MAX as f32) as i16)
+        Lod((v * 8.0) as i16)
     }
 }
 
 impl Into<f32> for Lod {
     fn into(self) -> f32 {
-        self.0 as f32 / 16.0
+        self.0 as f32 / 8.0
     }
 }
 
@@ -491,10 +469,7 @@ impl Into<[f32; 4]> for PackedColor {
     }
 }
 
-/// Specifies how to sample from an image.  These are all the parameters
-/// available that alter how the GPU goes from a coordinate in an image
-/// to producing an actual value from the texture, including filtering/
-/// scaling, wrap mode, etc.
+/// Specifies how to sample from an image.
 // TODO: document the details of sampling.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -518,8 +493,6 @@ pub struct SamplerInfo {
     pub comparison: Option<Comparison>,
     /// Border color is used when one of the wrap modes is set to border.
     pub border: PackedColor,
-    /// Specifies whether the texture coordinates are normalized.
-    pub normalized: bool,
     /// Anisotropic filtering.
     pub anisotropic: Anisotropic,
 }
@@ -533,11 +506,10 @@ impl SamplerInfo {
             mag_filter: filter,
             mip_filter: filter,
             wrap_mode: (wrap, wrap, wrap),
-            lod_bias: Lod::ZERO,
-            lod_range: Lod::ZERO .. Lod::MAX,
+            lod_bias: Lod(0),
+            lod_range: Lod(-8000)..Lod(8000),
             comparison: None,
             border: PackedColor(0),
-            normalized: true,
             anisotropic: Anisotropic::Off,
         }
     }

@@ -24,20 +24,9 @@ extern crate objc;
 extern crate winapi;
 #[cfg(feature = "winit")]
 extern crate winit;
-#[cfg(all(
-    feature = "x11",
-    unix,
-    not(target_os = "android"),
-    not(target_os = "macos"),
-    not(target_os = "ios")
-))]
+#[cfg(all(unix, not(target_os = "android"), not(target_os = "macos")))]
 extern crate x11;
-#[cfg(all(
-    feature = "xcb",
-    unix,
-    not(target_os = "android"),
-    not(target_os = "macos")
-))]
+#[cfg(all(unix, not(target_os = "android"), not(target_os = "macos")))]
 extern crate xcb;
 
 
@@ -47,18 +36,12 @@ use ash::vk;
 #[cfg(not(feature = "use-rtld-next"))]
 use ash::{Entry, LoadingError};
 
-use crate::hal::adapter::DeviceType;
-use crate::hal::device::{DeviceLost, OutOfMemory, SurfaceLost};
-use crate::hal::error::{DeviceCreationError, HostExecutionError};
-use crate::hal::pso::PipelineStage;
-use crate::hal::{
-    format,
-    image,
-    memory,
-    queue,
-    window::{PresentError, Suboptimal},
-};
-use crate::hal::{Features, Limits, PatchSize, QueueType, SwapImageIndex};
+use hal::adapter::DeviceType;
+use hal::error::{DeviceCreationError, HostExecutionError};
+use hal::device::{DeviceLost, OutOfMemory, SurfaceLost};
+use hal::pso::PipelineStage;
+use hal::{format, image, memory, queue, window::{PresentError, Suboptimal}};
+use hal::{Features, Limits, PatchSize, QueueType, SwapImageIndex};
 
 use std::borrow::{Borrow, Cow};
 use std::ffi::{CStr, CString};
@@ -81,29 +64,17 @@ mod window;
 
 // CStr's cannot be constant yet, until const fn lands we need to use a lazy_static
 lazy_static! {
-    static ref LAYERS: Vec<&'static CStr> = if cfg!(all(target_os = "android", debug_assertions)) {
-        vec![
-            CStr::from_bytes_with_nul(b"VK_LAYER_LUNARG_core_validation\0").unwrap(),
-            CStr::from_bytes_with_nul(b"VK_LAYER_LUNARG_object_tracker\0").unwrap(),
-            CStr::from_bytes_with_nul(b"VK_LAYER_LUNARG_parameter_validation\0").unwrap(),
-            CStr::from_bytes_with_nul(b"VK_LAYER_GOOGLE_threading\0").unwrap(),
-            CStr::from_bytes_with_nul(b"VK_LAYER_GOOGLE_unique_objects\0").unwrap(),
-        ]
-    } else if cfg!(debug_assertions) {
-        vec![CStr::from_bytes_with_nul(b"VK_LAYER_LUNARG_standard_validation\0").unwrap()]
-    } else {
-        vec![]
-    };
-    static ref EXTENSIONS: Vec<&'static CStr> = vec![#[cfg(debug_assertions)] CStr::from_bytes_with_nul(b"VK_EXT_debug_utils\0").unwrap()];
+    static ref LAYERS: Vec<&'static CStr> = vec![#[cfg(debug_assertions)] CStr::from_bytes_with_nul(b"VK_LAYER_LUNARG_standard_validation\0").expect("Wrong extension string")];
+    static ref EXTENSIONS: Vec<&'static CStr> = vec![#[cfg(debug_assertions)] CStr::from_bytes_with_nul(b"VK_EXT_debug_utils\0").expect("Wrong extension string")];
     static ref DEVICE_EXTENSIONS: Vec<&'static CStr> = vec![extensions::khr::Swapchain::name()];
     static ref SURFACE_EXTENSIONS: Vec<&'static CStr> = vec![
         extensions::khr::Surface::name(),
         // Platform-specific WSI extensions
-        #[cfg(all(unix, not(target_os = "android"), not(target_os = "macos")))]
+        #[cfg(all(unix, not(target_os = "android")))]
         extensions::khr::XlibSurface::name(),
-        #[cfg(all(unix, not(target_os = "android"), not(target_os = "macos")))]
+        #[cfg(all(unix, not(target_os = "android")))]
         extensions::khr::XcbSurface::name(),
-        #[cfg(all(unix, not(target_os = "android"), not(target_os = "macos")))]
+        #[cfg(all(unix, not(target_os = "android")))]
         extensions::khr::WaylandSurface::name(),
         #[cfg(target_os = "android")]
         extensions::khr::AndroidSurface::name(),
@@ -318,22 +289,12 @@ unsafe extern "system" fn debug_utils_messenger_callback(
     vk::FALSE
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct Unsupported;
-
 impl Instance {
     pub fn create(name: &str, version: u32) -> Self {
-        Self::try_create(name, version).unwrap()
-    }
-
-    pub fn try_create(name: &str, version: u32) -> Result<Self, Unsupported> {
         // TODO: return errors instead of panic
         let entry = VK_ENTRY
             .as_ref()
-            .map_err(|e| {
-                info!("Missing Vulkan entry points: {:?}", e);
-                Unsupported
-            })?;
+            .expect("Unable to load Vulkan entry points");
 
         let app_name = CString::new(name).unwrap();
         let app_info = vk::ApplicationInfo {
@@ -408,14 +369,11 @@ impl Instance {
                 enabled_layer_count: layers.len() as _,
                 pp_enabled_layer_names: str_pointers.as_ptr(),
                 enabled_extension_count: extensions.len() as _,
-                pp_enabled_extension_names: str_pointers[layers.len() ..].as_ptr(),
+                pp_enabled_extension_names: str_pointers[layers.len()..].as_ptr(),
             };
 
             unsafe { entry.create_instance(&create_info, None) }
-                .map_err(|e| {
-                    warn!("Unable to create Vulkan instance: {:?}", e);
-                    Unsupported
-                })?
+                .expect("Unable to create Vulkan instance")
         };
 
         #[cfg(debug_assertions)]
@@ -443,10 +401,10 @@ impl Instance {
         #[cfg(not(debug_assertions))]
         let debug_messenger = None;
 
-        Ok(Instance {
+        Instance {
             raw: Arc::new(RawInstance(instance, debug_messenger)),
             extensions,
-        })
+        }
     }
 }
 
@@ -454,13 +412,8 @@ impl hal::Instance for Instance {
     type Backend = Backend;
 
     fn enumerate_adapters(&self) -> Vec<hal::Adapter<Backend>> {
-        let devices = match unsafe { self.raw.0.enumerate_physical_devices() } {
-            Ok(devices) => devices,
-            Err(err) => {
-                error!("Could not enumerate physical devices! {}", err);
-                vec![]
-            }
-        };
+        let devices = unsafe { self.raw.0.enumerate_physical_devices() }
+            .expect("Unable to enumerate adapters");
 
         devices
             .into_iter()
@@ -470,7 +423,7 @@ impl hal::Instance for Instance {
                     name: unsafe {
                         CStr::from_ptr(properties.device_name.as_ptr())
                             .to_str()
-                            .unwrap_or("Unknown")
+                            .expect("Invalid UTF-8 string")
                             .to_owned()
                     },
                     vendor: properties.vendor_id as usize,
@@ -612,7 +565,7 @@ impl hal::PhysicalDevice<Backend> for PhysicalDevice {
             .map(|&(family, ref priorities)| {
                 let family_index = family.index;
                 let mut family_raw = hal::backend::RawQueueGroup::new(family.clone());
-                for id in 0 .. priorities.len() {
+                for id in 0..priorities.len() {
                     let queue_raw = device_arc.0.get_device_queue(family_index, id as _);
                     family_raw.add_queue(CommandQueue {
                         raw: Arc::new(queue_raw),
@@ -695,16 +648,14 @@ impl hal::PhysicalDevice<Backend> for PhysicalDevice {
                 .0
                 .get_physical_device_memory_properties(self.handle)
         };
-        let memory_heaps = mem_properties.memory_heaps
-            [.. mem_properties.memory_heap_count as usize]
+        let memory_heaps = mem_properties.memory_heaps[..mem_properties.memory_heap_count as usize]
             .iter()
             .map(|mem| mem.size)
             .collect();
-        let memory_types = mem_properties.memory_types
-            [.. mem_properties.memory_type_count as usize]
+        let memory_types = mem_properties.memory_types[..mem_properties.memory_type_count as usize]
             .iter()
             .map(|mem| {
-                use crate::memory::Properties;
+                use memory::Properties;
                 let mut type_flags = Properties::empty();
 
                 if mem
@@ -714,8 +665,8 @@ impl hal::PhysicalDevice<Backend> for PhysicalDevice {
                     type_flags |= Properties::DEVICE_LOCAL;
                 }
                 if mem
-                    .property_flags
-                    .intersects(vk::MemoryPropertyFlags::HOST_VISIBLE)
+                  .property_flags
+                  .intersects(vk::MemoryPropertyFlags::HOST_VISIBLE)
                 {
                     type_flags |= Properties::CPU_VISIBLE;
                 }
@@ -761,9 +712,9 @@ impl hal::PhysicalDevice<Backend> for PhysicalDevice {
                     == info::intel::DEVICE_SKY_LAKE_MASK);
 
         let features = unsafe { self.instance.0.get_physical_device_features(self.handle) };
-        let mut bits = Features::TRIANGLE_FAN
-            | Features::SEPARATE_STENCIL_REF_VALUES
-            | Features::SAMPLER_MIP_LOD_BIAS;
+        let mut bits = Features::TRIANGLE_FAN |
+            Features::SEPARATE_STENCIL_REF_VALUES |
+            Features::SAMPLER_MIP_LOD_BIAS;
 
         if features.robust_buffer_access != 0 {
             bits |= Features::ROBUST_BUFFER_ACCESS;
@@ -846,90 +797,7 @@ impl hal::PhysicalDevice<Backend> for PhysicalDevice {
         if features.fragment_stores_and_atomics != 0 {
             bits |= Features::FRAGMENT_STORES_AND_ATOMICS;
         }
-        if features.shader_tessellation_and_geometry_point_size != 0 {
-            bits |= Features::SHADER_TESSELLATION_AND_GEOMETRY_POINT_SIZE;
-        }
-        if features.shader_image_gather_extended != 0 {
-            bits |= Features::SHADER_IMAGE_GATHER_EXTENDED;
-        }
-        if features.shader_storage_image_extended_formats != 0 {
-            bits |= Features::SHADER_STORAGE_IMAGE_EXTENDED_FORMATS;
-        }
-        if features.shader_storage_image_multisample != 0 {
-            bits |= Features::SHADER_STORAGE_IMAGE_MULTISAMPLE;
-        }
-        if features.shader_storage_image_read_without_format != 0 {
-            bits |= Features::SHADER_STORAGE_IMAGE_READ_WITHOUT_FORMAT;
-        }
-        if features.shader_storage_image_write_without_format != 0 {
-            bits |= Features::SHADER_STORAGE_IMAGE_WRITE_WITHOUT_FORMAT;
-        }
-        if features.shader_uniform_buffer_array_dynamic_indexing != 0 {
-            bits |= Features::SHADER_UNIFORM_BUFFER_ARRAY_DYNAMIC_INDEXING;
-        }
-        if features.shader_sampled_image_array_dynamic_indexing != 0 {
-            bits |= Features::SHADER_SAMPLED_IMAGE_ARRAY_DYNAMIC_INDEXING;
-        }
-        if features.shader_storage_buffer_array_dynamic_indexing != 0 {
-            bits |= Features::SHADER_STORAGE_BUFFER_ARRAY_DYNAMIC_INDEXING;
-        }
-        if features.shader_storage_image_array_dynamic_indexing != 0 {
-            bits |= Features::SHADER_STORAGE_IMAGE_ARRAY_DYNAMIC_INDEXING;
-        }
-        if features.shader_clip_distance != 0 {
-            bits |= Features::SHADER_CLIP_DISTANCE;
-        }
-        if features.shader_cull_distance != 0 {
-            bits |= Features::SHADER_CULL_DISTANCE;
-        }
-        if features.shader_float64 != 0 {
-            bits |= Features::SHADER_FLOAT64;
-        }
-        if features.shader_int64 != 0 {
-            bits |= Features::SHADER_INT64;
-        }
-        if features.shader_int16 != 0 {
-            bits |= Features::SHADER_INT16;
-        }
-        if features.shader_resource_residency != 0 {
-            bits |= Features::SHADER_RESOURCE_RESIDENCY;
-        }
-        if features.shader_resource_min_lod != 0 {
-            bits |= Features::SHADER_RESOURCE_MIN_LOD;
-        }
-        if features.sparse_binding != 0 {
-            bits |= Features::SPARSE_BINDING;
-        }
-        if features.sparse_residency_buffer != 0 {
-            bits |= Features::SPARSE_RESIDENCY_BUFFER;
-        }
-        if features.sparse_residency_image2_d != 0 {
-            bits |= Features::SPARSE_RESIDENCY_IMAGE_2D;
-        }
-        if features.sparse_residency_image3_d != 0 {
-            bits |= Features::SPARSE_RESIDENCY_IMAGE_3D;
-        }
-        if features.sparse_residency2_samples != 0 {
-            bits |= Features::SPARSE_RESIDENCY_2_SAMPLES;
-        }
-        if features.sparse_residency4_samples != 0 {
-            bits |= Features::SPARSE_RESIDENCY_4_SAMPLES;
-        }
-        if features.sparse_residency8_samples != 0 {
-            bits |= Features::SPARSE_RESIDENCY_8_SAMPLES;
-        }
-        if features.sparse_residency16_samples != 0 {
-            bits |= Features::SPARSE_RESIDENCY_16_SAMPLES;
-        }
-        if features.sparse_residency_aliased != 0 {
-            bits |= Features::SPARSE_RESIDENCY_ALIASED;
-        }
-        if features.variable_multisample_rate != 0 {
-            bits |= Features::VARIABLE_MULTISAMPLE_RATE;
-        }
-        if features.inherited_queries != 0 {
-            bits |= Features::INHERITED_QUERIES;
-        }
+        //TODO: cover more features
 
         bits
     }
@@ -970,122 +838,62 @@ impl hal::PhysicalDevice<Backend> for PhysicalDevice {
             max_vertex_input_binding_stride: limits.max_vertex_input_binding_stride as _,
             max_vertex_output_components: limits.max_vertex_output_components as _,
             optimal_buffer_copy_offset_alignment: limits.optimal_buffer_copy_offset_alignment as _,
-            optimal_buffer_copy_pitch_alignment: limits.optimal_buffer_copy_row_pitch_alignment
-                as _,
+            optimal_buffer_copy_pitch_alignment: limits.optimal_buffer_copy_row_pitch_alignment as _,
             min_texel_buffer_offset_alignment: limits.min_texel_buffer_offset_alignment as _,
             min_uniform_buffer_offset_alignment: limits.min_uniform_buffer_offset_alignment as _,
             min_storage_buffer_offset_alignment: limits.min_storage_buffer_offset_alignment as _,
-            framebuffer_color_sample_counts: limits.framebuffer_color_sample_counts.as_raw() as _,
-            framebuffer_depth_sample_counts: limits.framebuffer_depth_sample_counts.as_raw() as _,
-            framebuffer_stencil_sample_counts: limits.framebuffer_stencil_sample_counts.as_raw()
+            framebuffer_color_samples_count: limits.framebuffer_color_sample_counts.as_raw() as _,
+            framebuffer_depth_samples_count: limits.framebuffer_depth_sample_counts.as_raw() as _,
+            framebuffer_stencil_samples_count: limits.framebuffer_stencil_sample_counts.as_raw()
                 as _,
             max_color_attachments: limits.max_color_attachments as _,
             buffer_image_granularity: limits.buffer_image_granularity,
             non_coherent_atom_size: limits.non_coherent_atom_size as _,
             max_sampler_anisotropy: limits.max_sampler_anisotropy,
             min_vertex_input_binding_stride_alignment: 1,
-            max_bound_descriptor_sets: limits.max_bound_descriptor_sets as _,
-            max_compute_shared_memory_size: limits.max_compute_shared_memory_size as _,
-            max_compute_work_group_invocations: limits.max_compute_work_group_invocations as _,
-            max_descriptor_set_input_attachments: limits.max_descriptor_set_input_attachments as _,
-            max_descriptor_set_sampled_images: limits.max_descriptor_set_sampled_images as _,
-            max_descriptor_set_samplers: limits.max_descriptor_set_samplers as _,
-            max_descriptor_set_storage_buffers: limits.max_descriptor_set_storage_buffers as _,
-            max_descriptor_set_storage_buffers_dynamic: limits
-                .max_descriptor_set_storage_buffers_dynamic
-                as _,
-            max_descriptor_set_storage_images: limits.max_descriptor_set_storage_images as _,
-            max_descriptor_set_uniform_buffers: limits.max_descriptor_set_uniform_buffers as _,
-            max_descriptor_set_uniform_buffers_dynamic: limits
-                .max_descriptor_set_uniform_buffers_dynamic
-                as _,
-            max_draw_indexed_index_value: limits.max_draw_indexed_index_value,
-            max_draw_indirect_count: limits.max_draw_indirect_count,
-            max_fragment_combined_output_resources: limits.max_fragment_combined_output_resources
-                as _,
-            max_fragment_dual_source_attachments: limits.max_fragment_dual_src_attachments as _,
-            max_fragment_input_components: limits.max_fragment_input_components as _,
-            max_fragment_output_attachments: limits.max_fragment_output_attachments as _,
-            max_framebuffer_layers: limits.max_framebuffer_layers as _,
-            max_geometry_input_components: limits.max_geometry_input_components as _,
-            max_geometry_output_components: limits.max_geometry_output_components as _,
-            max_geometry_output_vertices: limits.max_geometry_output_vertices as _,
-            max_geometry_shader_invocations: limits.max_geometry_shader_invocations as _,
-            max_geometry_total_output_components: limits.max_geometry_total_output_components as _,
-            max_memory_allocation_count: limits.max_memory_allocation_count as _,
-            max_per_stage_descriptor_input_attachments: limits
-                .max_per_stage_descriptor_input_attachments
-                as _,
-            max_per_stage_descriptor_sampled_images: limits.max_per_stage_descriptor_sampled_images
-                as _,
-            max_per_stage_descriptor_samplers: limits.max_per_stage_descriptor_samplers as _,
-            max_per_stage_descriptor_storage_buffers: limits
-                .max_per_stage_descriptor_storage_buffers
-                as _,
-            max_per_stage_descriptor_storage_images: limits.max_per_stage_descriptor_storage_images
-                as _,
-            max_per_stage_descriptor_uniform_buffers: limits
-                .max_per_stage_descriptor_uniform_buffers
-                as _,
-            max_per_stage_resources: limits.max_per_stage_resources as _,
-            max_push_constants_size: limits.max_push_constants_size as _,
-            max_sampler_allocation_count: limits.max_sampler_allocation_count as _,
-            max_sampler_lod_bias: limits.max_sampler_lod_bias as _,
-            max_storage_buffer_range: limits.max_storage_buffer_range as _,
-            max_uniform_buffer_range: limits.max_uniform_buffer_range as _,
-            min_memory_map_alignment: limits.min_memory_map_alignment,
-            standard_sample_locations: limits.standard_sample_locations == ash::vk::TRUE,
+            .. Limits::default() //TODO: please halp
         }
     }
 
     fn is_valid_cache(&self, cache: &[u8]) -> bool {
-        const HEADER_SIZE: usize = 16 + vk::UUID_SIZE;
-
-        if cache.len() < HEADER_SIZE {
-            warn!("Bad cache data length {:?}", cache.len());
-            return false;
-        }
-
-        let header_len = u32::from_le_bytes([cache[0], cache[1], cache[2], cache[3]]);
-        let header_version = u32::from_le_bytes([cache[4], cache[5], cache[6], cache[7]]);
-        let vendor_id = u32::from_le_bytes([cache[8], cache[9], cache[10], cache[11]]);
-        let device_id = u32::from_le_bytes([cache[12], cache[13], cache[14], cache[15]]);
+        assert!(cache.len() > 16 + vk::UUID_SIZE);
+        let cache_info: &[u32] = unsafe { slice::from_raw_parts(cache as *const _ as *const _, 4) };
 
         // header length
-        if (header_len as usize) < HEADER_SIZE {
-            warn!("Bad header length {:?}", header_len);
+        if cache_info[0] <= 0 {
+            warn!("Bad header length {:?}", cache_info[0]);
             return false;
         }
 
         // cache header version
-        if header_version != vk::PipelineCacheHeaderVersion::ONE.as_raw() as u32 {
-            warn!("Unsupported cache header version: {:?}", header_version);
+        if cache_info[1] != vk::PipelineCacheHeaderVersion::ONE.as_raw() as u32 {
+            warn!("Unsupported cache header version: {:?}", cache_info[1]);
             return false;
         }
 
         // vendor id
-        if vendor_id != self.properties.vendor_id {
+        if cache_info[2] != self.properties.vendor_id {
             warn!(
                 "Vendor ID mismatch. Device: {:?}, cache: {:?}.",
-                self.properties.vendor_id, vendor_id,
+                self.properties.vendor_id, cache_info[2],
             );
             return false;
         }
 
         // device id
-        if device_id != self.properties.device_id {
+        if cache_info[3] != self.properties.device_id {
             warn!(
                 "Device ID mismatch. Device: {:?}, cache: {:?}.",
-                self.properties.device_id, device_id,
+                self.properties.device_id, cache_info[3],
             );
             return false;
         }
 
-        if self.properties.pipeline_cache_uuid != cache[16 .. 16 + vk::UUID_SIZE] {
+        if self.properties.pipeline_cache_uuid != cache[16..16 + vk::UUID_SIZE] {
             warn!(
                 "Pipeline cache UUID mismatch. Device: {:?}, cache: {:?}.",
                 self.properties.pipeline_cache_uuid,
-                &cache[16 .. 16 + vk::UUID_SIZE],
+                &cache[16..16 + vk::UUID_SIZE],
             );
             return false;
         }
@@ -1211,12 +1019,8 @@ impl hal::queue::RawCommandQueue<Backend> for CommandQueue {
         match self.swapchain_fn.queue_present_khr(*self.raw, &info) {
             vk::Result::SUCCESS => Ok(None),
             vk::Result::SUBOPTIMAL_KHR => Ok(Some(Suboptimal)),
-            vk::Result::ERROR_OUT_OF_HOST_MEMORY => {
-                Err(PresentError::OutOfMemory(OutOfMemory::OutOfHostMemory))
-            }
-            vk::Result::ERROR_OUT_OF_DEVICE_MEMORY => {
-                Err(PresentError::OutOfMemory(OutOfMemory::OutOfDeviceMemory))
-            }
+            vk::Result::ERROR_OUT_OF_HOST_MEMORY => Err(PresentError::OutOfMemory(OutOfMemory::OutOfHostMemory)),
+            vk::Result::ERROR_OUT_OF_DEVICE_MEMORY => Err(PresentError::OutOfMemory(OutOfMemory::OutOfDeviceMemory)),
             vk::Result::ERROR_DEVICE_LOST => Err(PresentError::DeviceLost(DeviceLost)),
             vk::Result::ERROR_OUT_OF_DATE_KHR => Err(PresentError::OutOfDate),
             vk::Result::ERROR_SURFACE_LOST_KHR => Err(PresentError::SurfaceLost(SurfaceLost)),
@@ -1276,6 +1080,5 @@ impl hal::Backend for Backend {
 
     type Fence = native::Fence;
     type Semaphore = native::Semaphore;
-    type Event = native::Event;
     type QueryPool = native::QueryPool;
 }

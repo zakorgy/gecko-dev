@@ -2,7 +2,6 @@ use std::{
     collections::{BTreeSet, HashMap},
     ops::Range,
     ptr::NonNull,
-    thread,
 };
 
 use {
@@ -184,7 +183,7 @@ where
         memory_properties: gfx_hal::memory::Properties,
         config: DynamicConfig,
     ) -> Self {
-        log::trace!(
+        log::info!(
             "Create new allocator: type: '{:?}', properties: '{:#?}' config: '{:#?}'",
             memory_type,
             memory_properties,
@@ -474,16 +473,8 @@ where
 
     /// Perform full cleanup of the memory allocated.
     pub fn dispose(self) {
-        if !thread::panicking() {
-            for (index, size) in self.sizes {
-                assert_eq!(size.chunks.len(), 0, "SizeEntry({}) is still used", index);
-            }
-        } else {
-            for (index, size) in self.sizes {
-                if size.chunks.len() != 0 {
-                    log::error!("Memory leak: SizeEntry({}) is still used", index);
-                }
-            }
+        for (index, size) in self.sizes {
+            assert_eq!(size.chunks.len(), 0, "SizeEntry({}) is still used", index);
         }
     }
 }
@@ -557,7 +548,8 @@ where
     }
 
     fn from_block(block_size: u64, chunk_block: DynamicBlock<B>) -> Self {
-        let blocks = (chunk_block.size() / block_size).min(MAX_BLOCKS_PER_CHUNK as u64);
+        let blocks = chunk_block.size() / block_size;
+        debug_assert!(blocks <= MAX_BLOCKS_PER_CHUNK as u64);
 
         let high_bit = 1 << (blocks - 1);
 
@@ -597,7 +589,8 @@ where
 
     /// Check if there are free blocks.
     fn is_unused(&self, block_size: u64) -> bool {
-        let blocks = (self.size() / block_size).min(MAX_BLOCKS_PER_CHUNK as u64);
+        let blocks = (self.size() / block_size) as u32;
+        debug_assert!(blocks <= MAX_BLOCKS_PER_CHUNK);
 
         let high_bit = 1 << (blocks - 1);
         let mask = (high_bit - 1) | high_bit;

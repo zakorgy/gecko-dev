@@ -4,10 +4,10 @@ use smallvec::SmallVec;
 use std::ptr;
 use std::sync::Arc;
 
-use crate::command::CommandBuffer;
-use crate::conv;
-use crate::hal::{command, pool};
-use crate::{Backend, RawDevice};
+use command::CommandBuffer;
+use conv;
+use hal::{command, pool};
+use {Backend, RawDevice};
 
 #[derive(Debug)]
 pub struct RawCommandPool {
@@ -16,14 +16,13 @@ pub struct RawCommandPool {
 }
 
 impl pool::RawCommandPool<Backend> for RawCommandPool {
-    unsafe fn reset(&mut self, release_resources: bool) {
-        let flags = if release_resources {
-            vk::CommandPoolResetFlags::RELEASE_RESOURCES
-        } else {
-            vk::CommandPoolResetFlags::empty()
-        };
-
-        assert_eq!(Ok(()), self.device.0.reset_command_pool(self.raw, flags));
+    unsafe fn reset(&mut self) {
+        assert_eq!(
+            Ok(()),
+            self.device
+                .0
+                .reset_command_pool(self.raw, vk::CommandPoolResetFlags::empty())
+        );
     }
 
     fn allocate_vec(&mut self, num: usize, level: command::RawLevel) -> Vec<CommandBuffer> {

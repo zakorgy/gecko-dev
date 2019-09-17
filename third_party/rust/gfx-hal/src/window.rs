@@ -59,9 +59,9 @@ use crate::Backend;
 use std::any::Any;
 use std::borrow::Borrow;
 use std::cmp::{max, min};
-use std::fmt;
 use std::iter;
-use std::ops::RangeInclusive;
+use std::fmt;
+use std::ops::Range;
 
 /// Error occurred during swapchain creation.
 #[derive(Clone, Copy, Debug, Fail, PartialEq, Eq)]
@@ -145,8 +145,8 @@ pub struct SurfaceCapabilities {
     /// created from this surface.
     ///
     /// - `image_count.start` must be at least 1.
-    /// - `image_count.end` must be larger or equal to `image_count.start`.
-    pub image_count: RangeInclusive<SwapImageIndex>,
+    /// - `image_count.end` must be larger of equal to `image_count.start`.
+    pub image_count: Range<SwapImageIndex>,
 
     /// Current extent of the surface.
     ///
@@ -156,7 +156,7 @@ pub struct SurfaceCapabilities {
     /// Range of supported extents.
     ///
     /// `current_extent` must be inside this range.
-    pub extents: RangeInclusive<Extent2D>,
+    pub extents: Range<Extent2D>,
 
     /// Maximum number of layers supported for presentable images.
     ///
@@ -173,6 +173,9 @@ pub struct SurfaceCapabilities {
 /// A `Surface` abstracts the surface of a native window, which will be presented
 /// on the display.
 pub trait Surface<B: Backend>: fmt::Debug + Any + Send + Sync {
+    /// Retrieve the surface image kind.
+    fn kind(&self) -> image::Kind;
+
     /// Check if the queue family supports presentation to this surface.
     ///
     /// # Examples
@@ -187,7 +190,7 @@ pub trait Surface<B: Backend>: fmt::Debug + Any + Send + Sync {
     /// Use this function for configuring swapchain creation.
     ///
     /// Returns a tuple of surface capabilities and formats.
-    /// If formats are `None` then the surface has no preferred format and the
+    /// If formats is `None` than the surface has no preferred format and the
     /// application may use any desired format.
     fn compatibility(
         &self,
@@ -311,8 +314,9 @@ impl SwapchainConfig {
         let clamped_extent = match caps.current_extent {
             Some(current) => current,
             None => {
-                let (min_width, max_width) = (caps.extents.start().width, caps.extents.end().width);
-                let (min_height, max_height) = (caps.extents.start().height, caps.extents.end().height);
+                let (min_width, max_width) = (caps.extents.start.width, caps.extents.end.width - 1);
+                let (min_height, max_height) =
+                    (caps.extents.start.height, caps.extents.end.height - 1);
 
                 // clamp the default_extent to within the allowed surface sizes
                 let width = min(max_width, max(default_extent.width, min_width));
@@ -335,7 +339,7 @@ impl SwapchainConfig {
             composite_alpha,
             format,
             extent: clamped_extent,
-            image_count: *caps.image_count.start(),
+            image_count: caps.image_count.start,
             image_layers: 1,
             image_usage: image::Usage::COLOR_ATTACHMENT,
         }
@@ -379,12 +383,9 @@ pub enum AcquireError {
     /// Out of either host or device memory.
     #[fail(display = "{}", _0)]
     OutOfMemory(device::OutOfMemory),
-    /// No image was ready and no timeout was specified.
+    /// No image was ready after the specified timeout expired.
     #[fail(display = "No images ready")]
     NotReady,
-    /// No image was ready after the specified timeout expired.
-    #[fail(display = "No images ready after the specified timeout expired")]
-    Timeout,
     /// The swapchain is no longer in sync with the surface, needs to be re-created.
     #[fail(display = "Swapchain is out of date")]
     OutOfDate,
@@ -466,7 +467,7 @@ pub trait Swapchain<B: Backend>: fmt::Debug + Any + Send + Sync {
     }
 
     /// Present one acquired image without any semaphore synchronization.
-    unsafe fn present_without_semaphores<'a, C>(
+    unsafe fn present_nosemaphores<'a, C>(
         &'a self,
         present_queue: &mut CommandQueue<B, C>,
         image_index: SwapImageIndex,
@@ -477,12 +478,4 @@ pub trait Swapchain<B: Backend>: fmt::Debug + Any + Send + Sync {
     {
         self.present::<_, B::Semaphore, _>(present_queue, image_index, iter::empty())
     }
-}
-
-/// Error occurred during surface creation.
-#[derive(Clone, Copy, Debug, Fail, PartialEq, Eq)]
-pub enum InitError {
-    /// Window handle is not supported by the backend.
-    #[fail(display = "Backend does not support creating surfaces for this type of window handle")]
-    UnsupportedWindowHandle,
 }

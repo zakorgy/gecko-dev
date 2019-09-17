@@ -162,7 +162,7 @@ pub enum PolygonMode {
     /// Rasterize as a point.
     Point,
     /// Rasterize as a line with the given width.
-    Line(State<f32>),
+    Line(f32),
     /// Rasterize as a face.
     Fill,
 }

@@ -5,14 +5,14 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use std::sync::atomic::{fence, AtomicUsize, Ordering};
-use std::ptr;
-use std::mem;
-use std::cell::Cell;
-use std::thread::LocalKey;
-#[cfg(not(feature = "nightly"))]
-use std::panic;
 use spinwait::SpinWait;
+use std::cell::Cell;
+use std::mem;
+#[cfg(not(has_localkey_try_with))]
+use std::panic;
+use std::ptr;
+use std::sync::atomic::{fence, AtomicUsize, Ordering};
+use std::thread::LocalKey;
 use thread_parker::ThreadParker;
 
 struct ThreadData {
@@ -50,11 +50,11 @@ impl ThreadData {
 unsafe fn get_thread_data(local: &mut Option<ThreadData>) -> &ThreadData {
     // Try to read from thread-local storage, but return None if the TLS has
     // already been destroyed.
-    #[cfg(feature = "nightly")]
+    #[cfg(has_localkey_try_with)]
     fn try_get_tls(key: &'static LocalKey<ThreadData>) -> Option<*const ThreadData> {
         key.try_with(|x| x as *const ThreadData).ok()
     }
-    #[cfg(not(feature = "nightly"))]
+    #[cfg(not(has_localkey_try_with))]
     fn try_get_tls(key: &'static LocalKey<ThreadData>) -> Option<*const ThreadData> {
         panic::catch_unwind(|| key.with(|x| x as *const ThreadData)).ok()
     }
@@ -93,7 +93,8 @@ impl WordLock {
 
     #[inline]
     pub unsafe fn lock(&self) {
-        if self.state
+        if self
+            .state
             .compare_exchange_weak(0, LOCKED_BIT, Ordering::Acquire, Ordering::Relaxed)
             .is_ok()
         {
