@@ -1,9 +1,11 @@
-extern crate lock_api;
-
 use lock_api::RawRwLock;
-use std::cell::UnsafeCell;
-use std::collections::hash_map::HashMap;
-use std::{fmt, hash, ops};
+use std::{
+    cell::UnsafeCell,
+    collections::hash_map::HashMap,
+    fmt,
+    hash,
+    ops,
+};
 
 
 /// `StorageMap` is a wrapper around `HashMap` that allows efficient concurrent

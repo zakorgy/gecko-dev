@@ -12,7 +12,7 @@
 use base::{id, BOOL, SEL};
 use block::Block;
 use foundation::{NSInteger, NSUInteger, NSTimeInterval,
-                 NSPoint, NSSize, NSRect, NSRectEdge};
+                 NSPoint, NSSize, NSRect, NSRange, NSRectEdge};
 use libc;
 
 pub use core_graphics::base::CGFloat;
@@ -28,7 +28,7 @@ use std::os::raw::c_void;
 
 pub type CGLContextObj = *mut c_void;
 
-pub type GLint = libc::int32_t;
+pub type GLint = i32;
 
 #[link(name = "AppKit", kind = "framework")]
 extern {
@@ -207,6 +207,14 @@ pub enum NSWindowTitleVisibility {
     NSWindowTitleHidden = 1
 }
 
+#[repr(i64)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum NSWindowTabbingMode {
+    NSWindowTabbingModeAutomatic = 0,
+    NSWindowTabbingModeDisallowed = 1,
+    NSWindowTabbingModePreferred = 2
+}
+
 #[repr(u64)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum NSBackingStoreType {
@@ -363,7 +371,7 @@ pub enum NSRequestUserAttentionType {
     NSInformationalRequest = 10,
 }
 
-pub static NSMainMenuWindowLevel: libc::int32_t = 24;
+pub static NSMainMenuWindowLevel: i32 = 24;
 
 pub trait NSApplication: Sized {
     unsafe fn sharedApplication(_: Self) -> id {
@@ -508,7 +516,7 @@ pub trait NSPasteboard: Sized {
 
     unsafe fn clearContents(self) -> NSInteger;
     unsafe fn writeObjects(self, objects: id) -> BOOL;
-    unsafe fn sendData_forType(self, data: id, dataType: id) -> BOOL;
+    unsafe fn setData_forType(self, data: id, dataType: id) -> BOOL;
     unsafe fn setPropertyList_forType(self, plist: id, dataType: id) -> BOOL;
     unsafe fn setString_forType(self, string: id, dataType: id) -> BOOL;
 
@@ -552,8 +560,8 @@ impl NSPasteboard for id {
         msg_send![self, writeObjects:objects]
     }
 
-    unsafe fn sendData_forType(self, data: id, dataType: id) -> BOOL {
-        msg_send![self, sendData:data forType:dataType]
+    unsafe fn setData_forType(self, data: id, dataType: id) -> BOOL {
+        msg_send![self, setData:data forType:dataType]
     }
 
     unsafe fn setPropertyList_forType(self, plist: id, dataType: id) -> BOOL {
@@ -1000,6 +1008,15 @@ pub trait NSWindow: Sized {
 
     // Managing Title Bars
     unsafe fn standardWindowButton_(self, windowButtonKind: NSWindowButton) -> id;
+
+    // Managing Window Tabs
+    unsafe fn allowsAutomaticWindowTabbing(_: Self) -> BOOL;
+    unsafe fn setAllowsAutomaticWindowTabbing_(_: Self, allowsAutomaticWindowTabbing: BOOL);
+    unsafe fn tabbingIdentifier(self) -> id;
+    unsafe fn tabbingMode(self) -> NSWindowTabbingMode;
+    unsafe fn setTabbingMode_(self, tabbingMode: NSWindowTabbingMode);
+    unsafe fn addTabbedWindow_ordered_(self, window: id, ordering_mode: NSWindowOrderingMode);
+    unsafe fn toggleTabBar_(self, sender: id);
 
     // TODO: Managing Tooltips
     // TODO: Handling Events
@@ -1507,6 +1524,34 @@ impl NSWindow for id {
         msg_send![self, standardWindowButton:windowButtonKind]
     }
 
+    // Managing Window Tabs
+    unsafe fn allowsAutomaticWindowTabbing(_: Self) -> BOOL {
+        msg_send![class!(NSWindow), allowsAutomaticWindowTabbing]
+    }
+
+    unsafe fn setAllowsAutomaticWindowTabbing_(_: Self, allowsAutomaticWindowTabbing: BOOL) {
+        msg_send![class!(NSWindow), setAllowsAutomaticWindowTabbing:allowsAutomaticWindowTabbing]
+    }
+
+    unsafe fn tabbingIdentifier(self) -> id {
+        msg_send![self, tabbingIdentifier]
+    }
+
+    unsafe fn tabbingMode(self) -> NSWindowTabbingMode {
+        msg_send!(self, tabbingMode)
+    }
+
+    unsafe fn setTabbingMode_(self, tabbingMode: NSWindowTabbingMode) {
+        msg_send![self, setTabbingMode: tabbingMode];
+    }
+
+    unsafe fn addTabbedWindow_ordered_(self, window: id, ordering_mode: NSWindowOrderingMode) {
+        msg_send![self, addTabbedWindow:window ordered: ordering_mode];
+    }
+
+    unsafe fn toggleTabBar_(self, sender: id) {
+        msg_send![self, toggleTabBar:sender]
+    }
     // TODO: Managing Tooltips
     // TODO: Handling Events
 
@@ -2309,6 +2354,7 @@ pub trait NSEvent: Sized {
     unsafe fn characters(self) -> id /* (NSString *) */;
     unsafe fn charactersIgnoringModifiers(self) -> id /* (NSString *) */;
     unsafe fn keyCode(self) -> libc::c_ushort;
+    unsafe fn isARepeat(self) -> BOOL;
 
     // Getting Mouse Event Information
     unsafe fn pressedMouseButtons(_: Self) -> NSUInteger;
@@ -2555,6 +2601,10 @@ impl NSEvent for id {
 
     unsafe fn keyCode(self) -> libc::c_ushort {
         msg_send![self, keyCode]
+    }
+
+    unsafe fn isARepeat(self) -> BOOL {
+        msg_send![self, isARepeat]
     }
 
     // Getting Mouse Event Information
@@ -2863,6 +2913,28 @@ impl NSScreen for id {
 
     unsafe fn convertRectToBacking_(self, aRect: NSRect) -> NSRect {
         msg_send![self, convertRectToBacking:aRect]
+    }
+}
+
+// https://developer.apple.com/documentation/appkit/nscontrol?language=objc
+pub trait NSControl: Sized {
+    unsafe fn alloc(_: Self) -> id {
+        msg_send![class!(NSControl), alloc]
+    }
+    unsafe fn initWithFrame_(self, frameRect: NSRect) -> id;
+    unsafe fn isEnabled_(self) -> BOOL;
+    unsafe fn setEnabled_(self, enabled: BOOL) -> BOOL;
+}
+
+impl NSControl for id {
+    unsafe fn initWithFrame_(self, frameRect: NSRect) -> id {
+        msg_send![self, initWithFrame:frameRect]
+    }
+    unsafe fn isEnabled_(self) -> BOOL {
+        msg_send![self, isEnabled]
+    }
+    unsafe fn setEnabled_(self, enabled: BOOL) -> BOOL {
+        msg_send![self, setEnabled:enabled]
     }
 }
 
@@ -3508,7 +3580,7 @@ pub trait NSTabView: Sized {
     unsafe fn new(_: Self) -> id  {
         msg_send![class!(NSTabView), new]
     }
-    
+
     unsafe fn initWithFrame_(self, frameRect: NSRect) -> id;
     unsafe fn addTabViewItem_(self, tabViewItem: id);
     unsafe fn insertTabViewItem_atIndex_(self,tabViewItem:id, index:NSInteger);
@@ -3803,15 +3875,165 @@ impl NSLayoutDimension for id {
     unsafe fn constraintGreaterThanOrEqualToConstant(self, c: CGFloat) -> id {
         msg_send![self, constraintGreaterThanOrEqualToConstant:c]
     }
- }
+}
+
+pub trait NSColorSpace: Sized {
+    unsafe fn deviceRGBColorSpace(_:Self) -> id;
+    unsafe fn genericRGBColorSpace(_:Self) -> id;
+    unsafe fn deviceCMYKColorSpace(_:Self) -> id;
+    unsafe fn genericCMYKColorSpace(_:Self) -> id;
+    unsafe fn deviceGrayColorSpace(_:Self) -> id;
+    unsafe fn genericGrayColorSpace(_:Self) -> id;
+    unsafe fn sRGBColorSpace(_:Self) -> id;
+    unsafe fn extendedSRGBColorSpace(_:Self) -> id;
+    unsafe fn displayP3ColorSpace(_:Self) -> id;
+    unsafe fn genericGamma22GrayColorSpace(_:Self) -> id;
+    unsafe fn extendedGenericGamma22GrayColorSpace(_:Self) -> id;
+    unsafe fn adobeRGB1998ColorSpace(_:Self) -> id;
+
+    unsafe fn alloc(_: Self) -> id;
+
+    unsafe fn initWithCGColorSpace_(self, cg_color_space: *const c_void /* (CGColorSpaceRef) */) -> id;
+    unsafe fn CGColorSpace(self) -> *const c_void /* (CGColorSpaceRef) */;
+    unsafe fn localizedName(self) -> id;
+}
+
+impl NSColorSpace for id {
+    unsafe fn deviceRGBColorSpace(_:Self) -> id {
+        msg_send![class!(NSColorSpace), deviceRGBColorSpace]
+    }
+    unsafe fn genericRGBColorSpace(_:Self) -> id {
+        msg_send![class!(NSColorSpace), genericRGBColorSpace]
+    }
+    unsafe fn deviceCMYKColorSpace(_:Self) -> id {
+        msg_send![class!(NSColorSpace), deviceCMYKColorSpace]
+    }
+    unsafe fn genericCMYKColorSpace(_:Self) -> id {
+        msg_send![class!(NSColorSpace), genericCMYKColorSpace]
+    }
+    unsafe fn deviceGrayColorSpace(_:Self) -> id {
+        msg_send![class!(NSColorSpace), deviceGrayColorSpace]
+    }
+    unsafe fn genericGrayColorSpace(_:Self) -> id {
+        msg_send![class!(NSColorSpace), genericGrayColorSpace]
+    }
+    unsafe fn sRGBColorSpace(_:Self) -> id {
+        msg_send![class!(NSColorSpace), sRGBColorSpace]
+    }
+    unsafe fn extendedSRGBColorSpace(_:Self) -> id {
+        msg_send![class!(NSColorSpace), extendedSRGBColorSpace]
+    }
+    unsafe fn displayP3ColorSpace(_:Self) -> id {
+        msg_send![class!(NSColorSpace), displayP3ColorSpace]
+    }
+    unsafe fn genericGamma22GrayColorSpace(_:Self) -> id {
+        msg_send![class!(NSColorSpace), genericGamma22GrayColorSpace]
+    }
+    unsafe fn extendedGenericGamma22GrayColorSpace(_:Self) -> id {
+        msg_send![class!(NSColorSpace), extendedGenericGamma22GrayColorSpace]
+    }
+    unsafe fn adobeRGB1998ColorSpace(_:Self) -> id {
+        msg_send![class!(NSColorSpace), adobeRGB1998ColorSpace]
+    }
+
+    unsafe fn alloc(_: Self) -> id {
+        msg_send![class!(NSColorSpace), alloc]
+    }
+
+    unsafe fn initWithCGColorSpace_(self, cg_color_space: *const c_void /* (CGColorSpaceRef) */) -> id {
+        msg_send![self, initWithCGColorSpace:cg_color_space]
+    }
+    unsafe fn CGColorSpace(self) -> *const c_void /* (CGColorSpaceRef) */ {
+        msg_send![self, CGColorSpace]
+    }
+    unsafe fn localizedName(self) -> id {
+        msg_send![self, localizedName]
+    }
+}
 
 pub trait NSColor: Sized {
     unsafe fn clearColor(_: Self) -> id;
+    unsafe fn colorWithRed_green_blue_alpha_(_:Self, r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat) -> id;
+    unsafe fn colorWithSRGBRed_green_blue_alpha_(_:Self, r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat) -> id;
+    unsafe fn colorWithDeviceRed_green_blue_alpha_(_:Self, r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat) -> id;
+    unsafe fn colorWithDisplayP3Red_green_blue_alpha_(_:Self, r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat) -> id;
+    unsafe fn colorWithCalibratedRed_green_blue_alpha_(_:Self, r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat) -> id;
+
+    unsafe fn colorUsingColorSpace_(self, color_space: id) -> id;
+
+    unsafe fn alphaComponent(self) -> CGFloat;
+    unsafe fn whiteComponent(self) -> CGFloat;
+    unsafe fn redComponent(self) -> CGFloat;
+    unsafe fn greenComponent(self) -> CGFloat;
+    unsafe fn blueComponent(self) -> CGFloat;
+    unsafe fn cyanComponent(self) -> CGFloat;
+    unsafe fn magentaComponent(self) -> CGFloat;
+    unsafe fn yellowComponent(self) -> CGFloat;
+    unsafe fn blackComponent(self) -> CGFloat;
+    unsafe fn hueComponent(self) -> CGFloat;
+    unsafe fn saturationComponent(self) -> CGFloat;
+    unsafe fn brightnessComponent(self) -> CGFloat;
 }
 
 impl NSColor for id {
     unsafe fn clearColor(_: Self) -> id {
         msg_send![class!(NSColor), clearColor]
+    }
+    unsafe fn colorWithRed_green_blue_alpha_(_:Self, r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat) -> id {
+        msg_send![class!(NSColor), colorWithRed:r green:g blue:b alpha:a]
+    }
+    unsafe fn colorWithSRGBRed_green_blue_alpha_(_:Self, r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat) -> id {
+        msg_send![class!(NSColor), colorWithSRGBRed:r green:g blue:b alpha:a]
+    }
+    unsafe fn colorWithDeviceRed_green_blue_alpha_(_:Self, r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat) -> id {
+        msg_send![class!(NSColor), colorWithDeviceRed:r green:g blue:b alpha:a]
+    }
+    unsafe fn colorWithDisplayP3Red_green_blue_alpha_(_:Self, r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat) -> id {
+        msg_send![class!(NSColor), colorWithDisplayP3Red:r green:g blue:b alpha:a]
+    }
+    unsafe fn colorWithCalibratedRed_green_blue_alpha_(_:Self, r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat) -> id {
+        msg_send![class!(NSColor), colorWithCalibratedRed:r green:g blue:b alpha:a]
+    }
+
+    unsafe fn colorUsingColorSpace_(self, color_space: id) -> id {
+        msg_send![self, colorUsingColorSpace:color_space]
+    }
+
+    unsafe fn alphaComponent(self) -> CGFloat {
+        msg_send![self, alphaComponent]
+    }
+    unsafe fn whiteComponent(self) -> CGFloat {
+        msg_send![self, whiteComponent]
+    }
+    unsafe fn redComponent(self) -> CGFloat {
+        msg_send![self, redComponent]
+    }
+    unsafe fn greenComponent(self) -> CGFloat {
+        msg_send![self, greenComponent]
+    }
+    unsafe fn blueComponent(self) -> CGFloat {
+        msg_send![self, blueComponent]
+    }
+    unsafe fn cyanComponent(self) -> CGFloat {
+        msg_send![self, cyanComponent]
+    }
+    unsafe fn magentaComponent(self) -> CGFloat {
+        msg_send![self, magentaComponent]
+    }
+    unsafe fn yellowComponent(self) -> CGFloat {
+        msg_send![self, yellowComponent]
+    }
+    unsafe fn blackComponent(self) -> CGFloat {
+        msg_send![self, blackComponent]
+    }
+    unsafe fn hueComponent(self) -> CGFloat {
+        msg_send![self, hueComponent]
+    }
+    unsafe fn saturationComponent(self) -> CGFloat {
+        msg_send![self, saturationComponent]
+    }
+    unsafe fn brightnessComponent(self) -> CGFloat {
+        msg_send![self, brightnessComponent]
     }
 }
 
@@ -3844,6 +4066,81 @@ impl NSToolbar for id {
         msg_send![self, setShowsBaselineSeparator:value]
     }
 }
+
+pub trait NSSpellChecker : Sized {
+    unsafe fn sharedSpellChecker(_: Self) -> id;
+    unsafe fn checkSpellingOfString_startingAt(self,
+                                               stringToCheck: id,
+                                               startingOffset: NSInteger) -> NSRange;
+    unsafe fn checkSpellingOfString_startingAt_language_wrap_inSpellDocumentWithTag_wordCount(
+        self,
+        stringToCheck: id,
+        startingOffset: NSInteger,
+        language: id,
+        wrapFlag: BOOL,
+        tag: NSInteger) -> (NSRange, NSInteger);
+    unsafe fn uniqueSpellDocumentTag(_: Self) -> NSInteger;
+    unsafe fn closeSpellDocumentWithTag(self, tag: NSInteger);
+    unsafe fn ignoreWord_inSpellDocumentWithTag(self, wordToIgnore: id, tag: NSInteger);
+}
+
+impl NSSpellChecker for id {
+    unsafe fn sharedSpellChecker(_: Self) -> id {
+        msg_send![class!(NSSpellChecker), sharedSpellChecker]
+    }
+
+    unsafe fn checkSpellingOfString_startingAt(self,
+                                               stringToCheck: id,
+                                               startingOffset: NSInteger) -> NSRange {
+        msg_send![self, checkSpellingOfString:stringToCheck startingAt:startingOffset]
+    }
+
+    unsafe fn checkSpellingOfString_startingAt_language_wrap_inSpellDocumentWithTag_wordCount(
+        self,
+        stringToCheck: id,
+        startingOffset: NSInteger,
+        language: id,
+        wrapFlag: BOOL,
+        tag: NSInteger) -> (NSRange, NSInteger) {
+        let mut wordCount = 0;
+        let range = msg_send![self,
+            checkSpellingOfString:stringToCheck
+            startingAt:startingOffset
+            language:language
+            wrap:wrapFlag
+            inSpellDocumentWithTag:tag
+            wordCount:&mut wordCount
+        ];
+        (range, wordCount)
+    }
+
+    unsafe fn uniqueSpellDocumentTag(_: Self) -> NSInteger {
+        msg_send![class!(NSSpellChecker), uniqueSpellDocumentTag]
+    }
+
+    unsafe fn closeSpellDocumentWithTag(self, tag: NSInteger) {
+        msg_send![self, closeSpellDocumentWithTag:tag]
+    }
+
+    unsafe fn ignoreWord_inSpellDocumentWithTag(self, wordToIgnore: id, tag: NSInteger) {
+        msg_send![self, ignoreWord:wordToIgnore inSpellDocumentWithTag:tag]
+    }
+}
+
+pub trait NSNib: Sized {
+    unsafe fn alloc(_: Self) -> id {
+        msg_send![class!(NSNib), alloc]
+    }
+
+    unsafe fn initWithNibNamed_bundle_(self, name: id, bundle: id) -> id;
+}
+
+impl NSNib for id {
+    unsafe fn initWithNibNamed_bundle_(self, name: id, bundle: id) -> id {
+        msg_send![self, initWithNibNamed:name bundle:bundle]
+    }
+}
+
 
 #[cfg(test)]
 mod test {

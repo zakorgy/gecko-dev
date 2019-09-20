@@ -1,14 +1,11 @@
-use crate::{
-    conversions as conv,
-    PrivateCapabilities,
-};
+use crate::{conversions as conv, PrivateCapabilities};
 
 use hal::{
-    pso,
     backend::FastHashMap,
     command::ClearColorRaw,
     format::{Aspects, ChannelType},
     image::Filter,
+    pso,
 };
 
 use metal;
@@ -122,45 +119,42 @@ pub struct DepthStencilStates {
 impl DepthStencilStates {
     fn new(device: &metal::DeviceRef) -> Self {
         let write_none = pso::DepthStencilDesc {
-            depth: pso::DepthTest::Off,
+            depth: None,
             depth_bounds: false,
-            stencil: pso::StencilTest::Off,
+            stencil: None,
         };
         let write_depth = pso::DepthStencilDesc {
-            depth: pso::DepthTest::On {
+            depth: Some(pso::DepthTest {
                 fun: pso::Comparison::Always,
                 write: true,
-            },
+            }),
             depth_bounds: false,
-            stencil: pso::StencilTest::Off,
+            stencil: None,
         };
         let face = pso::StencilFace {
             fun: pso::Comparison::Always,
-            mask_read: pso::State::Static(!0),
-            mask_write: pso::State::Static(!0),
             op_fail: pso::StencilOp::Replace,
             op_depth_fail: pso::StencilOp::Replace,
             op_pass: pso::StencilOp::Replace,
-            reference: pso::State::Dynamic, //irrelevant
         };
         let write_stencil = pso::DepthStencilDesc {
-            depth: pso::DepthTest::Off,
+            depth: None,
             depth_bounds: false,
-            stencil: pso::StencilTest::On {
-                front: face,
-                back: face,
-            },
+            stencil: Some(pso::StencilTest {
+                faces: pso::Sided::new(face),
+                .. pso::StencilTest::default()
+            }),
         };
         let write_all = pso::DepthStencilDesc {
-            depth: pso::DepthTest::On {
+            depth: Some(pso::DepthTest {
                 fun: pso::Comparison::Always,
                 write: true,
-            },
+            }),
             depth_bounds: false,
-            stencil: pso::StencilTest::On {
-                front: face,
-                back: face,
-            },
+            stencil: Some(pso::StencilTest {
+                faces: pso::Sided::new(face),
+                .. pso::StencilTest::default()
+            }),
         };
 
         let map = FastStorageMap::default();
@@ -211,48 +205,48 @@ impl DepthStencilStates {
         })
     }
 
-    fn create_stencil(face: &pso::StencilFace) -> Option<metal::StencilDescriptor> {
+    fn create_stencil(
+        face: &pso::StencilFace, read_mask: pso::StencilValue, write_mask: pso::StencilValue
+    ) -> metal::StencilDescriptor {
         let desc = metal::StencilDescriptor::new();
         desc.set_stencil_compare_function(conv::map_compare_function(face.fun));
-        desc.set_read_mask(match face.mask_read {
-            pso::State::Static(value) => value,
-            pso::State::Dynamic => return None,
-        });
-        desc.set_write_mask(match face.mask_write {
-            pso::State::Static(value) => value,
-            pso::State::Dynamic => return None,
-        });
+        desc.set_read_mask(read_mask);
+        desc.set_write_mask(write_mask);
         desc.set_stencil_failure_operation(conv::map_stencil_op(face.op_fail));
         desc.set_depth_failure_operation(conv::map_stencil_op(face.op_depth_fail));
         desc.set_depth_stencil_pass_operation(conv::map_stencil_op(face.op_pass));
-        Some(desc)
+        desc
     }
 
     fn create_desc(desc: &pso::DepthStencilDesc) -> Option<metal::DepthStencilDescriptor> {
         let raw = metal::DepthStencilDescriptor::new();
 
-        match desc.depth {
-            pso::DepthTest::On { fun, write } => {
-                raw.set_depth_compare_function(conv::map_compare_function(fun));
-                raw.set_depth_write_enabled(write);
-            }
-            pso::DepthTest::Off => {}
+        if let Some(ref stencil) = desc.stencil {
+            let read_masks = match stencil.read_masks {
+                pso::State::Static(value) => value,
+                pso::State::Dynamic => return None,
+            };
+            let write_masks = match stencil.write_masks {
+                pso::State::Static(value) => value,
+                pso::State::Dynamic => return None,
+            };
+            let front_desc = Self::create_stencil(&stencil.faces.front, read_masks.front, write_masks.front);
+            raw.set_front_face_stencil(Some(&front_desc));
+            let back_desc = if
+                stencil.faces.front == stencil.faces.back &&
+                read_masks.front == read_masks.back &&
+                write_masks.front == write_masks.back
+            {
+                front_desc
+            } else {
+                Self::create_stencil(&stencil.faces.back, read_masks.back, write_masks.back)
+            };
+            raw.set_back_face_stencil(Some(&back_desc));
         }
-        match desc.stencil {
-            pso::StencilTest::On {
-                ref front,
-                ref back,
-            } => {
-                let front_desc = Self::create_stencil(front)?;
-                raw.set_front_face_stencil(Some(&front_desc));
-                let back_desc = if front == back {
-                    front_desc
-                } else {
-                    Self::create_stencil(back)?
-                };
-                raw.set_back_face_stencil(Some(&back_desc));
-            }
-            pso::StencilTest::Off => {}
+
+        if let Some(ref depth) = desc.depth {
+            raw.set_depth_compare_function(conv::map_compare_function(depth.fun));
+            raw.set_depth_write_enabled(depth.write);
         }
 
         Some(raw)
@@ -331,7 +325,7 @@ impl ImageClearPipes {
         let vertex_descriptor = metal::VertexDescriptor::new();
         let mtl_buffer_desc = vertex_descriptor.layouts().object_at(0).unwrap();
         mtl_buffer_desc.set_stride(mem::size_of::<ClearVertex>() as _);
-        for i in 0..1 {
+        for i in 0 .. 1 {
             let mtl_attribute_desc = vertex_descriptor
                 .attributes()
                 .object_at(i)
@@ -427,7 +421,7 @@ impl ImageBlitPipes {
         let vertex_descriptor = metal::VertexDescriptor::new();
         let mtl_buffer_desc = vertex_descriptor.layouts().object_at(0).unwrap();
         mtl_buffer_desc.set_stride(mem::size_of::<BlitVertex>() as _);
-        for i in 0..2 {
+        for i in 0 .. 2 {
             let mtl_attribute_desc = vertex_descriptor
                 .attributes()
                 .object_at(i)

@@ -13,7 +13,7 @@
 [package]
 edition = "2018"
 name = "rendy-memory"
-version = "0.2.0"
+version = "0.4.0"
 authors = ["omni-viral <scareaangel@gmail.com>"]
 description = "Rendy's memory manager"
 documentation = "https://docs.rs/rendy-memory"
@@ -31,10 +31,10 @@ version = "1.0"
 version = "0.1"
 
 [dependencies.gfx-hal]
-version = "0.2"
+version = "0.3"
 
 [dependencies.hibitset]
-version = "0.5"
+version = "0.6"
 default-features = false
 
 [dependencies.log]
@@ -55,7 +55,7 @@ version = "0.4"
 [dependencies.smallvec]
 version = "0.6"
 [dev-dependencies.rand]
-version = "0.6"
+version = "0.7"
 
 [features]
 serde-1 = ["serde"]

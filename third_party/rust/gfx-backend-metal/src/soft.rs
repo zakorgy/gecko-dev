@@ -1,25 +1,29 @@
 use crate::{
-    BufferPtr, ResourceIndex, SamplerPtr, TexturePtr,
     command::IndexBuffer,
     native::RasterizerState,
+    BufferPtr,
+    ResourceIndex,
+    ResourcePtr,
+    SamplerPtr,
+    TexturePtr,
 };
 
 use hal;
 use metal;
 
-use std::ops::Range;
+use std::{fmt::Debug, ops::Range};
 
 
 pub type CacheResourceIndex = u32;
 
-pub trait Resources {
-    type Data;
-    type BufferArray;
-    type TextureArray;
-    type SamplerArray;
-    type DepthStencil;
-    type RenderPipeline;
-    type ComputePipeline;
+pub trait Resources: Debug {
+    type Data: Debug;
+    type BufferArray: Debug;
+    type TextureArray: Debug;
+    type SamplerArray: Debug;
+    type DepthStencil: Debug;
+    type RenderPipeline: Debug;
+    type ComputePipeline: Debug;
 }
 
 #[derive(Clone, Debug, Default)]
@@ -61,7 +65,7 @@ pub enum RenderCommand<R: Resources> {
     SetBlendColor(hal::pso::ColorValue),
     SetDepthBias(hal::pso::DepthBias),
     SetDepthStencilState(R::DepthStencil),
-    SetStencilReferenceValues(hal::pso::StencilValue, hal::pso::StencilValue),
+    SetStencilReferenceValues(hal::pso::Sided<hal::pso::StencilValue>),
     SetRasterizerState(RasterizerState),
     SetVisibilityResult(metal::MTLVisibilityResultMode, hal::buffer::Offset),
     BindBuffer {
@@ -91,6 +95,10 @@ pub enum RenderCommand<R: Resources> {
         samplers: R::SamplerArray,
     },
     BindPipeline(R::RenderPipeline),
+    UseResource {
+        resource: ResourcePtr,
+        usage: metal::MTLResourceUsage,
+    },
     Draw {
         primitive_type: metal::MTLPrimitiveType,
         vertices: Range<hal::VertexCount>,
@@ -171,6 +179,10 @@ pub enum ComputeCommand<R: Resources> {
         samplers: R::SamplerArray,
     },
     BindPipeline(R::ComputePipeline),
+    UseResource {
+        resource: ResourcePtr,
+        usage: metal::MTLResourceUsage,
+    },
     Dispatch {
         wg_size: metal::MTLSize,
         wg_count: metal::MTLSize,
@@ -205,7 +217,7 @@ impl Own {
             SetBlendColor(color) => SetBlendColor(color),
             SetDepthBias(bias) => SetDepthBias(bias),
             SetDepthStencilState(state) => SetDepthStencilState(state.to_owned()),
-            SetStencilReferenceValues(front, back) => SetStencilReferenceValues(front, back),
+            SetStencilReferenceValues(sided) => SetStencilReferenceValues(sided),
             SetRasterizerState(ref state) => SetRasterizerState(state.clone()),
             SetVisibilityResult(mode, offset) => SetVisibilityResult(mode, offset),
             BindBuffer {
@@ -230,7 +242,7 @@ impl Own {
                     let start = self.buffers.len() as CacheResourceIndex;
                     self.buffers.extend_from_slice(buffers);
                     self.buffer_offsets.extend_from_slice(offsets);
-                    start..self.buffers.len() as CacheResourceIndex
+                    start .. self.buffers.len() as CacheResourceIndex
                 },
             },
             BindBufferData {
@@ -252,7 +264,7 @@ impl Own {
                 textures: {
                     let start = self.textures.len() as CacheResourceIndex;
                     self.textures.extend_from_slice(textures);
-                    start..self.textures.len() as CacheResourceIndex
+                    start .. self.textures.len() as CacheResourceIndex
                 },
             },
             BindSamplers {
@@ -265,10 +277,11 @@ impl Own {
                 samplers: {
                     let start = self.samplers.len() as CacheResourceIndex;
                     self.samplers.extend_from_slice(samplers);
-                    start..self.samplers.len() as CacheResourceIndex
+                    start .. self.samplers.len() as CacheResourceIndex
                 },
             },
             BindPipeline(pso) => BindPipeline(pso.to_owned()),
+            UseResource { resource, usage } => UseResource { resource, usage },
             Draw {
                 primitive_type,
                 vertices,
@@ -335,7 +348,7 @@ impl Own {
                     let start = self.buffers.len() as CacheResourceIndex;
                     self.buffers.extend_from_slice(buffers);
                     self.buffer_offsets.extend_from_slice(offsets);
-                    start..self.buffers.len() as CacheResourceIndex
+                    start .. self.buffers.len() as CacheResourceIndex
                 },
             },
             BindBufferData { index, words } => BindBufferData {
@@ -347,7 +360,7 @@ impl Own {
                 textures: {
                     let start = self.textures.len() as CacheResourceIndex;
                     self.textures.extend_from_slice(textures);
-                    start..self.textures.len() as CacheResourceIndex
+                    start .. self.textures.len() as CacheResourceIndex
                 },
             },
             BindSamplers { index, samplers } => BindSamplers {
@@ -355,10 +368,11 @@ impl Own {
                 samplers: {
                     let start = self.samplers.len() as CacheResourceIndex;
                     self.samplers.extend_from_slice(samplers);
-                    start..self.samplers.len() as CacheResourceIndex
+                    start .. self.samplers.len() as CacheResourceIndex
                 },
             },
             BindPipeline(pso) => BindPipeline(pso.to_owned()),
+            UseResource { resource, usage } => UseResource { resource, usage },
             Dispatch { wg_size, wg_count } => Dispatch { wg_size, wg_count },
             DispatchIndirect {
                 wg_size,
@@ -384,20 +398,27 @@ impl Own {
             | SetRasterizerState(..)
             | SetVisibilityResult(..)
             | BindBuffer { .. } => {}
-            BindBuffers { ref mut buffers, .. } => {
+            BindBuffers {
+                ref mut buffers, ..
+            } => {
                 buffers.start += self.buffers.len() as CacheResourceIndex;
                 buffers.end += self.buffers.len() as CacheResourceIndex;
             }
             BindBufferData { .. } => {}
-            BindTextures { ref mut textures, .. } => {
+            BindTextures {
+                ref mut textures, ..
+            } => {
                 textures.start += self.textures.len() as CacheResourceIndex;
                 textures.end += self.textures.len() as CacheResourceIndex;
             }
-            BindSamplers { ref mut samplers, .. } => {
+            BindSamplers {
+                ref mut samplers, ..
+            } => {
                 samplers.start += self.samplers.len() as CacheResourceIndex;
                 samplers.end += self.samplers.len() as CacheResourceIndex;
             }
             BindPipeline(..)
+            | UseResource { .. }
             | Draw { .. }
             | DrawIndexed { .. }
             | DrawIndirect { .. }
@@ -409,22 +430,26 @@ impl Own {
         use self::ComputeCommand::*;
         match *com {
             BindBuffer { .. } => {}
-            BindBuffers { ref mut buffers, .. } => {
+            BindBuffers {
+                ref mut buffers, ..
+            } => {
                 buffers.start += self.buffers.len() as CacheResourceIndex;
                 buffers.end += self.buffers.len() as CacheResourceIndex;
             }
             BindBufferData { .. } => {}
-            BindTextures { ref mut textures, .. } => {
+            BindTextures {
+                ref mut textures, ..
+            } => {
                 textures.start += self.textures.len() as CacheResourceIndex;
                 textures.end += self.textures.len() as CacheResourceIndex;
             }
-            BindSamplers { ref mut samplers, .. } => {
+            BindSamplers {
+                ref mut samplers, ..
+            } => {
                 samplers.start += self.samplers.len() as CacheResourceIndex;
                 samplers.end += self.samplers.len() as CacheResourceIndex;
             }
-            BindPipeline(..) |
-            Dispatch { .. } |
-            DispatchIndirect { .. } => {}
+            BindPipeline(..) | UseResource { .. } | Dispatch { .. } | DispatchIndirect { .. } => {}
         }
     }
 
@@ -466,25 +491,25 @@ impl<'b> AsSlice<hal::buffer::Offset, &'b Ref>
 impl AsSlice<Option<BufferPtr>, Own> for Range<CacheResourceIndex> {
     #[inline(always)]
     fn as_slice<'a>(&'a self, resources: &'a Own) -> &'a [Option<BufferPtr>] {
-        &resources.buffers[self.start as usize..self.end as usize]
+        &resources.buffers[self.start as usize .. self.end as usize]
     }
 }
 impl AsSlice<hal::buffer::Offset, Own> for Range<CacheResourceIndex> {
     #[inline(always)]
     fn as_slice<'a>(&'a self, resources: &'a Own) -> &'a [hal::buffer::Offset] {
-        &resources.buffer_offsets[self.start as usize..self.end as usize]
+        &resources.buffer_offsets[self.start as usize .. self.end as usize]
     }
 }
 impl AsSlice<Option<TexturePtr>, Own> for Range<CacheResourceIndex> {
     #[inline(always)]
     fn as_slice<'a>(&'a self, resources: &'a Own) -> &'a [Option<TexturePtr>] {
-        &resources.textures[self.start as usize..self.end as usize]
+        &resources.textures[self.start as usize .. self.end as usize]
     }
 }
 impl AsSlice<Option<SamplerPtr>, Own> for Range<CacheResourceIndex> {
     #[inline(always)]
     fn as_slice<'a>(&'a self, resources: &'a Own) -> &'a [Option<SamplerPtr>] {
-        &resources.samplers[self.start as usize..self.end as usize]
+        &resources.samplers[self.start as usize .. self.end as usize]
     }
 }
 

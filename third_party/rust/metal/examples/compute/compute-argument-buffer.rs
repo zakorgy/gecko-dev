@@ -18,7 +18,7 @@ static LIBRARY_SRC: &str = include_str!("compute-argument-buffer.metal");
 
 fn main() {
     let pool = unsafe { NSAutoreleasePool::new(cocoa::base::nil) };
-    let device = Device::system_default();
+    let device = Device::system_default().expect("no device found");
     let command_queue = device.new_command_queue();
 
     let data = [
@@ -96,6 +96,6 @@ fn main() {
 
     unsafe {
         assert_eq!(465, *ptr);
-        msg_send![pool, release];
+        let () = msg_send![pool, release];
     }
 }

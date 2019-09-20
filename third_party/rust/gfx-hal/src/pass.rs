@@ -1,9 +1,6 @@
 //! RenderPass handling.
 
-use crate::format::Format;
-use crate::image;
-use crate::pso::PipelineStage;
-use crate::Backend;
+use crate::{format::Format, image, pso::PipelineStage, Backend};
 use std::ops::Range;
 
 /// Specifies the operation which will be applied at the beginning of a subpass.
@@ -103,6 +100,8 @@ impl Attachment {
 pub type AttachmentId = usize;
 /// Reference to an attachment by index and expected image layout.
 pub type AttachmentRef = (AttachmentId, AttachmentLayout);
+/// An AttachmentId that can be used instead of providing an attachment.
+pub const ATTACHMENT_UNUSED: AttachmentId = !0;
 
 /// Which other subpasses a particular subpass depends on.
 #[derive(Copy, Clone, Debug, Hash, PartialEq)]

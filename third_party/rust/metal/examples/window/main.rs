@@ -59,7 +59,7 @@ fn main() {
         .unwrap();
 
     let window: cocoa_id = unsafe { mem::transmute(glutin_window.get_nswindow()) };
-    let device = Device::system_default();
+    let device = Device::system_default().expect("no device found");
 
     let layer = CoreAnimationLayer::new();
     layer.set_device(&device);
@@ -177,7 +177,7 @@ fn main() {
             r += 0.01f32;
             //let _: () = msg_send![command_queue.0, _submitAvailableCommandBuffers];
             unsafe {
-                msg_send![pool, release];
+                let () = msg_send![pool, release];
                 pool = NSAutoreleasePool::new(cocoa::base::nil);
             }
         }

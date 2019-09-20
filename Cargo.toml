@@ -60,4 +60,4 @@ libudev-sys = { path = "dom/webauthn/libudev-sys" }
 serde_derive = { git = "https://github.com/servo/serde", branch = "deserialize_from_enums9" }
 winapi = { git = "https://github.com/froydnj/winapi-rs", branch = "aarch64" }
 spirv_cross = { git = "https://github.com/zakorgy/spirv_cross", branch = "gecko" }
-metal = { git = "https://github.com/zakorgy/metal-rs", branch = "master" }
+metal = { git = "https://github.com/zakorgy/metal-rs", branch = "0.16" }

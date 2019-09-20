@@ -207,7 +207,7 @@ impl LibraryRef {
     pub fn set_label(&self, label: &str) {
         unsafe {
             let nslabel = crate::nsstring_from_str(label);
-            msg_send![self, setLabel: nslabel];
+            let () = msg_send![self, setLabel: nslabel];
         }
     }
 
@@ -236,7 +236,18 @@ impl LibraryRef {
         }
     }
 
-    pub fn function_names(&self) -> *const objc::runtime::Object {
-        unsafe { msg_send![self, functionNames] }
+    pub fn function_names(&self) -> Vec<String> {
+        unsafe {
+            let names: *mut Object = msg_send![self, functionNames];
+            let count: NSUInteger = msg_send![names, count];
+            let ret = (0..count)
+                .map(|i| {
+                    let name = msg_send![names, objectAtIndex: i];
+                    nsstring_as_str(name).to_string()
+                })
+                .collect();
+            let () = msg_send![names, release];
+            ret
+        }
     }
 }
