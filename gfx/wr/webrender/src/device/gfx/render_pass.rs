@@ -10,8 +10,6 @@ pub(super) struct RenderPass<B: hal::Backend> {
     pub(super) r8_depth: B::RenderPass,
     pub(super) bgra8: B::RenderPass,
     pub(super) bgra8_depth: B::RenderPass,
-    pub(super) rgbaf32: B::RenderPass,
-    pub(super) rgbaf32_depth: B::RenderPass,
 }
 
 impl<B: hal::Backend> RenderPass<B> {
@@ -25,8 +23,6 @@ impl<B: hal::Backend> RenderPass<B> {
             ImageFormat::R8 => &self.r8,
             ImageFormat::BGRA8 if depth_enabled => &self.bgra8_depth,
             ImageFormat::BGRA8 => &self.bgra8,
-            ImageFormat::RGBAF32 if depth_enabled => &self.rgbaf32_depth,
-            ImageFormat::RGBAF32 => &self.rgbaf32,
             f => unimplemented!("No render pass for image format {:?}", f),
         }
     }
@@ -37,8 +33,6 @@ impl<B: hal::Backend> RenderPass<B> {
             device.destroy_render_pass(self.r8_depth);
             device.destroy_render_pass(self.bgra8);
             device.destroy_render_pass(self.bgra8_depth);
-            device.destroy_render_pass(self.rgbaf32);
-            device.destroy_render_pass(self.rgbaf32_depth);
         }
     }
 }
