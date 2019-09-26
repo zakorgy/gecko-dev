@@ -133,8 +133,7 @@ impl<B: hal::Backend> PersistentlyMappedBuffer<B> {
             unsafe { device.create_buffer(buffer_len, hal::buffer::Usage::STORAGE) }.unwrap();
 
         let buffer_req = unsafe { device.get_buffer_requirements(&storage_buffer) };
-        //let alignment = ((buffer_req.alignment - 1) | non_coherent_atom_size_mask) +1;
-        let alignment = buffer_req.alignment;
+        let alignment = ((buffer_req.alignment - 1) | non_coherent_atom_size_mask) +1;
         let memory_block = heaps
             .allocate(
                 device,

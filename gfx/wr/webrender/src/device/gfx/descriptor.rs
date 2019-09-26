@@ -5,7 +5,6 @@
 use arrayvec::ArrayVec;
 use hal::Device;
 use hal::pso::{DescriptorSetLayoutBinding, DescriptorType as DT, ShaderStageFlags as SSF};
-use hal::command::RawCommandBuffer;
 use internal_types::FastHashMap;
 use rendy_descriptor::{DescriptorAllocator, DescriptorRanges, DescriptorSet};
 use rendy_memory::Heaps;
@@ -338,7 +337,6 @@ impl<K, B, F> DescriptorSetHandler<K, B, F>
         &mut self,
         bound_textures: &[u32; RENDERER_TEXTURE_COUNT],
         bound_samplers: &[TextureFilter; RENDERER_TEXTURE_COUNT],
-        cmd_buffer: &mut B::CommandBuffer,
         bindings: K,
         images: &FastHashMap<TextureId, Image<B>>,
         storage_buffer: Option<&B::Buffer>,
@@ -389,24 +387,6 @@ impl<K, B, F> DescriptorSetHandler<K, B, F>
         }
         for index in range {
             let image = &images[&bound_textures[index]].core;
-            // We need to transit the image, even though it's bound in the descriptor set
-            let mut src_stage = Some(hal::pso::PipelineStage::empty());
-            if let Some(barrier) = image.transit(
-                hal::image::Access::SHADER_READ,
-                hal::image::Layout::ShaderReadOnlyOptimal,
-                image.subresource_range.clone(),
-                src_stage.as_mut(),
-            ) {
-                unsafe {
-                    // TODO(zakorgy): combine these barriers into a single one
-                    cmd_buffer.pipeline_barrier(
-                        src_stage.unwrap()
-                            .. hal::pso::PipelineStage::FRAGMENT_SHADER | hal::pso::PipelineStage::VERTEX_SHADER,
-                        hal::memory::Dependencies::empty(),
-                        &[barrier],
-                    );
-                }
-            }
             if let Some(ref set) = new_set {
                 let sampler = if index < PER_DRAW_TEXTURE_COUNT {
                     match bound_samplers[index] {

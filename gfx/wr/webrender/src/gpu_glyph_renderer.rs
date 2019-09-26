@@ -13,6 +13,8 @@ use device::{desc, ShaderKind};
 use device::{Device, PrimitiveType, ShaderPrecacheFlags, Texture};
 use device::{DrawTarget, TextureFilter, TextureSampler, VAO, VertexArrayKind};
 use euclid::{Point2D, Size2D, Transform3D, TypedVector2D, Vector2D};
+#[cfg(not(feature = "gleam"))]
+use device::DrawTargetUsage;
 use hal;
 use internal_types::RenderTargetInfo;
 use pathfinder_gfx_utils::ShelfBinPacker;
@@ -210,11 +212,15 @@ impl Renderer {
                                                     projection,
                                                     &mut self.renderer_errors);
 
-        self.device.bind_draw_target(DrawTarget::Texture {
-            texture: &current_page.texture,
-            layer: 0,
-            with_depth: false,
-        });
+        self.device.bind_draw_target(
+            DrawTarget::Texture {
+                texture: &current_page.texture,
+                layer: 0,
+                with_depth: false,
+            },
+            #[cfg(not(feature = "gleam"))]
+            DrawTargetUsage::Draw,
+        );
         self.device.clear_target(Some([0.0, 0.0, 0.0, 0.0]), None, None);
 
         self.device.set_blend(true);

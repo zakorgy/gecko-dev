@@ -27,13 +27,12 @@ impl<B: hal::Backend> CommandPool<B> {
         }
     }
 
-    pub(super) fn command_buffers(&self) -> &[B::CommandBuffer] {
-        &self.command_buffers
+    pub fn remove_cmd_buffer(&mut self) -> B::CommandBuffer {
+        self.command_buffers.remove(0)
     }
 
-    pub fn command_buffer_mut(&mut self) -> &mut B::CommandBuffer {
-        // 1 command_pool/frame, 1 command_buffer/command_pool
-        &mut self.command_buffers[0]
+    pub fn return_cmd_buffer(&mut self, cmd_buffer: B::CommandBuffer) {
+        self.command_buffers.insert(0, cmd_buffer);
     }
 
     pub(super) unsafe fn reset(&mut self) {
