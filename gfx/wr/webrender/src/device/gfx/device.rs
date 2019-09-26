@@ -1057,6 +1057,12 @@ impl<B: hal::Backend> Device<B> {
             },
             depth: 0.0 .. 1.0,
         };
+        let frame_count = if present_mode == hal::window::PresentMode::Mailbox {
+            *caps.image_count.end().min(&3) as usize
+        } else {
+            *caps.image_count.end().min(&2) as usize
+        };
+        println!("## Frame count {:?}", frame_count);
         (
             swap_chain,
             image_format,
@@ -1066,11 +1072,7 @@ impl<B: hal::Backend> Device<B> {
             frame_depths,
             frame_images,
             viewport,
-            if present_mode == hal::window::PresentMode::Mailbox {
-                *caps.image_count.end().min(&3) as usize
-            } else {
-                *caps.image_count.end().min(&2) as usize
-            },
+            frame_count,
         )
     }
 
@@ -3519,12 +3521,12 @@ impl<B: hal::Backend> Device<B> {
                         }
                         Err(acq_err) => {
                             match acq_err {
-                                AcquireError::OutOfDate => warn!("AcquireError : OutOfDate"),
-                                AcquireError::SurfaceLost(surf) => warn!("AcquireError : SurfaceLost => {:?}", surf),
-                                AcquireError::NotReady => warn!("AcquireError : NotReady"),
-                                AcquireError::DeviceLost(dev) => warn!("AcquireError : DeviceLost => {:?}", dev),
-                                AcquireError::OutOfMemory(mem) => warn!("AcquireError : OutOfMemory => {:?}", mem),
-                                AcquireError::Timeout => warn!("AcquireError : Timeout"),
+                                AcquireError::OutOfDate => println!("AcquireError : OutOfDate"),
+                                AcquireError::SurfaceLost(surf) => println!("AcquireError : SurfaceLost => {:?}", surf),
+                                AcquireError::NotReady => println!("AcquireError : NotReady"),
+                                AcquireError::DeviceLost(dev) => println!("AcquireError : DeviceLost => {:?}", dev),
+                                AcquireError::OutOfMemory(mem) => println!("AcquireError : OutOfMemory => {:?}", mem),
+                                AcquireError::Timeout => println!("AcquireError : Timeout"),
                             }
                             self.wait_for_resize = true;
                         },
@@ -3539,6 +3541,7 @@ impl<B: hal::Backend> Device<B> {
 
     pub fn submit_to_gpu(&mut self) {
         if self.wait_for_resize {
+            println!("## Waiting for resize");
             self.device.wait_idle().unwrap();
             self.reset_next_frame_resources();
             return;
@@ -3585,7 +3588,7 @@ impl<B: hal::Backend> Device<B> {
                             Ok(suboptimal) => {
                                 match suboptimal {
                                     Some(_) => {
-                                        warn!("Suboptimal: The swapchain no longer matches the surface");
+                                        println!("Suboptimal: The swapchain no longer matches the surface");
                                         self.wait_for_resize = true;
                                     },
                                     None => {}
@@ -3593,10 +3596,10 @@ impl<B: hal::Backend> Device<B> {
                             }
                             Err(presenterr) => {
                                 match presenterr {
-                                    PresentError::OutOfDate => warn!("PresentError : OutOfDate"),
-                                    PresentError::SurfaceLost(surf) => warn!("PresentError : SurfaceLost => {:?}", surf),
-                                    PresentError::DeviceLost(dev) => warn!("PresentError : DeviceLost => {:?}", dev),
-                                    PresentError::OutOfMemory(mem) => warn!("PresentError : OutOfMemory => {:?}", mem),
+                                    PresentError::OutOfDate => println!("PresentError : OutOfDate"),
+                                    PresentError::SurfaceLost(surf) => println!("PresentError : SurfaceLost => {:?}", surf),
+                                    PresentError::DeviceLost(dev) => println!("PresentError : DeviceLost => {:?}", dev),
+                                    PresentError::OutOfMemory(mem) => println!("PresentError : OutOfMemory => {:?}", mem),
                                 }
                                 self.wait_for_resize = true;
                             }
