@@ -3,14 +3,14 @@ use ash::version::DeviceV1_0;
 use ash::vk;
 use smallvec::SmallVec;
 
-use hal;
-use hal::error::HostExecutionError;
-use hal::memory::Requirements;
-use hal::pool::CommandPoolCreateFlags;
-use hal::pso::VertexInputRate;
-use hal::range::RangeArg;
-use hal::{buffer, device as d, format, image, mapping, pass, pso, query, queue};
-use hal::{Features, MemoryTypeId, SwapchainConfig};
+use crate::hal;
+use crate::hal::error::HostExecutionError;
+use crate::hal::memory::Requirements;
+use crate::hal::pool::CommandPoolCreateFlags;
+use crate::hal::pso::VertexInputRate;
+use crate::hal::range::RangeArg;
+use crate::hal::{buffer, device as d, format, image, mapping, pass, pso, query, queue};
+use crate::hal::{Features, MemoryTypeId, SwapchainConfig};
 
 use std::borrow::Borrow;
 use std::ffi::CString;
@@ -18,9 +18,9 @@ use std::ops::Range;
 use std::sync::Arc;
 use std::{mem, ptr};
 
-use pool::RawCommandPool;
-use {conv, native as n, result, window as w};
-use {Backend as B, Device};
+use crate::pool::RawCommandPool;
+use crate::{conv, native as n, result, window as w};
+use crate::{Backend as B, Device};
 
 impl d::Device<B> for Device {
     unsafe fn allocate_memory(
@@ -168,23 +168,27 @@ impl d::Device<B> for Device {
 
         let subpasses = attachment_refs
             .iter()
-            .map(|(colors, depth_stencil, inputs, preserves, resolves)| {
-                vk::SubpassDescription {
+            .map(
+                |(colors, depth_stencil, inputs, preserves, resolves)| vk::SubpassDescription {
                     flags: vk::SubpassDescriptionFlags::empty(),
                     pipeline_bind_point: vk::PipelineBindPoint::GRAPHICS,
                     input_attachment_count: inputs.len() as u32,
                     p_input_attachments: inputs.as_ptr(),
                     color_attachment_count: colors.len() as u32,
                     p_color_attachments: colors.as_ptr(),
-                    p_resolve_attachments: if resolves.is_empty() { ptr::null() } else { resolves.as_ptr() },
+                    p_resolve_attachments: if resolves.is_empty() {
+                        ptr::null()
+                    } else {
+                        resolves.as_ptr()
+                    },
                     p_depth_stencil_attachment: match depth_stencil {
                         Some(ref aref) => aref as *const _,
                         None => ptr::null(),
                     },
                     preserve_attachment_count: preserves.len() as u32,
                     p_preserve_attachments: preserves.as_ptr(),
-                }
-            })
+                },
+            )
             .collect::<Box<[_]>>();
 
         let dependencies = dependencies
@@ -433,6 +437,8 @@ impl d::Device<B> for Device {
             .iter()
             .map(|desc| {
                 let desc = desc.borrow();
+                let dynamic_state_base = dynamic_states.len();
+
                 let mut stages = Vec::new();
                 // Vertex stage
                 if true {
@@ -465,8 +471,6 @@ impl d::Device<B> for Device {
                     ));
                 }
 
-                let (polygon_mode, line_width) =
-                    conv::map_polygon_mode(desc.rasterizer.polygon_mode);
                 info_stages.push(stages);
 
                 {
@@ -517,6 +521,7 @@ impl d::Device<B> for Device {
                     topology: conv::map_topology(desc.input_assembler.primitive),
                     primitive_restart_enable: vk::FALSE,
                 });
+
                 let depth_bias = match desc.rasterizer.depth_bias {
                     Some(pso::State::Static(db)) => db,
                     Some(pso::State::Dynamic) => {
@@ -524,6 +529,18 @@ impl d::Device<B> for Device {
                         pso::DepthBias::default()
                     }
                     None => pso::DepthBias::default(),
+                };
+
+                let (polygon_mode, line_width) = match desc.rasterizer.polygon_mode {
+                    pso::PolygonMode::Point => (vk::PolygonMode::POINT, 1.0),
+                    pso::PolygonMode::Line(width) => (vk::PolygonMode::LINE, match width {
+                        pso::State::Static(w) => w,
+                        pso::State::Dynamic => {
+                            dynamic_states.push(vk::DynamicState::LINE_WIDTH);
+                            1.0
+                        }
+                    }),
+                    pso::PolygonMode::Fill => (vk::PolygonMode::FILL, 1.0),
                 };
 
                 info_rasterization_states.push(vk::PipelineRasterizationStateCreateInfo {
@@ -540,9 +557,14 @@ impl d::Device<B> for Device {
                     } else {
                         vk::FALSE
                     },
-                    rasterizer_discard_enable: match (&desc.shaders.fragment, &desc.depth_stencil.depth, &desc.depth_stencil.stencil) {
-                        (None, pso::DepthTest::Off, pso::StencilTest::Off) => vk::TRUE,
-                                                                         _ => vk::FALSE,
+                    rasterizer_discard_enable: if
+                        desc.shaders.fragment.is_none() &&
+                        desc.depth_stencil.depth.is_none() &&
+                        desc.depth_stencil.stencil.is_none()
+                    {
+                        vk::TRUE
+                    } else {
+                        vk::FALSE
                     },
                     polygon_mode,
                     cull_mode: conv::map_cull_face(desc.rasterizer.cull_face),
@@ -558,7 +580,7 @@ impl d::Device<B> for Device {
                     line_width,
                 });
 
-                use hal::Primitive::PatchList;
+                use crate::hal::Primitive::PatchList;
                 if let PatchList(patch_control_points) = desc.input_assembler.primitive {
                     info_tessellation_states.push(vk::PipelineTessellationStateCreateInfo {
                         s_type: vk::StructureType::PIPELINE_TESSELLATION_STATE_CREATE_INFO,
@@ -567,8 +589,6 @@ impl d::Device<B> for Device {
                         patch_control_points: patch_control_points as u32,
                     });
                 }
-
-                let dynamic_state_base = dynamic_states.len();
 
                 info_viewport_states.push(vk::PipelineViewportStateCreateInfo {
                     s_type: vk::StructureType::PIPELINE_VIEWPORT_STATE_CREATE_INFO,
@@ -638,21 +658,45 @@ impl d::Device<B> for Device {
                 let depth_stencil = desc.depth_stencil;
                 let (depth_test_enable, depth_write_enable, depth_compare_op) =
                     match depth_stencil.depth {
-                        pso::DepthTest::On { fun, write } => {
-                            (vk::TRUE, write as _, conv::map_comparison(fun))
+                        Some(ref depth) => {
+                            (vk::TRUE, depth.write as _, conv::map_comparison(depth.fun))
                         }
-                        pso::DepthTest::Off => (vk::FALSE, vk::FALSE, vk::CompareOp::NEVER),
+                        None => (vk::FALSE, vk::FALSE, vk::CompareOp::NEVER),
                     };
                 let (stencil_test_enable, front, back) = match depth_stencil.stencil {
-                    pso::StencilTest::On {
-                        ref front,
-                        ref back,
-                    } => (
-                        vk::TRUE,
-                        conv::map_stencil_side(front),
-                        conv::map_stencil_side(back),
-                    ),
-                    pso::StencilTest::Off => mem::zeroed(),
+                    Some(ref stencil) => {
+                        let mut front = conv::map_stencil_side(&stencil.faces.front);
+                        let mut back = conv::map_stencil_side(&stencil.faces.back);
+                        match stencil.read_masks {
+                            pso::State::Static(ref sides) => {
+                                front.compare_mask = sides.front;
+                                back.compare_mask = sides.back;
+                            }
+                            pso::State::Dynamic => {
+                                dynamic_states.push(vk::DynamicState::STENCIL_COMPARE_MASK);
+                            }
+                        }
+                        match stencil.write_masks {
+                            pso::State::Static(ref sides) => {
+                                front.write_mask = sides.front;
+                                back.write_mask = sides.back;
+                            }
+                            pso::State::Dynamic => {
+                                dynamic_states.push(vk::DynamicState::STENCIL_WRITE_MASK);
+                            }
+                        }
+                        match stencil.reference_values {
+                            pso::State::Static(ref sides) => {
+                                front.reference = sides.front;
+                                back.reference = sides.back;
+                            }
+                            pso::State::Dynamic => {
+                                dynamic_states.push(vk::DynamicState::STENCIL_REFERENCE);
+                            }
+                        }
+                        (vk::TRUE, front, back)
+                    }
+                    None => mem::zeroed(),
                 };
                 let (min_depth_bounds, max_depth_bounds) = match desc.baked_states.depth_bounds {
                     Some(ref range) => (range.start, range.end),
@@ -682,20 +726,20 @@ impl d::Device<B> for Device {
                     .blender
                     .targets
                     .iter()
-                    .map(|&pso::ColorBlendDesc(mask, ref blend)| {
-                        let color_write_mask = vk::ColorComponentFlags::from_raw(mask.bits() as _);
-                        match *blend {
-                            pso::BlendState::On { color, alpha } => {
+                    .map(|color_desc| {
+                        let color_write_mask = vk::ColorComponentFlags::from_raw(color_desc.mask.bits() as _);
+                        match color_desc.blend {
+                            Some(ref bs) => {
                                 let (
                                     color_blend_op,
                                     src_color_blend_factor,
                                     dst_color_blend_factor,
-                                ) = conv::map_blend_op(color);
+                                ) = conv::map_blend_op(bs.color);
                                 let (
                                     alpha_blend_op,
                                     src_alpha_blend_factor,
                                     dst_alpha_blend_factor,
-                                ) = conv::map_blend_op(alpha);
+                                ) = conv::map_blend_op(bs.alpha);
                                 vk::PipelineColorBlendAttachmentState {
                                     color_write_mask,
                                     blend_enable: vk::TRUE,
@@ -707,7 +751,7 @@ impl d::Device<B> for Device {
                                     alpha_blend_op,
                                 }
                             }
-                            pso::BlendState::Off => vk::PipelineColorBlendAttachmentState {
+                            None => vk::PipelineColorBlendAttachmentState {
                                 color_write_mask,
                                 ..mem::zeroed()
                             },
@@ -1018,17 +1062,14 @@ impl d::Device<B> for Device {
 
     unsafe fn create_shader_module(
         &self,
-        spirv_data: &[u8],
+        spirv_data: &[u32],
     ) -> Result<n::ShaderModule, d::ShaderError> {
-        // spec requires "codeSize must be a multiple of 4"
-        assert_eq!(spirv_data.len() & 3, 0);
-
         let info = vk::ShaderModuleCreateInfo {
             s_type: vk::StructureType::SHADER_MODULE_CREATE_INFO,
             p_next: ptr::null(),
             flags: vk::ShaderModuleCreateFlags::empty(),
-            code_size: spirv_data.len(),
-            p_code: spirv_data as *const _ as *const u32,
+            code_size: spirv_data.len() * 4,
+            p_code: spirv_data.as_ptr(),
         };
 
         let module = self.raw.0.create_shader_module(&info, None);
@@ -1051,7 +1092,7 @@ impl d::Device<B> for Device {
         &self,
         sampler_info: image::SamplerInfo,
     ) -> Result<n::Sampler, d::AllocationError> {
-        use hal::pso::Comparison;
+        use crate::hal::pso::Comparison;
 
         let (anisotropy_enable, max_anisotropy) = match sampler_info.anisotropic {
             image::Anisotropic::Off => (vk::FALSE, 1.0),
@@ -1095,7 +1136,7 @@ impl d::Device<B> for Device {
                     vk::BorderColor::FLOAT_TRANSPARENT_BLACK
                 }
             },
-            unnormalized_coordinates: vk::FALSE,
+            unnormalized_coordinates: if sampler_info.normalized { vk::FALSE } else { vk::TRUE },
         };
 
         let result = self.raw.0.create_sampler(&info, None);
@@ -1283,7 +1324,7 @@ impl d::Device<B> for Device {
         let layout = self.raw.0.get_image_subresource_layout(image.raw, sub);
 
         image::SubresourceFootprint {
-            slice: layout.offset..layout.offset + layout.size,
+            slice: layout.offset .. layout.offset + layout.size,
             row_pitch: layout.row_pitch,
             array_pitch: layout.array_pitch,
             depth_pitch: layout.depth_pitch,
@@ -1435,7 +1476,7 @@ impl d::Device<B> for Device {
                 descriptor_count: b.count as _,
                 stage_flags: conv::map_stage_flags(b.stage_flags),
                 p_immutable_samplers: if b.immutable_samplers {
-                    let slice = &immutable_samplers[sampler_offset..];
+                    let slice = &immutable_samplers[sampler_offset ..];
                     sampler_offset += b.count;
                     slice.as_ptr()
                 } else {
@@ -1552,7 +1593,7 @@ impl d::Device<B> for Device {
 
         // Patch the pointers now that we have all the storage allocated
         for raw in &mut raw_writes {
-            use vk::DescriptorType as Dt;
+            use crate::vk::DescriptorType as Dt;
             match raw.descriptor_type {
                 Dt::SAMPLER
                 | Dt::SAMPLED_IMAGE
@@ -1562,13 +1603,13 @@ impl d::Device<B> for Device {
                     raw.p_buffer_info = ptr::null();
                     raw.p_texel_buffer_view = ptr::null();
                     let base = raw.p_image_info as usize - raw.descriptor_count as usize;
-                    raw.p_image_info = image_infos[base..].as_ptr();
+                    raw.p_image_info = image_infos[base ..].as_ptr();
                 }
                 Dt::UNIFORM_TEXEL_BUFFER | Dt::STORAGE_TEXEL_BUFFER => {
                     raw.p_buffer_info = ptr::null();
                     raw.p_image_info = ptr::null();
                     let base = raw.p_texel_buffer_view as usize - raw.descriptor_count as usize;
-                    raw.p_texel_buffer_view = texel_buffer_views[base..].as_ptr();
+                    raw.p_texel_buffer_view = texel_buffer_views[base ..].as_ptr();
                 }
                 Dt::UNIFORM_BUFFER
                 | Dt::STORAGE_BUFFER
@@ -1577,7 +1618,7 @@ impl d::Device<B> for Device {
                     raw.p_image_info = ptr::null();
                     raw.p_texel_buffer_view = ptr::null();
                     let base = raw.p_buffer_info as usize - raw.descriptor_count as usize;
-                    raw.p_buffer_info = buffer_infos[base..].as_ptr();
+                    raw.p_buffer_info = buffer_infos[base ..].as_ptr();
                 }
                 _ => panic!("unknown descriptor type"),
             }
@@ -1796,6 +1837,69 @@ impl d::Device<B> for Device {
         }
     }
 
+    fn create_event(&self) -> Result<n::Event, d::OutOfMemory> {
+        let info = vk::EventCreateInfo {
+            s_type: vk::StructureType::EVENT_CREATE_INFO,
+            p_next: ptr::null(),
+            flags: vk::EventCreateFlags::empty(),
+        };
+
+        let result = unsafe { self.raw.0.create_event(&info, None) };
+        match result {
+            Ok(e) => Ok(n::Event(e)),
+            Err(vk::Result::ERROR_OUT_OF_HOST_MEMORY) => {
+                Err(d::OutOfMemory::OutOfHostMemory.into())
+            }
+            Err(vk::Result::ERROR_OUT_OF_DEVICE_MEMORY) => {
+                Err(d::OutOfMemory::OutOfDeviceMemory.into())
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    unsafe fn get_event_status(&self, event: &n::Event) -> Result<bool, d::OomOrDeviceLost> {
+        let result = self.raw.0.get_event_status(event.0);
+        match result {
+            Ok(b) => Ok(b),
+            Err(vk::Result::ERROR_OUT_OF_HOST_MEMORY) => {
+                Err(d::OutOfMemory::OutOfHostMemory.into())
+            }
+            Err(vk::Result::ERROR_OUT_OF_DEVICE_MEMORY) => {
+                Err(d::OutOfMemory::OutOfDeviceMemory.into())
+            }
+            Err(vk::Result::ERROR_DEVICE_LOST) => Err(d::DeviceLost.into()),
+            _ => unreachable!(),
+        }
+    }
+
+    unsafe fn set_event(&self, event: &n::Event) -> Result<(), d::OutOfMemory> {
+        let result = self.raw.0.set_event(event.0);
+        match result {
+            Ok(()) => Ok(()),
+            Err(vk::Result::ERROR_OUT_OF_HOST_MEMORY) => {
+                Err(d::OutOfMemory::OutOfHostMemory.into())
+            }
+            Err(vk::Result::ERROR_OUT_OF_DEVICE_MEMORY) => {
+                Err(d::OutOfMemory::OutOfDeviceMemory.into())
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    unsafe fn reset_event(&self, event: &n::Event) -> Result<(), d::OutOfMemory> {
+        let result = self.raw.0.reset_event(event.0);
+        match result {
+            Ok(()) => Ok(()),
+            Err(vk::Result::ERROR_OUT_OF_HOST_MEMORY) => {
+                Err(d::OutOfMemory::OutOfHostMemory.into())
+            }
+            Err(vk::Result::ERROR_OUT_OF_DEVICE_MEMORY) => {
+                Err(d::OutOfMemory::OutOfDeviceMemory.into())
+            }
+            _ => unreachable!(),
+        }
+    }
+
     unsafe fn free_memory(&self, memory: n::Memory) {
         self.raw.0.free_memory(memory.raw, None);
     }
@@ -1885,9 +1989,6 @@ impl d::Device<B> for Device {
             None => vk::SwapchainKHR::null(),
         };
 
-        surface.width = config.extent.width;
-        surface.height = config.extent.height;
-
         let info = vk::SwapchainCreateInfoKHR {
             s_type: vk::StructureType::SWAPCHAIN_CREATE_INFO_KHR,
             p_next: ptr::null(),
@@ -1897,8 +1998,8 @@ impl d::Device<B> for Device {
             image_format: conv::map_format(config.format),
             image_color_space: vk::ColorSpaceKHR::SRGB_NONLINEAR,
             image_extent: vk::Extent2D {
-                width: surface.width,
-                height: surface.height,
+                width: config.extent.width,
+                height: config.extent.height,
             },
             image_array_layers: 1,
             image_usage: conv::map_image_usage(config.image_usage),
@@ -1957,8 +2058,8 @@ impl d::Device<B> for Device {
                 ty: vk::ImageType::TYPE_2D,
                 flags: vk::ImageCreateFlags::empty(),
                 extent: vk::Extent3D {
-                    width: surface.width,
-                    height: surface.height,
+                    width: config.extent.width,
+                    height: config.extent.height,
                     depth: 1,
                 },
             })
@@ -2033,6 +2134,10 @@ impl d::Device<B> for Device {
 
     unsafe fn destroy_semaphore(&self, semaphore: n::Semaphore) {
         self.raw.0.destroy_semaphore(semaphore.0, None);
+    }
+
+    unsafe fn destroy_event(&self, event: n::Event) {
+        self.raw.0.destroy_event(event.0, None);
     }
 
     fn wait_idle(&self) -> Result<(), HostExecutionError> {

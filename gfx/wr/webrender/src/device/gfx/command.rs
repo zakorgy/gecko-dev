@@ -37,7 +37,7 @@ impl<B: hal::Backend> CommandPool<B> {
     }
 
     pub(super) unsafe fn reset(&mut self) {
-        self.command_pool.reset();
+        self.command_pool.reset(false);
     }
 
     pub(super) unsafe fn destroy(self, device: &B::Device) {

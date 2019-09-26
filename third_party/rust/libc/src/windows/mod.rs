@@ -1,5 +1,14 @@
 //! Windows CRT definitions
 
+pub type int8_t = i8;
+pub type int16_t = i16;
+pub type int32_t = i32;
+pub type int64_t = i64;
+pub type uint8_t = u8;
+pub type uint16_t = u16;
+pub type uint32_t = u32;
+pub type uint64_t = u64;
+
 pub type c_schar = i8;
 pub type c_uchar = u8;
 pub type c_short = i16;
@@ -38,12 +47,7 @@ cfg_if! {
 pub type off_t = i32;
 pub type dev_t = u32;
 pub type ino_t = u16;
-#[cfg_attr(feature = "extra_traits", derive(Debug))]
 pub enum timezone {}
-impl ::Copy for timezone {}
-impl ::Clone for timezone {
-    fn clone(&self) -> timezone { *self }
-}
 pub type time64_t = i64;
 
 pub type SOCKET = ::uintptr_t;
@@ -197,18 +201,8 @@ pub const SIG_ERR: ::c_int = -1;
 #[link(name = "libcmt", cfg(target_feature = "crt-static"))]
 extern {}
 
-#[cfg_attr(feature = "extra_traits", derive(Debug))]
 pub enum FILE {}
-impl ::Copy for FILE {}
-impl ::Clone for FILE {
-    fn clone(&self) -> FILE { *self }
-}
-#[cfg_attr(feature = "extra_traits", derive(Debug))]
 pub enum fpos_t {} // TODO: fill this out with a struct
-impl ::Copy for fpos_t {}
-impl ::Clone for fpos_t {
-    fn clone(&self) -> fpos_t { *self }
-}
 
 extern {
     pub fn isalnum(c: c_int) -> c_int;
@@ -425,15 +419,13 @@ extern "system" {
 }
 
 cfg_if! {
-    if #[cfg(libc_core_cvoid)] {
-        pub use ::ffi::c_void;
+    if #[cfg(core_cvoid)] {
+        pub use core::ffi::c_void;
     } else {
         // Use repr(u8) as LLVM expects `void*` to be the same as `i8*` to help
         // enable more optimization opportunities around it recognizing things
         // like malloc/free.
         #[repr(u8)]
-        #[allow(missing_copy_implementations)]
-        #[allow(missing_debug_implementations)]
         pub enum c_void {
             // Two dummy variants so the #[repr] attribute can be used.
             #[doc(hidden)]

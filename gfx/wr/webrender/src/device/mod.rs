@@ -342,9 +342,15 @@ pub struct Texture {
     last_frame_used: GpuFrameId,
     #[cfg(not(feature = "gleam"))]
     bound_in_frame: Cell<GpuFrameId>,
+    #[cfg(not(feature = "gleam"))]
+    is_buffer: bool
 }
 
 impl Texture {
+    pub fn id(&self) -> IdType {
+        self.id
+    }
+
     pub fn get_dimensions(&self) -> DeviceIntSize {
         self.size
     }

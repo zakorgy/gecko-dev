@@ -90,11 +90,7 @@ impl AtomicElisionExt for AtomicUsize {
     }
 }
 
-#[cfg(all(
-    feature = "nightly",
-    target_arch = "x86_64",
-    target_pointer_width = "32"
-))]
+#[cfg(all(feature = "nightly", target_arch = "x86_64", target_pointer_width = "32"))]
 impl AtomicElisionExt for AtomicUsize {
     type IntType = usize;
 
@@ -133,11 +129,7 @@ impl AtomicElisionExt for AtomicUsize {
     }
 }
 
-#[cfg(all(
-    feature = "nightly",
-    target_arch = "x86_64",
-    target_pointer_width = "64"
-))]
+#[cfg(all(feature = "nightly", target_arch = "x86_64", target_pointer_width = "64"))]
 impl AtomicElisionExt for AtomicUsize {
     type IntType = usize;
 

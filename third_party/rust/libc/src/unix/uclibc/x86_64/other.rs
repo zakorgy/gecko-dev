@@ -2,4 +2,3 @@
 // separate module
 pub type pthread_t = ::c_ulong;
 
-pub const PTHREAD_STACK_MIN: usize = 16384;

@@ -25,11 +25,16 @@
 //! for this frame.
 
 use api::{DebugFlags, DocumentId, PremultipliedColorF, IdNamespace, TexelRect};
+use back;
+#[cfg(not(feature="gleam"))]
+use device::{BufferMemorySlice, GpuCacheBuffer, PersistentlyMappedBuffer};
 use euclid::TypedRect;
 use internal_types::{FastHashMap};
 use profiler::GpuCacheProfileCounters;
 use render_backend::{FrameStamp, FrameId};
 use renderer::MAX_VERTEX_TEXTURE_WIDTH;
+#[cfg(not(feature="gleam"))]
+use rendy_memory::Write;
 use std::{mem, u16, u32};
 use std::num::NonZeroU32;
 use std::ops::Add;
@@ -82,6 +87,8 @@ pub struct GpuBlockData {
 
 impl GpuBlockData {
     pub const EMPTY: Self = GpuBlockData { data: [0.0; 4] };
+    #[cfg(not(feature= "gleam"))]
+    pub const SIZE: u64 = 16;
 }
 
 /// Conversion helpers for GpuBlockData
@@ -321,6 +328,47 @@ pub struct GpuCacheUpdateList {
     /// Whole state GPU block metadata for debugging.
     #[cfg_attr(feature = "serde", serde(skip))]
     pub debug_commands: Vec<GpuCacheDebugCmd>,
+}
+
+#[cfg(not(feature="gleam"))]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
+#[derive(MallocSizeOf)]
+pub struct GpuCacheBufferUpdate {
+    /// The frame current update list was generated from.
+    pub frame_id: FrameId,
+    /// If a new GPU cache buffer is created Renderer needs to know about this.
+    #[cfg_attr(any(feature = "capture", feature = "replay", feature = "serialize_program"), serde(skip))]
+    pub buffer_update: BufferInfo,
+    /// Whole state GPU block metadata for debugging.
+    #[cfg_attr(any(feature = "capture", feature = "replay"), serde(skip))]
+    pub debug_commands: Vec<GpuCacheDebugCmd>,
+}
+
+#[cfg(not(feature="gleam"))]
+#[derive(MallocSizeOf)]
+pub enum BufferInfo {
+    BufferUpdate {
+        /// A view into the current GPU cache buffer's memory on the CPU side,
+        /// to write out deferred resolves in the Renderer thread.
+        buffer_memory_slice: BufferMemorySlice,
+        /// The handle of the new buffer,
+        /// this is needed for creating descriptor sets in the Renderer thread.
+        #[ignore_malloc_size_of = "handle"]
+        new_buffer_info: GpuCacheBuffer<back::Backend>,
+        /// The old buffer. We keep this alive in the Renderer thread
+        /// until it's underlying buffer handle is bound to a frame.
+        #[ignore_malloc_size_of = "handle"]
+        old_buffer: Option<PersistentlyMappedBuffer<back::Backend>>,
+    },
+    TransitRangeUpdate(u64),
+}
+
+#[cfg(not(feature="gleam"))]
+impl std::default::Default for BufferInfo {
+    fn default() -> Self {
+        BufferInfo::TransitRangeUpdate(0)
+    }
 }
 
 // Holds the free lists of fixed size blocks. Mostly
@@ -677,7 +725,7 @@ pub struct GpuCache {
     debug_flags: DebugFlags,
     /// Whether there is a pending clear to send with the
     /// next update.
-    pending_clear: bool,
+    pub(crate) pending_clear: bool,
 }
 
 impl GpuCache {
@@ -690,6 +738,11 @@ impl GpuCache {
             debug_flags,
             pending_clear: false,
         }
+    }
+
+    #[cfg(not(feature="gleam"))]
+    pub fn height(&self) -> u64 {
+        self.texture.height as u64
     }
 
     /// Creates a GpuCache and sets it up with a valid `FrameStamp`, which
@@ -828,6 +881,7 @@ impl GpuCache {
     }
 
     /// Extract the pending updates from the cache.
+    #[cfg(feature="gleam")]
     pub fn extract_updates(&mut self) -> GpuCacheUpdateList {
         let clear = self.pending_clear;
         self.pending_clear = false;
@@ -838,6 +892,56 @@ impl GpuCache {
             debug_commands: mem::replace(&mut self.texture.debug_commands, Vec::new()),
             updates: mem::replace(&mut self.texture.updates, Vec::new()),
             blocks: mem::replace(&mut self.texture.pending_blocks, Vec::new()),
+        }
+    }
+
+    #[cfg(not(feature="gleam"))]
+    pub fn write_updates(
+        &mut self,
+        buffer: &mut PersistentlyMappedBuffer<back::Backend>,
+        device: &back::Device,
+        old_buffer: Option<PersistentlyMappedBuffer<back::Backend>>,
+        send_buffer: bool,
+    ) -> GpuCacheBufferUpdate {
+        let mut address_max = 0;
+        {
+            let (mut mapped_range, size) = buffer.map(device, None);
+            let mut writer = unsafe {
+                    mapped_range.write::<GpuBlockData>(
+                    device,
+                    0..(size / mem::size_of::<GpuBlockData>() as u64)
+                )
+            }.unwrap();
+            let writer_slice = unsafe { writer.slice() };
+
+            let blocks = mem::replace(&mut self.texture.pending_blocks, Vec::new());
+            for update in mem::replace(&mut self.texture.updates, Vec::new()) {
+                match update {
+                    GpuCacheUpdate::Copy {
+                        block_index,
+                        block_count,
+                        address,
+                    } => {
+                        let address = address.v as usize * MAX_VERTEX_TEXTURE_WIDTH + address.u as usize;
+                        address_max = address_max.max((address + block_count) as u64 * GpuBlockData::SIZE);
+                        writer_slice[address .. address + block_count]
+                            .copy_from_slice(&blocks[block_index .. block_index + block_count]);
+                    }
+                }
+            }
+        }
+        GpuCacheBufferUpdate {
+            frame_id: self.now.frame_id(),
+            buffer_update: if send_buffer {
+                BufferInfo::BufferUpdate {
+                    buffer_memory_slice: buffer.buffer_memory_slice(device),
+                    new_buffer_info: buffer.get_buffer_info(address_max),
+                    old_buffer,
+                }
+            } else {
+                BufferInfo::TransitRangeUpdate(address_max)
+            },
+            debug_commands: mem::replace(&mut self.texture.debug_commands, Vec::new()),
         }
     }
 

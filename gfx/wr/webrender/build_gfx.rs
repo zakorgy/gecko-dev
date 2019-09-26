@@ -70,6 +70,8 @@ fn create_shaders(out_dir: &str, shaders: &HashMap<String, String>) -> Vec<Strin
                 for mut import in imports {
                     if import == "base" {
                         import = "base_gfx";
+                    } else if import == "gpu_cache" {
+                        import = "gpu_cache_gfx";
                     }
                     if let Some(include) = get_shader_source(import, shaders) {
                         parse_shader_source(&include, shaders, output);
@@ -310,7 +312,7 @@ fn extend_sampler_definition(
 
     // If the sampler is in the map we only update the shader code.
     if let Some(&(_, set, binding)) = sampler_mapping.get(*sampler_name) {
-        let mut layout_str = format!(
+        let layout_str = format!(
             "layout(set = {}, binding = {}) {}{} {};\n",
             set, binding, code_str, sampler_type, sampler_name
         );
@@ -318,7 +320,7 @@ fn extend_sampler_definition(
 
     // Replace sampler definition with a texture and a sampler.
     } else {
-        let mut layout_str = format!(
+        let layout_str = format!(
             "layout(set = {}, binding = {}) {}{} {};\n",
             set, binding, code_str, sampler_type, sampler_name
         );
@@ -567,17 +569,17 @@ fn compile_glsl_to_spirv(file_name_vector: Vec<String>, out_dir: &str, shader_fi
     write!(shader_file, "\nlazy_static! {{\n").unwrap();
     write!(
         shader_file,
-        "  pub static ref SPIRV_BINARIES: HashMap<&'static str, &'static [u8]> = {{\n"
+        "  pub static ref SPIRV_BINARIES: HashMap<&'static str, Vec<u32> > = {{\n"
     ).unwrap();
     write!(shader_file, "    let mut h = HashMap::new();\n").unwrap();
 
     let mut requirements = HashMap::new();
-    for mut file_name in file_name_vector {
+    for (_index, file_name) in file_name_vector.iter().enumerate() {
         let file_path = Path::new(&out_dir).join(&file_name);
         if let Some(req) = process_glsl_for_spirv(&file_path, &file_name) {
             requirements.insert(file_name.trim_end_matches(".vert").to_owned(), req);
         }
-        file_name.push_str(".spv");
+        let file_name = [file_name, ".spv"].concat();
         let spirv_file_path = Path::new(&out_dir).join(&file_name);
         #[cfg(target_os="linux")]
         let mut glslang_cmd = Command::new(Path::new("./tools/glslang-validator-linux"));
@@ -624,7 +626,7 @@ fn compile_glsl_to_spirv(file_name_vector: Vec<String>, out_dir: &str, shader_fi
         let spirv_file_path = spirv_file_path.replace("\\", "/");
         write!(
             shader_file,
-            "    h.insert(\"{}\", &include_bytes!(\"{}\")[0..]);\n",
+            "    h.insert(\"{}\", hal::read_spirv(&std::fs::File::open(\"{}\").unwrap()).unwrap());\n",
             file_name,
             spirv_file_path,
         ).unwrap();

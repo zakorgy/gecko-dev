@@ -7,6 +7,8 @@ use api::{DeviceIntPoint, DeviceIntRect, DeviceIntSize};
 use api::{ImageFormat, WorldPixel, NotificationRequest};
 use device::TextureFilter;
 use renderer::PipelineInfo;
+#[cfg(not(feature="gleam"))]
+use gpu_cache::GpuCacheBufferUpdate;
 use gpu_cache::GpuCacheUpdateList;
 use fxhash::FxHasher;
 use plane_split::BspSplitter;
@@ -302,6 +304,8 @@ pub enum ResultMsg {
         updates: TextureUpdateList,
         memory_pressure: bool,
     },
+    #[cfg(not(feature="gleam"))]
+    UpdateGpuCacheBuffer(GpuCacheBufferUpdate),
     PublishPipelineInfo(PipelineInfo),
     PublishDocument(
         DocumentId,
