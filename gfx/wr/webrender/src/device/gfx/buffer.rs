@@ -5,7 +5,6 @@
 use hal;
 use hal::Device as BackendDevice;
 use rendy_memory::{Block, Heaps, Kind, MappedRange, MemoryBlock, MemoryUsage, MemoryUsageValue, Write};
-use smallvec::SmallVec;
 
 use std::cell::Cell;
 use std::sync::Arc;
@@ -535,7 +534,7 @@ impl<B: hal::Backend> InstanceBufferHandler<B> {
         device: &B::Device,
         mut instance_data: &[T],
         heaps: &mut Heaps<B>,
-        free_buffers: &mut SmallVec<[InstancePoolBuffer<B>; 16]>,
+        free_buffers: &mut Vec<InstancePoolBuffer<B>>,
     ) -> std::ops::Range<usize> {
         fn instance_data_to_u8_slice<T: Copy>(data: &[T]) -> &[u8] {
             unsafe {
@@ -589,7 +588,7 @@ impl<B: hal::Backend> InstanceBufferHandler<B> {
         &mut self.buffers[self.next_buffer_index - 1]
     }
 
-    pub(super) fn reset(&mut self, free_buffers: &mut SmallVec<[InstancePoolBuffer<B>; 16]>) {
+    pub(super) fn reset(&mut self, free_buffers: &mut Vec<InstancePoolBuffer<B>>) {
         if !self.buffers.is_empty() {
             // Keep one buffer and move the others back to the free set pool.
             for mut buffer in self.buffers.drain(1 .. ) {

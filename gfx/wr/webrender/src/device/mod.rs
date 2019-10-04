@@ -94,7 +94,7 @@ pub struct TextureSlot(pub usize);
 
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub enum TextureFilter {
     Nearest,
@@ -341,9 +341,9 @@ pub struct Texture {
     fbos_with_depth: Vec<FBOId>,
     last_frame_used: GpuFrameId,
     #[cfg(not(feature = "gleam"))]
-    bound_in_frame: Cell<GpuFrameId>,
+    pub bound_in_frame: Cell<GpuFrameId>,
     #[cfg(not(feature = "gleam"))]
-    is_buffer: bool
+    is_buffer: bool,
 }
 
 impl Texture {
@@ -448,11 +448,11 @@ pub struct ProgramCache {
     /// Optional trait object that allows the client
     /// application to handle ProgramCache updating
     #[cfg(feature="gleam")]
-    program_cache_handler: Option<Box<ProgramCacheObserver>>,
+    program_cache_handler: Option<Box<dyn ProgramCacheObserver>>,
 }
 
 impl ProgramCache {
-    pub fn new(_program_cache_observer: Option<Box<ProgramCacheObserver>>) -> Rc<Self> {
+    pub fn new(_program_cache_observer: Option<Box<dyn ProgramCacheObserver>>) -> Rc<Self> {
         Rc::new(
             ProgramCache {
                 entries: RefCell::new(FastHashMap::default()),
@@ -675,8 +675,8 @@ impl<'a> From<DrawTarget<'a>> for ReadTarget<'a> {
     }
 }
 
-/// Flags that control how shaders are pre-cached, if at all.
 bitflags! {
+    /// Flags that control how shaders are pre-cached, if at all.
     #[derive(Default)]
     pub struct ShaderPrecacheFlags: u32 {
         /// Needed for const initialization

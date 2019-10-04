@@ -19,7 +19,6 @@ use std::os::raw::{c_int};
 use gleam::gl;
 
 use webrender::api::*;
-//use webrender::back;
 use webrender::{ReadPixelsFormat, Renderer, RendererOptions, RendererStats, ThreadListener};
 use webrender::{ExternalImage, ExternalImageHandler, ExternalImageSource};
 use webrender::DebugFlags;
@@ -34,6 +33,10 @@ use app_units::Au;
 use rayon;
 use euclid::SideOffsets2D;
 use nsstring::nsAString;
+
+use gfx_backend_vulkan as back;
+use webrender::hal::Instance;
+use webrender::DeviceInit;
 
 #[cfg(target_os = "macos")]
 use core_foundation::string::CFString;
@@ -53,6 +56,17 @@ pub const ROOT_CLIP_CHAIN: u64 = !0;
 
 fn next_namespace_id() -> IdNamespace {
     IdNamespace(NEXT_NAMESPACE_ID.fetch_add(1, Ordering::Relaxed) as u32)
+}
+
+#[derive(Debug)]
+#[repr(u32)]
+pub enum SurfaceHandles {
+    // Display and Window
+    LinuxVulkan(*mut raw::c_void, raw::c_ulong),
+    // NSView
+    MacosMetal(*mut raw::c_void),
+    // Hinstance and HWND (DX12 and Vulkan)
+    Windows(*mut raw::c_void, *mut raw::c_void),
 }
 
 /// Whether a border should be antialiased.
@@ -1125,10 +1139,39 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
     let notifier = Box::new(CppNotifier {
         window_id: window_id,
     });
+
+    let (adapter, surface, instance) = {
+        let instance = back::Instance::create("gfx-rs instance", 1);
+        let mut adapters = instance.enumerate_adapters();
+        let adapter = adapters.remove(0);
+        let surface = match handles {
+            #[cfg(all(unix, not(target_os = "macos")))]
+            SurfaceHandles::LinuxVulkan(display, window) => instance.create_surface_from_xlib(display as _, window as _),
+            #[cfg(target_os = "macos")]
+            SurfaceHandles::MacosMetal(nsview) => instance.create_surface_from_nsview(nsview as _),
+            #[cfg(windows)]
+            SurfaceHandles::Windows(hinstance, hwnd) => instance.create_surface_from_hwnd(hinstance as _,hwnd as _),
+            h => panic!("Wrong handle variant: {:?}", h),
+        };
+        ( adapter, surface, instance)
+    };
+
+    let init = DeviceInit {
+        instance: Box::new(instance),
+        adapter: adapter,
+        surface: Some(surface),
+        window_size: (window_width, window_height),
+        descriptor_count: None,
+        cache_path: None,
+        save_cache: false,
+        backend_api: BackendApiType::Vulkan,
+    };
+
     let (renderer, sender) = match Renderer::new(
-        handles,
-        window_width,
-        window_height,
+        init,
+        //handles,
+        //window_width,
+        //window_height,
         notifier,
         opts,
         shaders,

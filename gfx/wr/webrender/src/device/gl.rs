@@ -43,7 +43,7 @@ const SHADER_VERSION_GLES: &str = "#version 300 es\n";
 const DEFAULT_TEXTURE: TextureSlot = TextureSlot(0);
 
 pub struct DeviceInit<B> {
-    pub gl: Rc<gl::Gl>,
+    pub gl: Rc<dyn gl::Gl>,
     pub phantom_data: PhantomData<B>,
 }
 
@@ -79,7 +79,7 @@ fn supports_extension(extensions: &[String], extension: &str) -> bool {
     extensions.iter().any(|s| s == extension)
 }
 
-pub(crate) fn get_shader_version(gl: &gl::Gl) -> &'static str {
+pub(crate) fn get_shader_version(gl: &dyn gl::Gl) -> &'static str {
     match gl.get_type() {
         gl::GlType::Gl => SHADER_VERSION_GL,
         gl::GlType::Gles => SHADER_VERSION_GLES,
@@ -119,7 +119,7 @@ impl VertexAttribute {
         divisor: gl::GLuint,
         stride: gl::GLint,
         offset: gl::GLuint,
-        gl: &gl::Gl,
+        gl: &dyn gl::Gl,
     ) {
         gl.enable_vertex_attrib_array(attr_index);
         gl.vertex_attrib_divisor(attr_index, divisor);
@@ -189,7 +189,7 @@ impl VertexDescriptor {
         attributes: &[VertexAttribute],
         start_index: usize,
         divisor: u32,
-        gl: &gl::Gl,
+        gl: &dyn gl::Gl,
         vbo: VBOId,
     ) {
         vbo.bind(gl);
@@ -207,7 +207,7 @@ impl VertexDescriptor {
         }
     }
 
-    fn bind(&self, gl: &gl::Gl, main: VBOId, instance: VBOId) {
+    fn bind(&self, gl: &dyn gl::Gl, main: VBOId, instance: VBOId) {
         Self::bind_attributes(self.vertex_attributes, 0, 0, gl, main);
 
         if !self.instance_attributes.is_empty() {
@@ -221,19 +221,19 @@ impl VertexDescriptor {
 }
 
 impl VBOId {
-    fn bind(&self, gl: &gl::Gl) {
+    fn bind(&self, gl: &dyn gl::Gl) {
         gl.bind_buffer(gl::ARRAY_BUFFER, self.0);
     }
 }
 
 impl IBOId {
-    fn bind(&self, gl: &gl::Gl) {
+    fn bind(&self, gl: &dyn gl::Gl) {
         gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, self.0);
     }
 }
 
 impl FBOId {
-    fn bind(&self, gl: &gl::Gl, target: FBOTarget) {
+    fn bind(&self, gl: &dyn gl::Gl, target: FBOTarget) {
         let target = match target {
             FBOTarget::Read => gl::READ_FRAMEBUFFER,
             FBOTarget::Draw => gl::DRAW_FRAMEBUFFER,
@@ -447,7 +447,7 @@ enum TexStorageUsage {
 }
 
 pub struct Device<B> {
-    gl: Rc<gl::Gl>,
+    gl: Rc<dyn gl::Gl>,
     // device state
     bound_textures: [gl::GLuint; 16],
     bound_program: gl::GLuint,
@@ -663,11 +663,11 @@ impl<B> Device<B> {
         }
     }
 
-    pub fn gl(&self) -> &gl::Gl {
+    pub fn gl(&self) -> &dyn gl::Gl {
         &*self.gl
     }
 
-    pub fn rc_gl(&self) -> &Rc<gl::Gl> {
+    pub fn rc_gl(&self) -> &Rc<dyn gl::Gl> {
         &self.gl
     }
 
@@ -727,7 +727,7 @@ impl<B> Device<B> {
     }
 
     pub fn compile_shader(
-        gl: &gl::Gl,
+        gl: &dyn gl::Gl,
         name: &str,
         shader_type: gl::GLenum,
         source: &String,
@@ -2441,7 +2441,7 @@ impl PixelBuffer {
 }
 
 struct UploadTarget<'a> {
-    gl: &'a gl::Gl,
+    gl: &'a dyn gl::Gl,
     bgra_format: gl::GLuint,
     texture: &'a Texture,
 }

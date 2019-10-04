@@ -4,7 +4,7 @@
 
 use api::{ColorF, DeviceIntRect, ImageFormat};
 use hal::{self, Device as BackendDevice};
-use hal::command::{RawCommandBuffer, SubpassContents};
+use hal::command::RawCommandBuffer;
 use internal_types::FastHashMap;
 use smallvec::SmallVec;
 use rendy_memory::Heaps;
@@ -12,7 +12,7 @@ use std::borrow::Cow::{Borrowed};
 
 use super::buffer::{InstanceBufferHandler, VertexBufferHandler};
 use super::blend_state::SUBPIXEL_CONSTANT_TEXT_COLOR;
-use super::render_pass::RenderPass;
+use super::render_pass::HalRenderPasses;
 use super::PipelineRequirements;
 use super::super::{ShaderKind, VertexArrayKind};
 use super::super::super::shader_source;
@@ -32,9 +32,16 @@ const SPECIALIZATION_FEATURES: &'static [&'static str] = &[
     "DEBUG_OVERDRAW",
 ];
 
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+pub(super) enum RenderPassDepthState {
+    Enabled,
+    Disabled,
+}
+
+type PipelineKey = (Option<hal::pso::BlendState>, RenderPassDepthState, Option<hal::pso::DepthTest>);
 
 pub(crate) struct Program<B: hal::Backend> {
-    pipelines: FastHashMap<(Option<hal::pso::BlendState>, Option<hal::pso::DepthTest>), B::GraphicsPipeline>,
+    pipelines: FastHashMap<PipelineKey, B::GraphicsPipeline>,
     pub(super) vertex_buffer: Option<SmallVec<[VertexBufferHandler<B>; 1]>>,
     pub(super) index_buffer: Option<SmallVec<[VertexBufferHandler<B>; 1]>>,
     pub(super) shader_name: String,
@@ -52,7 +59,7 @@ impl<B: hal::Backend> Program<B> {
         shader_name: &str,
         features: &[&str],
         shader_kind: ShaderKind,
-        render_pass: &RenderPass<B>,
+        render_passes: &HalRenderPasses<B>,
         frame_count: usize,
         shader_modules: &mut FastHashMap<String, (B::ShaderModule, B::ShaderModule)>,
         pipeline_cache: Option<&B::PipelineCache>,
@@ -140,80 +147,108 @@ impl<B: hal::Backend> Program<B> {
             use hal::pso::{BlendState};
             use super::blend_state::*;
             use super::{LESS_EQUAL_TEST, LESS_EQUAL_WRITE};
+            use self::RenderPassDepthState as RPDS;
 
             let pipeline_states = match shader_kind {
                 ShaderKind::Cache(VertexArrayKind::Scale) => [
-                    (None, None),
-                    (Some(BlendState::MULTIPLY), None),
+                    (None, RPDS::Enabled, None),
+                    (None, RPDS::Disabled, None),
+                    (Some(BlendState::MULTIPLY), RPDS::Enabled, None),
+                    (Some(BlendState::MULTIPLY), RPDS::Disabled, None),
                 ]
                 .into_iter(),
                 ShaderKind::Cache(VertexArrayKind::Blur) => [
-                    (None, None),
-                    (None, Some(LESS_EQUAL_TEST)),
+                    (None, RPDS::Enabled, None),
+                    (None, RPDS::Disabled, None),
+                    (None, RPDS::Enabled, Some(LESS_EQUAL_TEST)),
                 ]
                 .into_iter(),
                 ShaderKind::Cache(VertexArrayKind::Border)
-                | ShaderKind::Cache(VertexArrayKind::LineDecoration) => {
-                    [(Some(BlendState::PREMULTIPLIED_ALPHA), None)].into_iter()
-                }
-                ShaderKind::ClipCache => [(Some(BlendState::MULTIPLY), None)].into_iter(),
+                    | ShaderKind::Cache(VertexArrayKind::LineDecoration) => [
+                    (Some(BlendState::PREMULTIPLIED_ALPHA), RPDS::Enabled, None),
+                    (Some(BlendState::PREMULTIPLIED_ALPHA), RPDS::Disabled, None),
+                ].into_iter(),
+                ShaderKind::ClipCache => [
+                    (Some(BlendState::MULTIPLY), RPDS::Enabled, None),
+                    (Some(BlendState::MULTIPLY), RPDS::Disabled, None),
+                ].into_iter(),
                 ShaderKind::Text => {
                     if features.contains(&"DUAL_SOURCE_BLENDING") {
                         [
-                            (Some(BlendState::PREMULTIPLIED_ALPHA), None),
-                            (Some(BlendState::PREMULTIPLIED_ALPHA), Some(LESS_EQUAL_TEST)),
-                            (Some(SUBPIXEL_CONSTANT_TEXT_COLOR), None),
-                            (Some(SUBPIXEL_CONSTANT_TEXT_COLOR), Some(LESS_EQUAL_TEST)),
-                            (Some(SUBPIXEL_PASS0), None),
-                            (Some(SUBPIXEL_PASS0), Some(LESS_EQUAL_TEST)),
-                            (Some(SUBPIXEL_PASS1), None),
-                            (Some(SUBPIXEL_PASS1), Some(LESS_EQUAL_TEST)),
-                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS0), None),
-                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS0), Some(LESS_EQUAL_TEST)),
-                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS1), None),
-                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS1), Some(LESS_EQUAL_TEST)),
-                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS2), None),
-                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS2), Some(LESS_EQUAL_TEST)),
-                            (Some(SUBPIXEL_DUAL_SOURCE), None),
-                            (Some(SUBPIXEL_DUAL_SOURCE), Some(LESS_EQUAL_TEST)),
+                            (Some(BlendState::PREMULTIPLIED_ALPHA), RPDS::Enabled, None),
+                            (Some(BlendState::PREMULTIPLIED_ALPHA), RPDS::Disabled, None),
+                            (Some(BlendState::PREMULTIPLIED_ALPHA), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
+                            (Some(SUBPIXEL_CONSTANT_TEXT_COLOR), RPDS::Enabled, None),
+                            (Some(SUBPIXEL_CONSTANT_TEXT_COLOR), RPDS::Disabled, None),
+                            (Some(SUBPIXEL_CONSTANT_TEXT_COLOR), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
+                            (Some(SUBPIXEL_PASS0), RPDS::Enabled, None),
+                            (Some(SUBPIXEL_PASS0), RPDS::Disabled, None),
+                            (Some(SUBPIXEL_PASS0), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
+                            (Some(SUBPIXEL_PASS1), RPDS::Enabled, None),
+                            (Some(SUBPIXEL_PASS1), RPDS::Disabled, None),
+                            (Some(SUBPIXEL_PASS1), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS0), RPDS::Enabled, None),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS0), RPDS::Disabled, None),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS0), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS1), RPDS::Enabled, None),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS1), RPDS::Disabled, None),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS1), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS2), RPDS::Enabled, None),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS2), RPDS::Disabled, None),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS2), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
+                            (Some(SUBPIXEL_DUAL_SOURCE), RPDS::Enabled, None),
+                            (Some(SUBPIXEL_DUAL_SOURCE), RPDS::Disabled, None),
+                            (Some(SUBPIXEL_DUAL_SOURCE), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
                         ]
                         .into_iter()
                     } else {
                         [
-                            (Some(BlendState::PREMULTIPLIED_ALPHA), None),
-                            (Some(BlendState::PREMULTIPLIED_ALPHA), Some(LESS_EQUAL_TEST)),
-                            (Some(SUBPIXEL_CONSTANT_TEXT_COLOR), None),
-                            (Some(SUBPIXEL_CONSTANT_TEXT_COLOR), Some(LESS_EQUAL_TEST)),
-                            (Some(SUBPIXEL_PASS0), None),
-                            (Some(SUBPIXEL_PASS0), Some(LESS_EQUAL_TEST)),
-                            (Some(SUBPIXEL_PASS1), None),
-                            (Some(SUBPIXEL_PASS1), Some(LESS_EQUAL_TEST)),
-                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS0), None),
-                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS0), Some(LESS_EQUAL_TEST)),
-                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS1), None),
-                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS1), Some(LESS_EQUAL_TEST)),
-                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS2), None),
-                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS2), Some(LESS_EQUAL_TEST)),
+                            (Some(BlendState::PREMULTIPLIED_ALPHA), RPDS::Enabled, None),
+                            (Some(BlendState::PREMULTIPLIED_ALPHA), RPDS::Disabled, None),
+                            (Some(BlendState::PREMULTIPLIED_ALPHA), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
+                            (Some(SUBPIXEL_CONSTANT_TEXT_COLOR), RPDS::Enabled, None),
+                            (Some(SUBPIXEL_CONSTANT_TEXT_COLOR), RPDS::Disabled, None),
+                            (Some(SUBPIXEL_CONSTANT_TEXT_COLOR), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
+                            (Some(SUBPIXEL_PASS0), RPDS::Enabled, None),
+                            (Some(SUBPIXEL_PASS0), RPDS::Disabled, None),
+                            (Some(SUBPIXEL_PASS0), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
+                            (Some(SUBPIXEL_PASS1), RPDS::Enabled, None),
+                            (Some(SUBPIXEL_PASS1), RPDS::Disabled, None),
+                            (Some(SUBPIXEL_PASS1), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS0), RPDS::Enabled, None),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS0), RPDS::Disabled, None),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS0), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS1), RPDS::Enabled, None),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS1), RPDS::Disabled, None),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS1), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS2), RPDS::Enabled, None),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS2), RPDS::Disabled, None),
+                            (Some(SUBPIXEL_WITH_BG_COLOR_PASS2), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
                         ]
                         .into_iter()
                     }
                 }
-                ShaderKind::DebugColor | ShaderKind::DebugFont => {
-                    [(Some(BlendState::PREMULTIPLIED_ALPHA), None)].into_iter()
-                }
+                ShaderKind::DebugColor | ShaderKind::DebugFont => [
+                    (Some(BlendState::PREMULTIPLIED_ALPHA), RPDS::Enabled, None),
+                    (Some(BlendState::PREMULTIPLIED_ALPHA), RPDS::Disabled, None),
+                ].into_iter(),
                 _ => [
-                    (None, None),
-                    (None, Some(LESS_EQUAL_TEST)),
-                    (None, Some(LESS_EQUAL_WRITE)),
-                    (Some(ALPHA), None),
-                    (Some(ALPHA), Some(LESS_EQUAL_TEST)),
-                    (Some(ALPHA), Some(LESS_EQUAL_WRITE)),
-                    (Some(BlendState::PREMULTIPLIED_ALPHA), None),
-                    (Some(BlendState::PREMULTIPLIED_ALPHA), Some(LESS_EQUAL_TEST)),
-                    (Some(BlendState::PREMULTIPLIED_ALPHA), Some(LESS_EQUAL_WRITE)),
-                    (Some(PREMULTIPLIED_DEST_OUT), None),
-                    (Some(PREMULTIPLIED_DEST_OUT), Some(LESS_EQUAL_TEST)),
-                    (Some(PREMULTIPLIED_DEST_OUT), Some(LESS_EQUAL_WRITE)),
+                    (None, RPDS::Enabled, None),
+                    (None, RPDS::Disabled, None),
+                    (None, RPDS::Enabled, Some(LESS_EQUAL_TEST)),
+                    (None, RPDS::Enabled, Some(LESS_EQUAL_WRITE)),
+                    (Some(ALPHA), RPDS::Enabled, None),
+                    (Some(ALPHA), RPDS::Disabled, None),
+                    (Some(ALPHA), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
+                    (Some(ALPHA), RPDS::Enabled, Some(LESS_EQUAL_WRITE)),
+                    (Some(BlendState::PREMULTIPLIED_ALPHA), RPDS::Enabled, None),
+                    (Some(BlendState::PREMULTIPLIED_ALPHA), RPDS::Disabled, None),
+                    (Some(BlendState::PREMULTIPLIED_ALPHA), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
+                    (Some(BlendState::PREMULTIPLIED_ALPHA), RPDS::Enabled, Some(LESS_EQUAL_WRITE)),
+                    (Some(PREMULTIPLIED_DEST_OUT), RPDS::Enabled, None),
+                    (Some(PREMULTIPLIED_DEST_OUT), RPDS::Disabled, None),
+                    (Some(PREMULTIPLIED_DEST_OUT), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
+                    (Some(PREMULTIPLIED_DEST_OUT), RPDS::Enabled, Some(LESS_EQUAL_WRITE)),
                 ]
                 .into_iter(),
             };
@@ -229,11 +264,18 @@ impl<B: hal::Backend> Program<B> {
                 _ => surface_format,
             };
 
-            let create_desc = |(blend_state, depth_test)| {
+            let create_desc = |(blend_state, render_pass_depth_state, depth_test)| {
+                let depth_enabled = match depth_test {
+                    Some(_) => true,
+                    None => match render_pass_depth_state {
+                        RenderPassDepthState::Enabled => true,
+                        RenderPassDepthState::Disabled => false,
+                    },
+                };
                 let subpass = hal::pass::Subpass {
                     index: 0,
-                    main_pass: render_pass
-                        .get_render_pass(format, depth_test != None),
+                    main_pass: render_passes
+                        .get_render_pass(format, depth_enabled),
                 };
                 let mut pipeline_descriptor = hal::pso::GraphicsPipelineDesc::new(
                     shader_entries.clone(),
@@ -263,7 +305,9 @@ impl<B: hal::Backend> Program<B> {
                 pipeline_descriptor
             };
 
-            let pipelines_descriptors = pipeline_states.clone().map(|ps| create_desc(*ps));
+            let pipelines_descriptors = pipeline_states
+                .clone()
+                .map(|ps| create_desc(*ps));
 
             let pipelines =
                 unsafe { device.create_graphics_pipelines(pipelines_descriptors, pipeline_cache) }
@@ -272,10 +316,10 @@ impl<B: hal::Backend> Program<B> {
             let mut states = pipeline_states
                 .cloned()
                 .zip(pipelines.map(|pipeline| pipeline.expect("Pipeline creation failed")))
-                .collect::<FastHashMap<(Option<hal::pso::BlendState>, Option<hal::pso::DepthTest>), B::GraphicsPipeline>>();
+                .collect::<FastHashMap<PipelineKey, B::GraphicsPipeline>>();
 
             if features.contains(&"DEBUG_OVERDRAW") {
-                let pipeline_state = (Some(OVERDRAW), Some(LESS_EQUAL_TEST));
+                let pipeline_state = (Some(OVERDRAW), RPDS::Enabled, Some(LESS_EQUAL_TEST));
                 let pipeline_descriptor = create_desc(pipeline_state);
                 let pipeline = unsafe {
                     device.create_graphics_pipeline(&pipeline_descriptor, pipeline_cache)
@@ -329,16 +373,14 @@ impl<B: hal::Backend> Program<B> {
         &mut self,
         cmd_buffer: &mut B::CommandBuffer,
         viewport: hal::pso::Viewport,
-        render_pass: &B::RenderPass,
-        frame_buffer: &B::Framebuffer,
         desc_set_per_draw: &B::DescriptorSet,
         desc_set_per_pass: Option<&B::DescriptorSet>,
         desc_set_per_frame: &B::DescriptorSet,
         desc_set_locals: Option<&B::DescriptorSet>,
-        clear_values: &[hal::command::ClearValueRaw],
         blend_state: Option<hal::pso::BlendState>,
         blend_color: ColorF,
         depth_test: Option<hal::pso::DepthTest>,
+        render_pass_depth_state: RenderPassDepthState,
         scissor_rect: Option<DeviceIntRect>,
         next_id: usize,
         pipeline_layout: &B::PipelineLayout,
@@ -376,10 +418,10 @@ impl<B: hal::Backend> Program<B> {
             cmd_buffer.bind_graphics_pipeline(
                 &self
                     .pipelines
-                    .get(&(blend_state, depth_test))
+                    .get(&(blend_state, render_pass_depth_state, depth_test))
                     .expect(&format!(
-                        "The blend state {:?} with depth test {:?} not found for {} program!",
-                        blend_state, depth_test, self.shader_name
+                        "The blend state {:?} with depth test {:?} and render_pass_depth_state {:?} not found for {} program!",
+                        blend_state, depth_test, render_pass_depth_state, self.shader_name
                     )),
             );
 
@@ -409,21 +451,12 @@ impl<B: hal::Backend> Program<B> {
                     index_type: hal::IndexType::U32,
                 });
 
-                cmd_buffer.begin_render_pass(
-                    render_pass,
-                    frame_buffer,
-                    viewport.rect,
-                    clear_values,
-                    SubpassContents::Inline,
-                );
 
                 cmd_buffer.draw_indexed(
                     0 .. index_buffer[next_id].buffer().buffer_len as u32,
                     0,
                     0 .. 1,
                 );
-
-                cmd_buffer.end_render_pass();
             } else {
                 for i in instance_range.into_iter() {
                     cmd_buffer.bind_vertex_buffers(
@@ -433,14 +466,6 @@ impl<B: hal::Backend> Program<B> {
                             .chain(Some((&instance_buffer.buffers[i].buffer.buffer, 0))),
                     );
 
-                    cmd_buffer.begin_render_pass(
-                        render_pass,
-                        frame_buffer,
-                        viewport.rect,
-                        clear_values,
-                        SubpassContents::Inline,
-                    );
-
                     let data_stride = instance_buffer.buffers[i].last_data_stride;
                     let end = instance_buffer.buffers[i].offset / data_stride;
                     let start = end - instance_buffer.buffers[i].last_update_size / data_stride;
@@ -448,8 +473,6 @@ impl<B: hal::Backend> Program<B> {
                         0 .. vertex_buffer.buffer_len as _,
                         start as u32 .. end as u32,
                     );
-
-                    cmd_buffer.end_render_pass();
                 }
             }
         }

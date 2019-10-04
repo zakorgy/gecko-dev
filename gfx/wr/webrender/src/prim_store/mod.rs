@@ -2882,7 +2882,7 @@ fn decompose_repeated_primitive(
     prim_context: &PrimitiveContext,
     frame_state: &mut FrameBuildingState,
     gradient_tiles: &mut GradientTileStorage,
-    callback: &mut FnMut(&LayoutRect, GpuDataRequest),
+    callback: &mut dyn FnMut(&LayoutRect, GpuDataRequest),
 ) -> GradientTileRange {
     let mut visible_tiles = Vec::new();
     let world_rect = frame_state.current_dirty_region().combined.world_rect;

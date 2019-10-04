@@ -4,11 +4,11 @@
 
 use api::{ColorU, ColorF, ImageFormat, TextureTarget};
 use api::{DeviceIntRect, DeviceRect, DevicePoint, DeviceSize, DeviceIntSize};
-use back;
 use debug_font_data;
 use device::{create_projection, Device, Texture, TextureSlot, VertexDescriptor, ShaderError, VAO};
 use device::{TextureFilter, VertexAttribute, VertexAttributeKind, VertexUsageHint};
 use euclid::{Point2D, Rect, Size2D};
+use hal;
 use std::f32;
 
 cfg_if! {
@@ -108,7 +108,7 @@ impl PrimitiveType for DebugFontVertex {
 }
 
 #[cfg(not(feature = "gleam"))]
-fn create_debug_programs(device: &mut Device<back::Backend>)-> Result<(Program, Program), ShaderError> {
+fn create_debug_programs<B: hal::Backend>(device: &mut Device<B>)-> Result<(Program, Program), ShaderError> {
     let font_program =
         device.create_program(
             "debug_font",
@@ -126,7 +126,7 @@ fn create_debug_programs(device: &mut Device<back::Backend>)-> Result<(Program, 
 }
 
 #[cfg(feature = "gleam")]
-fn create_debug_programs(device: &mut Device<back::Backend>)-> Result<(Program, Program), ShaderError> {
+fn create_debug_programs<B: hal::Backend>(device: &mut Device<B>)-> Result<(Program, Program), ShaderError> {
     let font_program = device.create_program_linked(
         "debug_font",
         String::new(),
@@ -189,7 +189,7 @@ pub struct DebugRenderer {
 }
 
 impl DebugRenderer {
-    pub fn new(device: &mut Device<back::Backend>) -> Result<Self, ShaderError> {
+    pub fn new<B: hal::Backend>(device: &mut Device<B>) -> Result<Self, ShaderError> {
         let (font_program, color_program) = create_debug_programs(device)?;
 
         let font_vao = device.create_vao(&DESC_FONT);
@@ -225,7 +225,7 @@ impl DebugRenderer {
         })
     }
 
-    pub fn deinit(self, device: &mut Device<back::Backend>) {
+    pub fn deinit<B: hal::Backend>(self, device: &mut Device<B>) {
         device.delete_texture(self.font_texture);
         device.delete_program(self.font_program);
         device.delete_program(self.color_program);
@@ -367,9 +367,9 @@ impl DebugRenderer {
         self.add_line(p0.x, p1.y, color, p0.x, p0.y, color);
     }
 
-    pub fn render(
+    pub fn render<B: hal::Backend>(
         &mut self,
-        device: &mut Device<back::Backend>,
+        device: &mut Device<B>,
         viewport_size: Option<DeviceIntSize>,
     ) {
         if let Some(viewport_size) = viewport_size {
@@ -384,6 +384,9 @@ impl DebugRenderer {
                 0.0,
                 true,
             );
+
+            #[cfg(not(feature = "gleam"))]
+            device.begin_render_pass();
 
             // Triangles
             if !self.tri_vertices.is_empty() {
@@ -426,6 +429,9 @@ impl DebugRenderer {
                 );
                 device.draw_triangles_u32(0, self.font_indices.len() as i32);
             }
+
+            #[cfg(not(feature = "gleam"))]
+            device.end_render_pass();
         }
 
         self.font_indices.clear();

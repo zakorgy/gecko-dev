@@ -9,7 +9,7 @@ use rendy_memory::{Block, Heaps, MemoryBlock, MemoryUsageValue};
 
 use std::cell::Cell;
 use super::buffer::BufferPool;
-use super::render_pass::RenderPass;
+use super::render_pass::HalRenderPasses;
 use super::TextureId;
 use super::PipelineBarrierInfo;
 use super::super::{RBOId, Texture};
@@ -289,7 +289,7 @@ impl<B: hal::Backend> Framebuffer<B> {
         texture: &Texture,
         image: &Image<B>,
         layer_index: u16,
-        render_pass: &RenderPass<B>,
+        render_passes: &HalRenderPasses<B>,
         rbo: RBOId,
         depth: Option<&B::ImageView>,
     ) -> Self {
@@ -320,13 +320,13 @@ impl<B: hal::Backend> Framebuffer<B> {
         let fbo = unsafe {
             if rbo != RBOId(0) {
                 device.create_framebuffer(
-                    render_pass.get_render_pass(texture.format, true),
+                    render_passes.get_render_pass(texture.format, true),
                     Some(&image_view).into_iter().chain(depth.into_iter()),
                     extent,
                 )
             } else {
                 device.create_framebuffer(
-                    render_pass.get_render_pass(texture.format, false),
+                    render_passes.get_render_pass(texture.format, false),
                     Some(&image_view),
                     extent,
                 )

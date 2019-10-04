@@ -25,10 +25,11 @@
 //! for this frame.
 
 use api::{DebugFlags, DocumentId, PremultipliedColorF, IdNamespace, TexelRect};
-use back;
 #[cfg(not(feature="gleam"))]
 use device::{BufferMemorySlice, GpuCacheBuffer, PersistentlyMappedBuffer};
 use euclid::TypedRect;
+#[cfg(not(feature="gleam"))]
+use hal;
 use internal_types::{FastHashMap};
 use profiler::GpuCacheProfileCounters;
 use render_backend::{FrameStamp, FrameId};
@@ -59,7 +60,7 @@ const RECLAIM_THRESHOLD: f32 = 0.2;
 const RECLAIM_DELAY_S: u64 = 5;
 
 #[derive(Debug, Copy, Clone, Eq, MallocSizeOf, PartialEq)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 struct Epoch(u32);
 
@@ -70,7 +71,7 @@ impl Epoch {
 }
 
 #[derive(Debug, Copy, Clone, MallocSizeOf)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 struct CacheLocation {
     block_index: BlockIndex,
@@ -79,10 +80,10 @@ struct CacheLocation {
 
 /// A single texel in RGBAF32 texture - 16 bytes.
 #[derive(Copy, Clone, Debug, MallocSizeOf)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct GpuBlockData {
-    data: [f32; 4],
+    pub data: [f32; 4],
 }
 
 impl GpuBlockData {
@@ -153,7 +154,7 @@ impl GpuCacheHandle {
 // as part of the primitive instances, to allow the vertex
 // shader to fetch the specific data.
 #[derive(Copy, Debug, Clone, MallocSizeOf, Eq, PartialEq)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct GpuCacheAddress {
     pub u: u16,
@@ -189,7 +190,7 @@ impl Add<usize> for GpuCacheAddress {
 
 // An entry in a free-list of blocks in the GPU cache.
 #[derive(Debug, MallocSizeOf)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 struct Block {
     // The location in the cache of this block.
@@ -241,7 +242,7 @@ impl Block {
 /// Because we use Option<BlockIndex> in a lot of places, we use a NonZeroU32
 /// here and avoid ever using the index zero.
 #[derive(Debug, Copy, Clone, MallocSizeOf)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 struct BlockIndex(NonZeroU32);
 
@@ -257,7 +258,7 @@ impl BlockIndex {
 }
 
 // A row in the cache texture.
-#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 #[derive(MallocSizeOf)]
 struct Row {
@@ -280,7 +281,7 @@ impl Row {
 // this frame. The list of updates is created by the render backend
 // during frame construction. It's passed to the render thread
 // where GL commands can be applied.
-#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 #[derive(MallocSizeOf)]
 pub enum GpuCacheUpdate {
@@ -294,6 +295,7 @@ pub enum GpuCacheUpdate {
 /// Command to inform the debug display in the renderer when chunks are allocated
 /// or freed.
 #[derive(MallocSizeOf)]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 pub enum GpuCacheDebugCmd {
     /// Describes an allocated chunk.
     Alloc(GpuCacheDebugChunk),
@@ -302,13 +304,13 @@ pub enum GpuCacheDebugCmd {
 }
 
 #[derive(Clone, MallocSizeOf)]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 pub struct GpuCacheDebugChunk {
     pub address: GpuCacheAddress,
     pub size: usize,
 }
 
-#[must_use]
-#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 #[derive(MallocSizeOf)]
 pub struct GpuCacheUpdateList {
@@ -326,7 +328,7 @@ pub struct GpuCacheUpdateList {
     /// to GPU memory.
     pub blocks: Vec<GpuBlockData>,
     /// Whole state GPU block metadata for debugging.
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[cfg_attr(any(feature = "capture", feature = "replay"), serde(skip))]
     pub debug_commands: Vec<GpuCacheDebugCmd>,
 }
 
@@ -334,12 +336,12 @@ pub struct GpuCacheUpdateList {
 #[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 #[derive(MallocSizeOf)]
-pub struct GpuCacheBufferUpdate {
+pub struct GpuCacheBufferUpdate<B: hal::Backend> {
     /// The frame current update list was generated from.
     pub frame_id: FrameId,
     /// If a new GPU cache buffer is created Renderer needs to know about this.
     #[cfg_attr(any(feature = "capture", feature = "replay", feature = "serialize_program"), serde(skip))]
-    pub buffer_update: BufferInfo,
+    pub buffer_update: BufferInfo<B>,
     /// Whole state GPU block metadata for debugging.
     #[cfg_attr(any(feature = "capture", feature = "replay"), serde(skip))]
     pub debug_commands: Vec<GpuCacheDebugCmd>,
@@ -347,25 +349,23 @@ pub struct GpuCacheBufferUpdate {
 
 #[cfg(not(feature="gleam"))]
 #[derive(MallocSizeOf)]
-pub enum BufferInfo {
+pub enum BufferInfo<B: hal::Backend> {
     BufferUpdate {
         /// A view into the current GPU cache buffer's memory on the CPU side,
         /// to write out deferred resolves in the Renderer thread.
         buffer_memory_slice: BufferMemorySlice,
         /// The handle of the new buffer,
         /// this is needed for creating descriptor sets in the Renderer thread.
-        #[ignore_malloc_size_of = "handle"]
-        new_buffer_info: GpuCacheBuffer<back::Backend>,
+        new_buffer_info: GpuCacheBuffer<B>,
         /// The old buffer. We keep this alive in the Renderer thread
         /// until it's underlying buffer handle is bound to a frame.
-        #[ignore_malloc_size_of = "handle"]
-        old_buffer: Option<PersistentlyMappedBuffer<back::Backend>>,
+        old_buffer: Option<PersistentlyMappedBuffer<B>>,
     },
     TransitRangeUpdate(u64),
 }
 
 #[cfg(not(feature="gleam"))]
-impl std::default::Default for BufferInfo {
+impl<B: hal::Backend> std::default::Default for BufferInfo<B> {
     fn default() -> Self {
         BufferInfo::TransitRangeUpdate(0)
     }
@@ -373,7 +373,7 @@ impl std::default::Default for BufferInfo {
 
 // Holds the free lists of fixed size blocks. Mostly
 // just serves to work around the borrow checker.
-#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 #[derive(MallocSizeOf)]
 struct FreeBlockLists {
@@ -425,23 +425,23 @@ impl FreeBlockLists {
             0 => panic!("Can't allocate zero sized blocks!"),
             1 => (1, &mut self.free_list_1),
             2 => (2, &mut self.free_list_2),
-            3...4 => (4, &mut self.free_list_4),
-            5...8 => (8, &mut self.free_list_8),
-            9...16 => (16, &mut self.free_list_16),
-            17...32 => (32, &mut self.free_list_32),
-            33...64 => (64, &mut self.free_list_64),
-            65...128 => (128, &mut self.free_list_128),
-            129...256 => (256, &mut self.free_list_256),
-            257...341 => (341, &mut self.free_list_341),
-            342...512 => (512, &mut self.free_list_512),
-            513...1024 => (1024, &mut self.free_list_1024),
+            3..=4 => (4, &mut self.free_list_4),
+            5..=8 => (8, &mut self.free_list_8),
+            9..=16 => (16, &mut self.free_list_16),
+            17..=32 => (32, &mut self.free_list_32),
+            33..=64 => (64, &mut self.free_list_64),
+            65..=128 => (128, &mut self.free_list_128),
+            129..=256 => (256, &mut self.free_list_256),
+            257..=341 => (341, &mut self.free_list_341),
+            342..=512 => (512, &mut self.free_list_512),
+            513..=1024 => (1024, &mut self.free_list_1024),
             _ => panic!("Can't allocate > MAX_VERTEX_TEXTURE_WIDTH per resource!"),
         }
     }
 }
 
 // CPU-side representation of the GPU resource cache texture.
-#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 #[derive(MallocSizeOf)]
 struct Texture {
@@ -474,11 +474,11 @@ struct Texture {
     allocated_block_count: usize,
     // The stamp at which we first reached our threshold for reclaiming `GpuCache`
     // memory, or `None` if the threshold hasn't been reached.
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[cfg_attr(any(feature = "capture", feature = "replay", feature = "serialize_program"), serde(skip))]
     reached_reclaim_threshold: Option<Instant>,
     // List of debug commands to be sent to the renderer when the GPU cache
     // debug display is enabled.
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[cfg_attr(any(feature = "capture", feature = "replay", feature = "serialize_program"), serde(skip))]
     debug_commands: Vec<GpuCacheDebugCmd>,
     // The current debug flags for the system.
     debug_flags: DebugFlags,
@@ -708,7 +708,6 @@ impl<'a> Drop for GpuDataRequest<'a> {
     }
 }
 
-
 /// The main LRU cache interface.
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
@@ -896,13 +895,13 @@ impl GpuCache {
     }
 
     #[cfg(not(feature="gleam"))]
-    pub fn write_updates(
+    pub fn write_updates<B: hal::Backend>(
         &mut self,
-        buffer: &mut PersistentlyMappedBuffer<back::Backend>,
-        device: &back::Device,
-        old_buffer: Option<PersistentlyMappedBuffer<back::Backend>>,
+        buffer: &mut PersistentlyMappedBuffer<B>,
+        device: &B::Device,
+        old_buffer: Option<PersistentlyMappedBuffer<B>>,
         send_buffer: bool,
-    ) -> GpuCacheBufferUpdate {
+    ) -> GpuCacheBufferUpdate<B> {
         let mut address_max = 0;
         {
             let (mut mapped_range, size) = buffer.map(device, None);

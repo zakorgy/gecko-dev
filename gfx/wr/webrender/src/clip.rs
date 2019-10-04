@@ -176,8 +176,8 @@ impl From<ClipItemKey> for ClipNode {
     }
 }
 
-// Flags that are attached to instances of clip nodes.
 bitflags! {
+    /// Flags that are attached to instances of clip nodes.
     #[cfg_attr(feature = "capture", derive(Serialize))]
     #[cfg_attr(feature = "replay", derive(Deserialize))]
     #[derive(MallocSizeOf)]

@@ -15,12 +15,13 @@ nsstring = { path = "../../xpcom/rust/nsstring" }
 bincode = "1.0"
 uuid = { version = "0.6", features = ["v4"] }
 fxhash = "0.2.1"
+gfx-backend-vulkan = { version = "0.3.3", features = ["x11"] }
 
 [dependencies.webrender]
 path = "../wr/webrender"
 version = "0.59.0"
 default-features = false
-features = ["capture", "serialize_program", "gecko", "vulkan", "serde"]
+features = ["capture", "serialize_program", "serde"]
 
 [target.'cfg(target_os = "windows")'.dependencies]
 dwrote = "0.8"

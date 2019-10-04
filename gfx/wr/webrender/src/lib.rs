@@ -66,14 +66,6 @@ extern crate serde;
 #[macro_use]
 extern crate thread_profiler;
 pub extern crate gfx_hal as hal;
-#[cfg(feature = "vulkan")]
-pub extern crate gfx_backend_vulkan as back;
-#[cfg(feature = "metal")]
-pub extern crate gfx_backend_metal as back;
-#[cfg(feature = "dx12")]
-pub extern crate gfx_backend_dx12 as back;
-#[cfg(feature = "gleam")]
-pub extern crate gfx_backend_empty as back;
 #[cfg(any(not(feature = "gleam"), test))]
 extern crate rand;
 
@@ -220,8 +212,12 @@ pub use frame_builder::ChasePrimitive;
 pub use renderer::{AsyncPropertySampler, CpuProfile, DebugFlags, OutputImageHandler, RendererKind};
 pub use renderer::{ExternalImage, ExternalImageHandler, ExternalImageSource, GpuProfile};
 pub use renderer::{GraphicsApi, GraphicsApiInfo, PipelineInfo, Renderer, RendererOptions};
-pub use renderer::{RendererStats, SceneBuilderHooks, SurfaceHandles, ThreadListener};
+pub use renderer::{RendererStats, SceneBuilderHooks, ThreadListener};
 pub use renderer::MAX_VERTEX_TEXTURE_WIDTH;
+pub use rendy_memory::{DynamicConfig, HeapsConfig, LinearConfig};
 pub use shade::{Shaders, WrShaders};
 pub use webrender_api as api;
 pub use webrender_api::euclid;
+
+#[cfg(not(feature = "gleam"))]
+pub use device::BackendApiType;

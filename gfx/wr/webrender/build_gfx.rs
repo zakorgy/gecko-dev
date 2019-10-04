@@ -449,7 +449,7 @@ fn add_attribute_descriptors(
     let def = split_code(line);
     let var_name = def[2].trim_end_matches(';');
     let (format, offset) = match def[1] {
-        "float" => (Format::Rg32Sfloat, 4),
+        "float" => (Format::R32Sfloat, 4),
         "int" => (Format::R32Sint, 4),
         "ivec4" => (Format::Rgba32Sint, 16),
         "vec2" => (Format::Rg32Sfloat, 8),

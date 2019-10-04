@@ -6,7 +6,6 @@
 
 use api::{DeviceIntPoint, DeviceIntRect, DeviceIntSize, FontRenderMode};
 use api::{ImageFormat, TextureTarget};
-use back;
 use debug_colors;
 #[cfg(feature = "gleam")]
 use device::{desc, ShaderKind};
@@ -42,26 +41,26 @@ const GPU_TAG_GLYPH_COVER: GpuProfileTag = GpuProfileTag {
     color: debug_colors::LIGHTSTEELBLUE,
 };
 
-pub struct GpuGlyphRendere {
+pub struct GpuGlyphRenderer<B: hal::Backend> {
     pub area_lut_texture: Texture,
     pub vector_stencil_vao: VAO,
     pub vector_cover_vao: VAO,
 
     // These are Pathfinder shaders, used for rendering vector graphics.
-    vector_stencil: LazilyCompiledShader,
-    vector_cover: LazilyCompiledShader,
+    vector_stencil: LazilyCompiledShader<B>,
+    vector_cover: LazilyCompiledShader<B>,
 }
 
-impl GpuGlyphRenderer {
+impl<B: hal::Backend> GpuGlyphRenderer<B> {
     #[cfg(not(feature = "gleam"))]
-    pub fn new(_device: &mut Device<back::Backend>, _prim_vao: &VAO, _precache_flags: ShaderPrecacheFlags)
-               -> Result<GpuGlyphRenderer, RendererError> {
+    pub fn new(_device: &mut Device<B>, _prim_vao: &VAO, _precache_flags: ShaderPrecacheFlags)
+               -> Result<GpuGlyphRenderer<B>, RendererError> {
         unimplemented!();
     }
 
     #[cfg(feature = "gleam")]
-    pub fn new(device: &mut Device<back::Backend>, prim_vao: &VAO, precache_flags: ShaderPrecacheFlags)
-               -> Result<GpuGlyphRenderer, RendererError> {
+    pub fn new(device: &mut Device<B>, prim_vao: &VAO, precache_flags: ShaderPrecacheFlags)
+               -> Result<GpuGlyphRenderer<B>, RendererError> {
         // Make sure the area LUT is uncompressed grayscale TGA, 8bpp.
         debug_assert!(AREA_LUT_TGA_BYTES[2] == 3);
         debug_assert!(AREA_LUT_TGA_BYTES[16] == 8);
@@ -114,7 +113,7 @@ impl GpuGlyphRenderer {
     }
 }
 
-impl Renderer {
+impl<B: hal::Backend> Renderer<B> {
     /// Renders glyphs using the vector graphics shaders (Pathfinder).
     pub fn stencil_glyphs(&mut self,
                           glyphs: &[GlyphJob],

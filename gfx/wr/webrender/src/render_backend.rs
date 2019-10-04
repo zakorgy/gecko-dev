@@ -22,7 +22,6 @@ use api::channel::{MsgReceiver, MsgSender, Payload};
 use api::CaptureBits;
 #[cfg(feature = "replay")]
 use api::CapturedDocument;
-use back;
 use clip_scroll_tree::{SpatialNodeIndex, ClipScrollTree};
 #[cfg(feature = "debugger")]
 use debug_server;
@@ -32,6 +31,7 @@ use frame_builder::{FrameBuilder, FrameBuilderConfig};
 use gpu_cache::GpuCache;
 #[cfg(not(feature="gleam"))]
 use gpu_cache::{GpuBlockData, GPU_CACHE_INITIAL_HEIGHT};
+use hal;
 use hit_test::{HitTest, HitTester};
 use intern_types;
 use internal_types::{DebugOutput, FastHashMap, FastHashSet, RenderedDocument, ResultMsg};
@@ -95,7 +95,7 @@ impl DocumentView {
 }
 
 #[derive(Copy, Clone, Hash, MallocSizeOf, PartialEq, PartialOrd, Debug, Eq, Ord)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct FrameId(usize);
 
@@ -672,19 +672,19 @@ struct PlainRenderBackend {
 /// GPU-friendly work which is then submitted to the renderer in the form of a frame::Frame.
 ///
 /// The render backend operates on its own thread.
-pub struct RenderBackend {
+pub struct RenderBackend<B: hal::Backend> {
     #[cfg(not(feature="gleam"))]
-    device: Arc<back::Device>,
+    device: Arc<B::Device>,
     #[cfg(not(feature="gleam"))]
-    heaps: Weak<Mutex<Heaps<back::Backend>>>,
+    heaps: Weak<Mutex<Heaps<B>>>,
     #[cfg(not(feature="gleam"))]
-    gpu_cache_buffer: PersistentlyMappedBuffer<back::Backend>,
+    gpu_cache_buffer: PersistentlyMappedBuffer<B>,
     #[cfg(not(feature="gleam"))]
     send_buffer_handle_to_renderer: bool,
 
     api_rx: MsgReceiver<ApiMsg>,
     payload_rx: Receiver<Payload>,
-    result_tx: Sender<ResultMsg>,
+    result_tx: Sender<ResultMsg<B>>,
     scene_tx: Sender<SceneBuilderRequest>,
     low_priority_scene_tx: Sender<SceneBuilderRequest>,
     scene_rx: Receiver<SceneBuilderResult>,
@@ -699,9 +699,9 @@ pub struct RenderBackend {
     frame_config: FrameBuilderConfig,
     documents: FastHashMap<DocumentId, Document>,
 
-    notifier: Box<RenderNotifier>,
-    recorder: Option<Box<ApiRecordingReceiver>>,
-    sampler: Option<Box<AsyncPropertySampler + Send>>,
+    notifier: Box<dyn RenderNotifier>,
+    recorder: Option<Box<dyn ApiRecordingReceiver>>,
+    sampler: Option<Box<dyn AsyncPropertySampler + Send>>,
     size_of_ops: Option<MallocSizeOfOps>,
     debug_flags: DebugFlags,
     namespace_alloc_by_client: bool,
@@ -709,28 +709,28 @@ pub struct RenderBackend {
     recycler: Recycler,
 }
 
-impl RenderBackend {
+impl<B: hal::Backend> RenderBackend<B> {
     #[cfg(not(feature="gleam"))]
     pub fn new(
         api_rx: MsgReceiver<ApiMsg>,
         payload_rx: Receiver<Payload>,
-        result_tx: Sender<ResultMsg>,
+        result_tx: Sender<ResultMsg<B>>,
         scene_tx: Sender<SceneBuilderRequest>,
         low_priority_scene_tx: Sender<SceneBuilderRequest>,
         scene_rx: Receiver<SceneBuilderResult>,
         default_device_pixel_ratio: f32,
         resource_cache: ResourceCache,
-        notifier: Box<RenderNotifier>,
+        notifier: Box<dyn RenderNotifier>,
         frame_config: FrameBuilderConfig,
-        recorder: Option<Box<ApiRecordingReceiver>>,
-        sampler: Option<Box<AsyncPropertySampler + Send>>,
+        recorder: Option<Box<dyn ApiRecordingReceiver>>,
+        sampler: Option<Box<dyn AsyncPropertySampler + Send>>,
         size_of_ops: Option<MallocSizeOfOps>,
         debug_flags: DebugFlags,
         namespace_alloc_by_client: bool,
-        device: Arc<back::Device>,
-        heaps: Weak<Mutex<Heaps<back::Backend>>>,
+        device: Arc<B::Device>,
+        heaps: Weak<Mutex<Heaps<B>>>,
         non_coherent_atom_size_mask: u64,
-    ) -> RenderBackend {
+    ) -> RenderBackend<B> {
         let heaps_strong = heaps.upgrade().unwrap();
         let gpu_cache_buffer = PersistentlyMappedBuffer::new::<GpuBlockData>(
             device.as_ref(),
@@ -767,11 +767,11 @@ impl RenderBackend {
         }
     }
 
-#[cfg(feature="gleam")]
+    #[cfg(feature="gleam")]
     pub fn new(
         api_rx: MsgReceiver<ApiMsg>,
         payload_rx: Receiver<Payload>,
-        result_tx: Sender<ResultMsg>,
+        result_tx: Sender<ResultMsg<B>>,
         scene_tx: Sender<SceneBuilderRequest>,
         low_priority_scene_tx: Sender<SceneBuilderRequest>,
         scene_rx: Receiver<SceneBuilderResult>,
@@ -784,7 +784,7 @@ impl RenderBackend {
         size_of_ops: Option<MallocSizeOfOps>,
         debug_flags: DebugFlags,
         namespace_alloc_by_client: bool,
-    ) -> RenderBackend {
+    ) -> RenderBackend<B> {
         RenderBackend {
             api_rx,
             payload_rx,
@@ -840,8 +840,6 @@ impl RenderBackend {
                 doc.view.window_size = window_size;
                 doc.view.inner_rect = inner_rect;
                 doc.view.device_pixel_ratio = device_pixel_ratio;
-                #[cfg(not(feature = "gleam"))]
-                self.result_tx.send(ResultMsg::UpdateWindowSize(window_size)).unwrap();
             }
             SceneMsg::SetDisplayList {
                 epoch,
@@ -944,7 +942,7 @@ impl RenderBackend {
 
                             doc.removed_pipelines.append(&mut txn.removed_pipelines);
 
-                            if let Some(mut built_scene) = txn.built_scene.take() {
+                            if let Some(built_scene) = txn.built_scene.take() {
                                 doc.new_async_scene_ready(
                                     built_scene,
                                     &mut self.recycler,
@@ -1559,7 +1557,7 @@ impl RenderBackend {
     }
 
     #[cfg(all(not(feature = "gleam"), any(feature = "capture", feature = "replay")))]
-    fn ensure_buffer(&mut self) -> Option<PersistentlyMappedBuffer<back::Backend>> {
+    fn ensure_buffer(&mut self) -> Option<PersistentlyMappedBuffer<B>> {
         let clear = self.gpu_cache.pending_clear;
         let resize = self.gpu_cache.height() > self.gpu_cache_buffer.height;
         if clear || resize {
@@ -1753,7 +1751,7 @@ impl ToDebugString for SpecificDisplayItem {
     }
 }
 
-impl RenderBackend {
+impl<B: hal::Backend> RenderBackend<B> {
     #[cfg(feature = "capture")]
     // Note: the mutable `self` is only needed here for resolving blob images
     fn save_capture(
@@ -1822,6 +1820,7 @@ impl RenderBackend {
             // After we rendered the frames, there are pending updates to both
             // GPU cache and resources. Instead of serializing them, we are going to make sure
             // they are applied on the `Renderer` side.
+
             #[cfg(feature="gleam")]
             let msg_update_gpu_cache = ResultMsg::UpdateGpuCache(self.gpu_cache.extract_updates());
             #[cfg(not(feature="gleam"))]
@@ -1901,7 +1900,7 @@ impl RenderBackend {
             let data_stores = CaptureConfig::deserialize::<DataStores, _>(root, &data_stores_name)
                 .expect(&format!("Unable to open {}.ron", data_stores_name));
 
-            let mut doc = Document {
+            let doc = Document {
                 scene: scene.clone(),
                 removed_pipelines: Vec::new(),
                 view: view.clone(),

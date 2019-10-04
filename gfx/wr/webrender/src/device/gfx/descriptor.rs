@@ -350,7 +350,7 @@ impl<K, B, F> DescriptorSetHandler<K, B, F>
         sampler_nearest: &B::Sampler,
     ) {
         let new_set = match self.descriptor_bindings.entry(bindings) {
-            Entry::Occupied(_) => None,
+            Entry::Occupied(_) => return,
             Entry::Vacant(v) => {
                 let free_sets = self.free_sets.get_mut(group);
                 let desc_set = match free_sets.pop() {
@@ -368,47 +368,44 @@ impl<K, B, F> DescriptorSetHandler<K, B, F>
                         free_sets.pop().unwrap()
                     }
                 };
-                Some(v.insert(desc_set))
+                v.insert(desc_set)
             }
         };
         let mut descriptor_writes: SmallVec<[hal::pso::DescriptorSetWrite<_, _>; RENDERER_TEXTURE_COUNT]> = SmallVec::new();
+        let set = new_set.raw();
         if let Some(buffer) = storage_buffer {
-            if let Some(ref set) = new_set {
-                descriptor_writes.push(hal::pso::DescriptorSetWrite {
-                    set: set.raw(),
-                    binding: GPU_CACHE_BINDING,
-                    array_offset: 0,
-                    descriptors: Some(hal::pso::Descriptor::Buffer(
-                        buffer,
-                        None .. None,
-                    )),
-                });
-            }
+            descriptor_writes.push(hal::pso::DescriptorSetWrite {
+                set,
+                binding: GPU_CACHE_BINDING,
+                array_offset: 0,
+                descriptors: Some(hal::pso::Descriptor::Buffer(
+                    buffer,
+                    None .. None,
+                )),
+            });
         }
         for index in range {
             let image = &images[&bound_textures[index]].core;
-            if let Some(ref set) = new_set {
-                let sampler = if index < PER_DRAW_TEXTURE_COUNT {
-                    match bound_samplers[index] {
-                        TextureFilter::Linear | TextureFilter::Trilinear => sampler_linear,
-                        TextureFilter::Nearest => sampler_nearest,
-                    }
-                } else if index < PER_DRAW_TEXTURE_COUNT + PER_PASS_TEXTURE_COUNT {
-                    sampler_linear
-                } else {
-                    sampler_nearest
-                };
-                descriptor_writes.push(hal::pso::DescriptorSetWrite {
-                    set: set.raw(),
-                    binding: index as _,
-                    array_offset: 0,
-                    descriptors: Some(hal::pso::Descriptor::CombinedImageSampler(
-                        &image.view,
-                        hal::image::Layout::ShaderReadOnlyOptimal,
-                        sampler,
-                    )),
-                });
-            }
+            let sampler = if index < PER_DRAW_TEXTURE_COUNT {
+                match bound_samplers[index] {
+                    TextureFilter::Linear | TextureFilter::Trilinear => sampler_linear,
+                    TextureFilter::Nearest => sampler_nearest,
+                }
+            } else if index < PER_DRAW_TEXTURE_COUNT + PER_PASS_TEXTURE_COUNT {
+                sampler_linear
+            } else {
+                sampler_nearest
+            };
+            descriptor_writes.push(hal::pso::DescriptorSetWrite {
+                set,
+                binding: index as _,
+                array_offset: 0,
+                descriptors: Some(hal::pso::Descriptor::CombinedImageSampler(
+                    &image.view,
+                    hal::image::Layout::ShaderReadOnlyOptimal,
+                    sampler,
+                )),
+            });
         }
         unsafe { device.write_descriptor_sets(descriptor_writes) };
     }
