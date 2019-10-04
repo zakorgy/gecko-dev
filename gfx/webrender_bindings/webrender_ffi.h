@@ -157,7 +157,9 @@ void apz_deregister_sampler(mozilla::wr::WrWindowId aWindowId);
     {}
 #endif
 
+#define Backend void*
 #include "webrender_ffi_generated.h"
+#undef Backend
 
 #undef WR_FUNC
 #undef WR_DESTRUCTOR_SAFE_FUNC

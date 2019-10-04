@@ -840,6 +840,8 @@ impl<B: hal::Backend> RenderBackend<B> {
                 doc.view.window_size = window_size;
                 doc.view.inner_rect = inner_rect;
                 doc.view.device_pixel_ratio = device_pixel_ratio;
+                #[cfg(not(feature = "gleam"))]
+                self.result_tx.send(ResultMsg::UpdateWindowSize(window_size)).unwrap();
             }
             SceneMsg::SetDisplayList {
                 epoch,

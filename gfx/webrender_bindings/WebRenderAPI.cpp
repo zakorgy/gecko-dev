@@ -75,7 +75,7 @@ class NewRenderer : public RendererEvent {
     *mUseTripleBuffering = compositor->UseTripleBuffering();
 
     bool supportLowPriorityTransactions = true;  // TODO only for main windows.
-    wr::Renderer* wrRenderer = nullptr;
+    wr::Renderer<void*>* wrRenderer = nullptr;
 
     #if defined(XP_MACOSX)
         wr::SurfaceHandles surfaceHandles = wr::SurfaceHandles::MacosMetal(compWidget->GetNativeData(NS_NATIVE_WIDGET));

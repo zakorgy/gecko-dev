@@ -46,7 +46,7 @@ void UnlockExternalImage(void* aObj, wr::WrExternalImageId aId,
 
 RendererOGL::RendererOGL(RefPtr<RenderThread>&& aThread,
                          UniquePtr<RenderCompositor> aCompositor,
-                         wr::WindowId aWindowId, wr::Renderer* aRenderer,
+                         wr::WindowId aWindowId, wr::Renderer<void*>* aRenderer,
                          layers::CompositorBridgeParent* aBridge)
     : mThread(aThread),
       mCompositor(std::move(aCompositor)),

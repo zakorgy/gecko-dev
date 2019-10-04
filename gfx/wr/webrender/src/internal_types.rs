@@ -323,6 +323,8 @@ pub enum ResultMsg<B: hal::Backend> {
         BackendProfileCounters,
     ),
     AppendNotificationRequests(Vec<NotificationRequest>),
+    #[cfg(not(feature = "gleam"))]
+    UpdateWindowSize(DeviceIntSize),
 }
 
 #[derive(Clone, Debug)]

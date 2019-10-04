@@ -523,7 +523,7 @@ impl<B: hal::Backend> TextureResolver<B> {
                         return true;
                     }
                 }
-            texture.used_recently(frame_id, 30)
+            texture.used_recently(frame_id, 0)
         });
     }
 
@@ -1847,6 +1847,10 @@ impl<B: hal::Backend> Renderer<B> {
         // Pull any pending results and return the most recent.
         while let Ok(msg) = self.result_rx.try_recv() {
             match msg {
+                #[cfg(not(feature = "gleam"))]
+                ResultMsg::UpdateWindowSize(window_size) => {
+                    self.resize(Some((window_size.width, window_size.height)));
+                }
                 ResultMsg::PublishPipelineInfo(mut pipeline_info) => {
                     for (pipeline_id, epoch) in pipeline_info.epochs {
                         self.pipeline_info.epochs.insert(pipeline_id, epoch);
