@@ -25,6 +25,35 @@ fn main() {
         build.flag_if_supported("-std=c++14");
     }
 
+    build.flag("-fexceptions");
+    build.flag("-static");
+
+    // Ugly hack for gecko on mac
+    use std::fs::OpenOptions;
+    use std::io::prelude::*;
+    let od = std::env::var("OUT_DIR").unwrap();
+    println!("{}", &format!("{}/../../../../../toolkit/library/XUL.list", od));
+    let mut xul = OpenOptions::new()
+        .write(true)
+        .append(true)
+        .open(&format!("{}/../../../../../toolkit/library/XUL.list", od))
+        .unwrap();
+
+    if let Err(e) = writeln!(xul, "\n{}/src/vendor/SPIRV-Cross/spirv_cross.o\n{}/src/vendor/SPIRV-Cross/spirv_cross_parsed_ir.o", od, od) {
+        eprintln!("Couldn't write to file: {}", e);
+    }
+
+    println!("{}", &format!("{}/../../../../../toolkit/library/gtest/XUL.list", od));
+    let mut xul = OpenOptions::new()
+        .write(true)
+        .append(true)
+        .open(&format!("{}/../../../../../toolkit/library/gtest/XUL.list", od))
+        .unwrap();
+
+    if let Err(e) = writeln!(xul, "\n{}/src/vendor/SPIRV-Cross/spirv_cross.o\n{}/src/vendor/SPIRV-Cross/spirv_cross_parsed_ir.o", od, od) {
+        eprintln!("Couldn't write to file: {}", e);
+    }
+
     build
         .file("src/wrapper.cpp")
         .file("src/vendor/SPIRV-Cross/spirv_cfg.cpp")
