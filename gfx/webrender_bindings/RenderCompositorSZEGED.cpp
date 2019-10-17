@@ -54,6 +54,10 @@ RenderCompositorSZEGED::Initialize()
     mGL = gl::GLContextProviderWGL::CreateHeadless(flags, &discardFailureId);
   #endif
 
+  #if defined(XP_MACOSX)
+    mGL = gl::GLContextProviderCGL::CreateHeadless(flags, &discardFailureId);
+  #endif
+
   #if !(defined(XP_MACOSX) || defined(XP_WIN))
     mGL = gl::GLContextProviderGLX::CreateHeadless(flags, &discardFailureId);
   #endif

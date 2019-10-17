@@ -34,8 +34,7 @@ use rayon;
 use euclid::SideOffsets2D;
 use nsstring::nsAString;
 
-#[cfg(feature = "vulkan")]
-use gfx_backend_vulkan as back;
+use back;
 use dirs;
 use webrender::hal::Instance;
 use webrender::{BackendApiType, DeviceInit, HeapsConfig};

@@ -9,7 +9,11 @@ extern crate euclid;
 extern crate app_units;
 //extern crate gleam;
 #[cfg(feature = "vulkan")]
-extern crate gfx_backend_vulkan;
+extern crate gfx_backend_vulkan as back;
+#[cfg(feature = "dx12")]
+extern crate gfx_backend_dx12 as back;
+#[cfg(feature = "metal")]
+extern crate gfx_backend_metal as back;
 extern crate dirs;
 extern crate nsstring;
 extern crate rayon;

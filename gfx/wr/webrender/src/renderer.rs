@@ -3175,6 +3175,15 @@ impl<B: hal::Backend> Renderer<B> {
                     .iter()
                     .rev()
                 {
+                    #[cfg(not(feature = "gleam"))]
+                    {
+                        if let BatchKind::Brush(BrushBatchKind::YuvImage(image_buffer_kind, ..)) = batch.key.kind {
+                            if !image_buffer_kind.has_platform_support() {
+                                warn!("Skipping draw with YUV shader with image_buffer_kind : {:?}", image_buffer_kind);
+                                continue;
+                            }
+                        }
+                    }
                     self.shaders.borrow_mut()
                         .get(&batch.key, self.debug_flags)
                         .bind(
@@ -3216,6 +3225,15 @@ impl<B: hal::Backend> Renderer<B> {
                 let mut prev_blend_mode = BlendMode::None;
 
                 for batch in &alpha_batch_container.alpha_batches {
+                    #[cfg(not(feature = "gleam"))]
+                    {
+                        if let BatchKind::Brush(BrushBatchKind::YuvImage(image_buffer_kind, ..)) = batch.key.kind {
+                            if !image_buffer_kind.has_platform_support() {
+                                warn!("Skipping draw with YUV shader with image_buffer_kind : {:?}", image_buffer_kind);
+                                continue;
+                            }
+                        }
+                    }
                     self.shaders.borrow_mut()
                         .get(&batch.key, self.debug_flags)
                         .bind(

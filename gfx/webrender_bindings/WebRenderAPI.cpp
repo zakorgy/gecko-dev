@@ -78,6 +78,7 @@ class NewRenderer : public RendererEvent {
     wr::Renderer<void*>* wrRenderer = nullptr;
 
     #if defined(XP_MACOSX)
+        nsIWidget* compWidget = compositor->GetWidget()->RealWidget();
         wr::SurfaceHandles surfaceHandles = wr::SurfaceHandles::MacosMetal(compWidget->GetNativeData(NS_NATIVE_WIDGET));
     #endif
 

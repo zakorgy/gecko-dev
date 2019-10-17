@@ -32,7 +32,7 @@ exclude = [
   # Excluded because they are used only as dependencies, not top-level targets,
   # so we don't need to vendor their dev-dependencies.
   "dom/webauthn/u2f-hid-rs",
-  #"gfx/webrender_bindings",
+  "gfx/webrender_bindings",
   "media/mp4parse-rust/mp4parse",
   "media/mp4parse-rust/mp4parse_capi",
   "media/mp4parse-rust/mp4parse_fallible",
@@ -59,3 +59,5 @@ codegen-units = 1
 libudev-sys = { path = "dom/webauthn/libudev-sys" }
 serde_derive = { git = "https://github.com/servo/serde", branch = "deserialize_from_enums9" }
 winapi = { git = "https://github.com/froydnj/winapi-rs", branch = "aarch64" }
+spirv_cross = { git = "https://github.com/zakorgy/spirv_cross", branch = "gecko" }
+metal = { git = "https://github.com/zakorgy/metal-rs", branch = "0.16" }
