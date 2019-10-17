@@ -34,7 +34,9 @@ use rayon;
 use euclid::SideOffsets2D;
 use nsstring::nsAString;
 
+#[cfg(feature = "vulkan")]
 use gfx_backend_vulkan as back;
+use dirs;
 use webrender::hal::Instance;
 use webrender::{BackendApiType, DeviceInit, HeapsConfig};
 
@@ -1167,13 +1169,15 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
         ( adapter, surface, instance)
     };
 
+    let cache_dir = dirs::cache_dir().expect("User's cache directory not found");
+    let cache_path = Some(PathBuf::from(&cache_dir).join("pipeline_cache.bin"));
     let init = DeviceInit {
         instance: Box::new(instance),
         adapter: adapter,
         surface: Some(surface),
         window_size: (window_width, window_height),
         descriptor_count: None,
-        cache_path: None,
+        cache_path,
         save_cache: false,
         backend_api: BackendApiType::Vulkan,
     };

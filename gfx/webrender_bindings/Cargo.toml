@@ -16,6 +16,7 @@ bincode = "1.0"
 uuid = { version = "0.6", features = ["v4"] }
 fxhash = "0.2.1"
 ron = "0.1.7"
+dirs = { version = "1.0", optional = true }
 
 [dependencies.webrender]
 path = "../wr/webrender"
@@ -44,6 +45,6 @@ features = ["winit", "x11"]
 
 [features]
 default = ["vulkan"]
-dx12 = ["gfx-backend-dx12"]
-metal = ["gfx-backend-metal"]
-vulkan = ["gfx-backend-vulkan"]
+dx12 = ["gfx-backend-dx12", "dirs"]
+metal = ["gfx-backend-metal", "dirs"]
+vulkan = ["gfx-backend-vulkan", "dirs"]

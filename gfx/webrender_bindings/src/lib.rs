@@ -8,7 +8,9 @@ extern crate webrender;
 extern crate euclid;
 extern crate app_units;
 //extern crate gleam;
+#[cfg(feature = "vulkan")]
 extern crate gfx_backend_vulkan;
+extern crate dirs;
 extern crate nsstring;
 extern crate rayon;
 extern crate thread_profiler;
