@@ -1160,7 +1160,7 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
             #[cfg(all(unix, not(target_os = "macos")))]
             SurfaceHandles::LinuxVulkan(display, window) => instance.create_surface_from_xlib(display as _, window as _),
             #[cfg(target_os = "macos")]
-            SurfaceHandles::MacosMetal(nsview) => instance.create_surface_from_nsview(nsview as _),
+            SurfaceHandles::MacosMetal(nsview) => instance.create_surface_from_nsview(nsview as _, false),
             #[cfg(windows)]
             SurfaceHandles::Windows(hinstance, hwnd) => instance.create_surface_from_hwnd(hinstance as _,hwnd as _),
             h => panic!("Wrong handle variant: {:?}", h),
