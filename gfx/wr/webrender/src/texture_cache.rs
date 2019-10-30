@@ -32,7 +32,10 @@ pub const TEXTURE_REGION_DIMENSIONS: i32 = 512;
 const PICTURE_TEXTURE_ADD_SLICES: usize = 4;
 
 /// The chosen image format for picture tiles.
+#[cfg(feature = "gl")]
 const PICTURE_TILE_FORMAT: ImageFormat = ImageFormat::RGBA8;
+#[cfg(not(feature = "gl"))]
+const PICTURE_TILE_FORMAT: ImageFormat = ImageFormat::BGRA8;
 
 /// The number of pixels in a region. Derived from the above.
 const TEXTURE_REGION_PIXELS: usize =

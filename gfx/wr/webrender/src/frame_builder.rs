@@ -941,7 +941,7 @@ pub struct Frame {
 
     /// Dirty regions recorded when generating this frame. Empty when not in
     /// testing.
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[cfg_attr(any(feature = "capture", feature = "replay"), serde(skip))]
     pub recorded_dirty_regions: Vec<RecordedDirtyRegion>,
 
     /// Debugging information to overlay for this frame.

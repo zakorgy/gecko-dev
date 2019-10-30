@@ -1,3 +1,20 @@
+# U-Szeged version
+
+This version of WebRender is using next-gen backends (vulkan/dx12/metal) provided by the [gfx-hal](https://crates.io/crates/gfx-hal) API.
+
+The current state is **experimental**.
+At the moment the **vulkan, dx12,** and **metal** backends are usable, but in performance they are behind the original (this year's goal is to change this).
+
+By default this WebRender builds with gfx-hal, but we kept the original OpenGL backend and you can enable it with the **gleam** feature in WebRender and with the **gl** feature in Wrench.
+
+To run **Wrench** reftests e.g. with vulkan backend, use the following comand:
+```
+cd wrench
+cargo run --features=vulkan reftest
+```
+
+It was tested on Linux (Ubuntu 18.04), Windows 10 and macOS (Mojave).
+
 # WebRender
 
 [![Version](https://img.shields.io/crates/v/webrender.svg)](https://crates.io/crates/webrender)

@@ -189,7 +189,7 @@ pub struct ClipMaskBorderCornerDotDash {
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct PrimitiveInstanceData {
-    data: [i32; 4],
+    pub data: [i32; 4],
 }
 
 /// Vertex format for resolve style operations with pixel local storage.
@@ -216,11 +216,11 @@ impl ResolveInstanceData {
 #[derive(Debug, Clone)]
 #[repr(C)]
 pub struct CompositeInstance {
-    rect: DeviceRect,
-    clip_rect: DeviceRect,
-    color: PremultipliedColorF,
-    layer: f32,
-    z_id: f32,
+    pub rect: DeviceRect,
+    pub clip_rect: DeviceRect,
+    pub color: PremultipliedColorF,
+    pub layer: f32,
+    pub z_id: f32,
 }
 
 impl CompositeInstance {

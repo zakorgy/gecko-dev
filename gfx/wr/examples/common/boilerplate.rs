@@ -2,7 +2,23 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#![cfg_attr(
+not(any(feature = "gfx-hal", feature = "gl")),
+allow(dead_code, unused_imports)
+)]
+
+#[cfg(feature = "dx12")]
+extern crate gfx_backend_dx12 as back;
+#[cfg(feature = "metal")]
+extern crate gfx_backend_metal as back;
+#[cfg(feature = "vulkan")]
+extern crate gfx_backend_vulkan as back;
+#[cfg(feature = "gl")]
+extern crate gfx_backend_empty as back;
+
+#[cfg(feature = "gl")]
 use gleam::gl;
+#[cfg(feature = "gl")]
 use glutin;
 use std::env;
 use std::path::PathBuf;
@@ -11,6 +27,8 @@ use winit;
 use webrender::{DebugFlags, ShaderPrecacheFlags};
 use webrender::api::*;
 use webrender::api::units::*;
+#[cfg(feature = "gfx-hal")]
+use webrender::hal::Instance;
 
 struct Notifier {
     events_proxy: winit::EventsLoopProxy,
@@ -88,6 +106,7 @@ pub trait Example {
     ) -> bool {
         false
     }
+    #[cfg(feature = "gl")]
     fn get_image_handlers(
         &mut self,
         _gl: &dyn gl::Gl,
@@ -95,10 +114,19 @@ pub trait Example {
           Option<Box<dyn webrender::OutputImageHandler>>) {
         (None, None)
     }
+    #[cfg(not(feature = "gl"))]
+    fn get_image_handlers(
+        &mut self,
+    ) -> (Option<Box<dyn webrender::ExternalImageHandler>>,
+          Option<Box<dyn webrender::OutputImageHandler>>) {
+        (None, None)
+    }
+    #[cfg(feature = "gl")]
     fn draw_custom(&mut self, _gl: &dyn gl::Gl) {
     }
 }
 
+#[cfg(any(feature = "gfx-hal", feature = "gl"))]
 pub fn main_wrapper<E: Example>(
     example: &mut E,
     options: Option<webrender::RendererOptions>,
@@ -128,37 +156,92 @@ pub fn main_wrapper<E: Example>(
         .with_title(E::TITLE)
         .with_multitouch()
         .with_dimensions(winit::dpi::LogicalSize::new(E::WIDTH as f64, E::HEIGHT as f64));
-    let windowed_context = glutin::ContextBuilder::new()
-        .with_gl(glutin::GlRequest::GlThenGles {
-            opengl_version: (3, 2),
-            opengles_version: (3, 0),
-        })
-        .build_windowed(window_builder, &events_loop)
-        .unwrap();
 
-    let windowed_context = unsafe { windowed_context.make_current().unwrap() };
+    #[cfg(feature = "gl")]
+    let (gl, init, windowed_context) = {
+        let windowed_context = glutin::ContextBuilder::new()
+            .with_gl(glutin::GlRequest::GlThenGles {
+                opengl_version: (3, 2),
+                opengles_version: (3, 0),
+            })
+            .build_windowed(window_builder, &events_loop)
+            .unwrap();
 
-    let gl = match windowed_context.get_api() {
-        glutin::Api::OpenGl => unsafe {
-            gl::GlFns::load_with(
-                |symbol| windowed_context.get_proc_address(symbol) as *const _
-            )
-        },
-        glutin::Api::OpenGlEs => unsafe {
-            gl::GlesFns::load_with(
-                |symbol| windowed_context.get_proc_address(symbol) as *const _
-            )
-        },
-        glutin::Api::WebGl => unimplemented!(),
+        let windowed_context = unsafe { windowed_context.make_current().unwrap() };
+
+        let gl = match windowed_context.get_api() {
+            glutin::Api::OpenGl => unsafe {
+                gl::GlFns::load_with(
+                    |symbol| windowed_context.get_proc_address(symbol) as *const _
+                )
+            },
+            glutin::Api::OpenGlEs => unsafe {
+                gl::GlesFns::load_with(
+                    |symbol| windowed_context.get_proc_address(symbol) as *const _
+                )
+            },
+            glutin::Api::WebGl => unimplemented!(),
+        };
+
+        println!("OpenGL version {}", gl.get_string(gl::VERSION));
+        let init = gl.clone().into();
+        (gl, init, windowed_context)
     };
 
-    println!("OpenGL version {}", gl.get_string(gl::VERSION));
+    #[cfg(feature = "gfx-hal")]
+    let (init, window) = {
+        let window = window_builder.build(&events_loop).unwrap();
+        let instance = back::Instance::create("gfx-rs instance", 1);
+        let mut adapters = instance.enumerate_adapters();
+        let adapter = adapters.remove(0);
+        let surface = Some(instance.create_surface(&window));
+        let winit::dpi::LogicalSize { width, height } = window.get_inner_size().unwrap();
+        let init = {
+            let cache_dir = dirs::cache_dir().expect("User's cache directory not found");
+            let cache_path = Some(PathBuf::from(&cache_dir).join("pipeline_cache.bin"));
+
+            #[cfg(feature = "vulkan")]
+            let backend_api = webrender::BackendApiType::Vulkan;
+            #[cfg(feature = "metal")]
+            let backend_api = webrender::BackendApiType::Metal;
+            #[cfg(feature = "dx12")]
+            let backend_api = webrender::BackendApiType::Dx12;
+
+            webrender::DeviceInit {
+                instance: Box::new(instance),
+                adapter,
+                surface,
+                window_size: (width as i32, height as i32),
+                descriptor_count: None,
+                cache_path,
+                save_cache: true,
+                backend_api,
+            }
+        };
+        (init, window)
+    };
+
     println!("Shader resource path: {:?}", res_path);
-    let device_pixel_ratio = windowed_context.window().get_hidpi_factor() as f32;
+
+    #[cfg(feature = "gl")]
+    let window = windowed_context.window();
+    let device_pixel_ratio = window.get_hidpi_factor() as f32;
     println!("Device pixel ratio: {}", device_pixel_ratio);
 
     println!("Loading shaders...");
     let mut debug_flags = DebugFlags::ECHO_DRIVER_MESSAGES | DebugFlags::TEXTURE_CACHE_DBG;
+
+    #[cfg(feature = "gfx-hal")]
+    let heaps_config = {
+        let config_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("webrender/res/mem_config.ron");
+        let source = std::fs::read_to_string(&config_path)
+            .expect(&format!("Unable to open memory config file from {:?}", config_path));
+        ron::de::from_str(&source).expect("Unable to parse HeapsConfig")
+    };
+
     let opts = webrender::RendererOptions {
         resource_override_path: res_path,
         precache_flags: E::PRECACHE_SHADER_FLAGS,
@@ -167,20 +250,25 @@ pub fn main_wrapper<E: Example>(
         //scatter_gpu_cache_updates: false,
         debug_flags,
         //allow_texture_swizzling: false,
+        #[cfg(feature = "gfx-hal")]
+        heaps_config,
         ..options.unwrap_or(webrender::RendererOptions::default())
     };
 
-    let device_size = {
-        let size = windowed_context
-            .window()
+    #[cfg(feature = "gl")]
+    let window = windowed_context.window();
+
+    let mut device_size = {
+        let size = window
             .get_inner_size()
             .unwrap()
             .to_physical(device_pixel_ratio as f64);
         DeviceIntSize::new(size.width as i32, size.height as i32)
     };
     let notifier = Box::new(Notifier::new(events_loop.create_proxy()));
-    let (mut renderer, sender) = webrender::Renderer::new(
-        gl.clone(),
+
+    let (mut renderer, sender): (webrender::Renderer<back::Backend>, _) = webrender::Renderer::new(
+        init,
         notifier,
         opts,
         None,
@@ -189,7 +277,11 @@ pub fn main_wrapper<E: Example>(
     let api = sender.create_api();
     let document_id = api.add_document(device_size, 0);
 
+    #[cfg(feature = "gl")]
     let (external, output) = example.get_image_handlers(&*gl);
+
+    #[cfg(feature = "gfx-hal")]
+    let (external, output) = example.get_image_handlers();
 
     if let Some(output_image_handler) = output {
         renderer.set_output_image_handler(output_image_handler);
@@ -201,7 +293,7 @@ pub fn main_wrapper<E: Example>(
 
     let epoch = Epoch(0);
     let pipeline_id = PipelineId(0, 0);
-    let layout_size = device_size.to_f32() / euclid::Scale::new(device_pixel_ratio);
+    let mut layout_size = device_size.to_f32() / euclid::Scale::new(device_pixel_ratio);
     let mut builder = DisplayListBuilder::new(pipeline_id, layout_size);
     let mut txn = Transaction::new();
 
@@ -284,6 +376,21 @@ pub fn main_wrapper<E: Example>(
                     )
                 },
             },
+            winit::WindowEvent::Resized(dims) => {
+                let new_size = ((dims.width as f32 * device_pixel_ratio) as i32, (dims.height as f32 * device_pixel_ratio) as i32);
+                #[cfg(not(feature = "gl"))]
+                { device_size = renderer.resize(Some(new_size)) };
+                #[cfg(feature = "gl")]
+                { device_size = DeviceIntSize::new(new_size.0,new_size.1) };
+
+                layout_size = device_size.to_f32() / euclid::Scale::new(device_pixel_ratio);
+                api.set_document_view(
+                    document_id,
+                    DeviceIntRect::new(DeviceIntPoint::zero(), device_size),
+                    device_pixel_ratio,
+                );
+                return winit::ControlFlow::Continue;
+            }
             other => custom_event = example.on_event(
                 other,
                 &api,
@@ -320,11 +427,22 @@ pub fn main_wrapper<E: Example>(
         renderer.update();
         renderer.render(device_size).unwrap();
         let _ = renderer.flush_pipeline_info();
+        #[cfg(feature = "gl")]
         example.draw_custom(&*gl);
+        #[cfg(feature = "gl")]
         windowed_context.swap_buffers().ok();
 
         winit::ControlFlow::Continue
     });
+    api.shut_down(true);
 
     renderer.deinit();
+}
+
+#[cfg(not(any(feature = "gfx-hal", feature = "gl")))]
+pub fn main_wrapper<E: Example>(
+    _example: &mut E,
+    _options: Option<webrender::RendererOptions>,
+) {
+    println!("You need to enable one of the native API features (dx12/gl/metal/vulkan) in order to run this example.");
 }

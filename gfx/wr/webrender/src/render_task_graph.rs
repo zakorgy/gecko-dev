@@ -464,7 +464,10 @@ impl RenderPass {
             kind: RenderPassKind::OffScreen {
                 color: RenderTargetList::new(
                     screen_size,
+                    #[cfg(feature = "gl")]
                     ImageFormat::RGBA8,
+                    #[cfg(not(feature = "gl"))]
+                    ImageFormat::BGRA8,
                     gpu_supports_fast_clears,
                 ),
                 alpha: RenderTargetList::new(

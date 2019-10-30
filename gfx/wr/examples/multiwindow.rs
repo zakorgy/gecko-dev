@@ -2,13 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-extern crate euclid;
-extern crate gleam;
-extern crate glutin;
-extern crate webrender;
-extern crate winit;
-
+#[cfg(feature = "gl")]
+extern crate gfx_backend_empty as back;
+#[cfg(feature = "gl")]
 use gleam::gl;
+#[cfg(feature = "gl")]
 use glutin::NotCurrent;
 use std::fs::File;
 use std::io::Read;
@@ -51,7 +49,7 @@ impl RenderNotifier for Notifier {
 struct Window {
     events_loop: winit::EventsLoop, //TODO: share events loop?
     context: Option<glutin::WindowedContext<NotCurrent>>,
-    renderer: webrender::Renderer,
+    renderer: webrender::Renderer<back::Backend>,
     name: &'static str,
     pipeline_id: PipelineId,
     document_id: DocumentId,
@@ -104,7 +102,10 @@ impl Window {
             DeviceIntSize::new(size.width as i32, size.height as i32)
         };
         let notifier = Box::new(Notifier::new(events_loop.create_proxy()));
-        let (renderer, sender) = webrender::Renderer::new(gl.clone(), notifier, opts, None, device_size).unwrap();
+
+        #[cfg(feature = "gl")]
+        let init = gl.clone().into();
+        let (renderer, sender) = webrender::Renderer::new(init, notifier, opts, None, device_size).unwrap();
         let api = sender.create_api();
         let document_id = api.add_document(device_size, 0);
 

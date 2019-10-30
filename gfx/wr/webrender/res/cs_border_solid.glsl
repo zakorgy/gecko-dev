@@ -90,9 +90,18 @@ void main(void) {
 
     int mix_colors;
     switch (segment) {
-        case SEGMENT_TOP_LEFT:
-        case SEGMENT_TOP_RIGHT:
-        case SEGMENT_BOTTOM_RIGHT:
+        case SEGMENT_TOP_LEFT: {
+            mix_colors = do_aa ? MIX_AA : MIX_NO_AA;
+            break;
+        }
+        case SEGMENT_TOP_RIGHT: {
+            mix_colors = do_aa ? MIX_AA : MIX_NO_AA;
+            break;
+        }
+        case SEGMENT_BOTTOM_RIGHT: {
+            mix_colors = do_aa ? MIX_AA : MIX_NO_AA;
+            break;
+        }
         case SEGMENT_BOTTOM_LEFT: {
             mix_colors = do_aa ? MIX_AA : MIX_NO_AA;
             break;

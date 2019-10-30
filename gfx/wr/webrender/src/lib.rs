@@ -57,14 +57,14 @@ extern crate bitflags;
 extern crate cfg_if;
 #[macro_use]
 extern crate cstr;
+pub extern crate gfx_hal as hal;
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
 #[macro_use]
 extern crate malloc_size_of_derive;
-#[cfg(any(feature = "serde"))]
-#[macro_use]
+#[cfg_attr(any(any(feature = "capture", feature = "replay"), not(feature = "gl")), macro_use)]
 extern crate serde;
 #[macro_use]
 extern crate thread_profiler;
@@ -173,6 +173,7 @@ extern crate bincode;
 extern crate byteorder;
 pub extern crate euclid;
 extern crate fxhash;
+#[cfg(feature = "gl")]
 extern crate gleam;
 extern crate num_traits;
 extern crate plane_split;
@@ -201,9 +202,9 @@ pub extern crate api;
 extern crate webrender_build;
 
 #[doc(hidden)]
-pub use crate::device::{build_shader_strings, UploadMethod, VertexUsageHint, get_gl_target};
-pub use crate::device::{ProgramBinary, ProgramCache, ProgramCacheObserver, FormatDesc};
-pub use crate::device::Device;
+pub use crate::device::{build_shader_strings, UploadMethod, VertexUsageHint};
+pub use crate::device::{ProgramBinary, ProgramCache, ProgramCacheObserver, FormatDesc, ShaderPrecacheFlags};
+pub use crate::device::{Device, DeviceInit};
 pub use crate::frame_builder::ChasePrimitive;
 pub use crate::prim_store::PrimitiveDebugId;
 pub use crate::profiler::{ProfilerHooks, set_profiler_hooks};
@@ -211,9 +212,14 @@ pub use crate::renderer::{
     AsyncPropertySampler, CpuProfile, DebugFlags, OutputImageHandler, RendererKind, ExternalImage,
     ExternalImageHandler, ExternalImageSource, GpuProfile, GraphicsApi, GraphicsApiInfo,
     PipelineInfo, Renderer, RendererOptions, RenderResults, RendererStats, SceneBuilderHooks,
-    ThreadListener, ShaderPrecacheFlags, MAX_VERTEX_TEXTURE_WIDTH, PresentConfig,
+    ThreadListener, MAX_VERTEX_TEXTURE_WIDTH, PresentConfig,
 };
 pub use crate::screen_capture::{AsyncScreenshotHandle, RecordedFrameHandle};
 pub use crate::shade::{Shaders, WrShaders};
 pub use api as webrender_api;
 pub use webrender_build::shader::ProgramSourceDigest;
+#[cfg(feature = "gl")]
+pub use crate::device::get_gl_target;
+pub use rendy_memory::{DynamicConfig, HeapsConfig, LinearConfig};
+#[cfg(not(feature = "gl"))]
+pub use device::BackendApiType;

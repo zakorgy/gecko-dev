@@ -19,9 +19,7 @@
 #define YUV_FORMAT_PLANAR 1
 #define YUV_FORMAT_INTERLEAVED 2
 
-#ifdef WR_FEATURE_ALPHA_PASS
 varying vec2 vLocalPos;
-#endif
 
 varying vec3 vUv_Y;
 flat varying vec4 vUvBounds_Y;
@@ -146,9 +144,11 @@ void brush_vs(
     }
     vFormat = prim.yuv_format;
 
-#ifdef WR_FEATURE_ALPHA_PASS
-    vLocalPos = vi.local_pos;
-#endif
+    if (alpha_pass) {
+        vLocalPos = vi.local_pos;
+    } else {
+        vLocalPos = vec2(0.0);
+    }
 
     if (vFormat == YUV_FORMAT_PLANAR) {
         write_uv_rect(prim_user_data.x, f, TEX_SIZE(sColor0), vUv_Y, vUvBounds_Y);
@@ -195,9 +195,9 @@ Fragment brush_fs() {
     vec3 rgb = vYuvColorMatrix * (yuv_value * vCoefficient - vec3(0.06275, 0.50196, 0.50196));
     vec4 color = vec4(rgb, 1.0);
 
-#ifdef WR_FEATURE_ALPHA_PASS
-    color *= init_transform_fs(vLocalPos);
-#endif
+    if (alpha_pass) {
+        color *= init_transform_fs(vLocalPos);
+    }
 
     return Fragment(color);
 }

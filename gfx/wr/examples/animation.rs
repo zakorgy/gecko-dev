@@ -11,7 +11,9 @@
 //! scene building for render optimization.
 
 extern crate euclid;
+#[cfg(feature = "gl")]
 extern crate gleam;
+#[cfg(feature = "gl")]
 extern crate glutin;
 extern crate webrender;
 extern crate winit;

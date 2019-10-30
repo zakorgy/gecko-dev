@@ -4,12 +4,14 @@
 
 extern crate direct_composition;
 extern crate euclid;
+extern crate gfx_backend_empty as back;
 extern crate gleam;
 extern crate webrender;
 extern crate winit;
 
 use euclid::size2;
 use direct_composition::DirectComposition;
+use std::marker::PhantomData;
 use std::sync::mpsc;
 use webrender::api;
 use winit::os::windows::{WindowExt, WindowBuilderExt};
@@ -92,7 +94,7 @@ fn direct_composition_from_window(window: &winit::Window) -> DirectComposition {
 
 struct Rectangle {
     visual: direct_composition::AngleVisual,
-    renderer: Option<webrender::Renderer>,
+    renderer: Option<webrender::Renderer<back::Backend>>,
     api: api::RenderApi,
     document_id: api::DocumentId,
     size: api::units::DeviceIntSize,
@@ -107,7 +109,7 @@ impl Rectangle {
         visual.make_current();
 
         let (renderer, sender) = webrender::Renderer::new(
-            composition.gleam.clone(),
+            composition.gleam.clone().into(),
             notifier.clone(),
             webrender::RendererOptions {
                 clear_color: Some(api::ColorF::new(0., 0., 0., 0.)),

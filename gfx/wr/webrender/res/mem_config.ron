@@ -1,0 +1,10 @@
+(
+    linear: Some((
+        linear_size: 134217728, // 128 MB
+    )),
+    dynamic: Some((
+        min_device_allocation: 1048576, // 1 MB
+        block_size_granularity: 256,
+        max_chunk_size: 16777216, // 16 MB
+    )),
+)

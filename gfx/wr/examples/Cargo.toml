@@ -29,6 +29,7 @@ path = "document.rs"
 [[bin]]
 name = "frame_output"
 path = "frame_output.rs"
+required-features = ["gl"]
 
 [[bin]]
 name = "iframe"
@@ -41,6 +42,7 @@ path = "image_resize.rs"
 [[bin]]
 name = "multiwindow"
 path = "multiwindow.rs"
+required-features = ["gl"]
 
 [[bin]]
 name = "scrolling"
@@ -53,19 +55,44 @@ path = "texture_cache_stress.rs"
 [[bin]]
 name = "yuv"
 path = "yuv.rs"
+required-features = ["gl"]
 
 [features]
+default = []
 debug = ["webrender/capture", "webrender/debugger", "webrender/profiler"]
+gl = ["gfx-backend-empty", "gleam", "glutin", "webrender/gl"]
+gfx-hal = ["dirs"]
+dx12 = ["gfx-backend-dx12", "gfx-hal"]
+metal = ["gfx-backend-metal", "gfx-hal"]
+vulkan = ["gfx-backend-vulkan", "gfx-hal"]
 
 [dependencies]
 app_units = "0.7"
+dirs = { version = "1.0", optional = true }
 env_logger = "0.5"
 euclid = "0.20"
-gleam = "0.6.2"
-glutin = "0.21"
+gfx-backend-empty = { optional = true, version = "0.3.1"}
+gleam = { optional = true, version = "0.6.2"}
+glutin = { optional = true, version = "0.21" }
 rayon = "1"
+ron = "0.1.7"
 webrender = { path = "../webrender" }
 winit = "0.19"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.6.4"
+
+[target.'cfg(windows)'.dependencies.gfx-backend-dx12]
+version = "0.3.2"
+optional = true
+features = ["winit"]
+
+[target.'cfg(target_os = "macos")'.dependencies.gfx-backend-metal]
+version = "0.3.3"
+optional = true
+features = ["winit"]
+
+[target.'cfg(not(target_os = "macos"))'.dependencies.gfx-backend-vulkan]
+version = "0.3.3"
+optional = true
+features = ["winit", "x11"]

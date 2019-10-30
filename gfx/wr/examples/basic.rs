@@ -3,7 +3,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 extern crate euclid;
+#[cfg(feature = "gl")]
 extern crate gleam;
+#[cfg(feature = "gl")]
 extern crate glutin;
 extern crate webrender;
 extern crate winit;

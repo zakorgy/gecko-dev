@@ -3,6 +3,7 @@
 
 //! Based on https://github.com/tomaka/glutin/blob/1b2d62c0e9/src/api/egl/mod.rs
 #![cfg(windows)]
+#![cfg(feature = "gl")]
 #![allow(unused_variables)]
 
 use glutin::ContextError;

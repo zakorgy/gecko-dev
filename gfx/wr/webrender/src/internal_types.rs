@@ -8,6 +8,8 @@ use api::units::*;
 use api;
 use crate::device::TextureFilter;
 use crate::renderer::PipelineInfo;
+#[cfg(not(feature="gl"))]
+use crate::gpu_cache::GpuCacheBufferUpdate;
 use crate::gpu_cache::GpuCacheUpdateList;
 use crate::frame_builder::Frame;
 use fxhash::FxHasher;
@@ -278,7 +280,10 @@ pub enum TextureSource {
 // See gpu_types.rs where we declare the number of possible documents and
 // number of items per document. This should match up with that.
 pub const ORTHO_NEAR_PLANE: f32 = -(1 << 22) as f32;
+#[cfg(feature = "gl")]
 pub const ORTHO_FAR_PLANE: f32 = ((1 << 22) - 1) as f32;
+#[cfg(not(feature = "gl"))]
+pub const ORTHO_FAR_PLANE: f32 = 0.0;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
@@ -518,7 +523,7 @@ pub enum DebugOutput {
 }
 
 #[allow(dead_code)]
-pub enum ResultMsg {
+pub enum ResultMsg<B: hal::Backend> {
     DebugCommand(DebugCommand),
     DebugOutput(DebugOutput),
     RefreshShader(PathBuf),
@@ -535,6 +540,12 @@ pub enum ResultMsg {
         BackendProfileCounters,
     ),
     AppendNotificationRequests(Vec<NotificationRequest>),
+    #[cfg(not(feature = "gl"))]
+    UpdateWindowSize(DeviceIntSize),
+    #[cfg(not(feature="gl"))]
+    UpdateGpuCacheBuffer(GpuCacheBufferUpdate<B>),
+    #[cfg(feature="gl")]
+    Phantom(std::marker::PhantomData<B>),
 }
 
 #[derive(Clone, Debug)]

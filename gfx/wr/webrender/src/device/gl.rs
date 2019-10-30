@@ -4,7 +4,7 @@
 
 use super::super::shader_source::SHADERS;
 use api::{ColorF, ImageDescriptor, ImageFormat, MemoryReport};
-use api::{MixBlendMode, TextureTarget, VoidPtrToSizeFn};
+use api::{MixBlendMode, TextureTarget};
 use api::units::*;
 use euclid::default::Transform3D;
 use gleam::gl;
@@ -15,78 +15,25 @@ use log::Level;
 use sha2::{Digest, Sha256};
 use smallvec::SmallVec;
 use std::{
-    borrow::Cow,
-    cell::{Cell, RefCell},
+    cell::Cell,
     cmp,
     collections::hash_map::Entry,
     marker::PhantomData,
     mem,
     num::NonZeroUsize,
-    os::raw::c_void,
-    ops::Add,
     path::PathBuf,
     ptr,
     rc::Rc,
     slice,
     sync::Arc,
-    sync::atomic::{AtomicUsize, Ordering},
     thread,
     time::Duration,
 };
+use super::*;
 use webrender_build::shader::ProgramSourceDigest;
-use webrender_build::shader::{parse_shader_source, shader_source_from_file};
-
-/// Sequence number for frames, as tracked by the device layer.
-#[derive(Debug, Copy, Clone, PartialEq, Ord, Eq, PartialOrd)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
-#[cfg_attr(feature = "replay", derive(Deserialize))]
-pub struct GpuFrameId(usize);
-
-/// Tracks the total number of GPU bytes allocated across all WebRender instances.
-///
-/// Assuming all WebRender instances run on the same thread, this doesn't need
-/// to be atomic per se, but we make it atomic to satisfy the thread safety
-/// invariants in the type system. We could also put the value in TLS, but that
-/// would be more expensive to access.
-static GPU_BYTES_ALLOCATED: AtomicUsize = AtomicUsize::new(0);
-
-/// Returns the number of GPU bytes currently allocated.
-pub fn total_gpu_bytes_allocated() -> usize {
-    GPU_BYTES_ALLOCATED.load(Ordering::Relaxed)
-}
-
-/// Records an allocation in VRAM.
-fn record_gpu_alloc(num_bytes: usize) {
-    GPU_BYTES_ALLOCATED.fetch_add(num_bytes, Ordering::Relaxed);
-}
-
-/// Records an deallocation in VRAM.
-fn record_gpu_free(num_bytes: usize) {
-    let old = GPU_BYTES_ALLOCATED.fetch_sub(num_bytes, Ordering::Relaxed);
-    assert!(old >= num_bytes, "Freeing {} bytes but only {} allocated", num_bytes, old);
-}
-
-impl GpuFrameId {
-    pub fn new(value: usize) -> Self {
-        GpuFrameId(value)
-    }
-}
-
-impl Add<usize> for GpuFrameId {
-    type Output = GpuFrameId;
-
-    fn add(self, other: usize) -> GpuFrameId {
-        GpuFrameId(self.0 + other)
-    }
-}
 
 const SHADER_VERSION_GL: &str = "#version 150\n";
 const SHADER_VERSION_GLES: &str = "#version 300 es\n";
-
-const SHADER_KIND_VERTEX: &str = "#define WR_VERTEX_SHADER\n";
-const SHADER_KIND_FRAGMENT: &str = "#define WR_FRAGMENT_SHADER\n";
-
-pub struct TextureSlot(pub usize);
 
 // In some places we need to temporarily bind a texture to any slot.
 const DEFAULT_TEXTURE: TextureSlot = TextureSlot(0);
@@ -97,83 +44,9 @@ pub enum DepthFunction {
     LessEqual = gl::LEQUAL,
 }
 
-#[repr(u32)]
-#[derive(Copy, Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
-#[cfg_attr(feature = "replay", derive(Deserialize))]
-pub enum TextureFilter {
-    Nearest,
-    Linear,
-    Trilinear,
-}
-
-/// A structure defining a particular workflow of texture transfers.
-#[derive(Clone, Debug)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
-#[cfg_attr(feature = "replay", derive(Deserialize))]
-pub struct TextureFormatPair<T> {
-    /// Format the GPU natively stores texels in.
-    pub internal: T,
-    /// Format we expect the users to provide the texels in.
-    pub external: T,
-}
-
-impl<T: Copy> From<T> for TextureFormatPair<T> {
-    fn from(value: T) -> Self {
-        TextureFormatPair {
-            internal: value,
-            external: value,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum VertexAttributeKind {
-    F32,
-    U8Norm,
-    U16Norm,
-    I32,
-    U16,
-}
-
-#[derive(Debug)]
-pub struct VertexAttribute {
-    pub name: &'static str,
-    pub count: u32,
-    pub kind: VertexAttributeKind,
-}
-
-#[derive(Debug)]
-pub struct VertexDescriptor {
-    pub vertex_attributes: &'static [VertexAttribute],
-    pub instance_attributes: &'static [VertexAttribute],
-}
-
 enum FBOTarget {
     Read,
     Draw,
-}
-
-/// Method of uploading texel data from CPU to GPU.
-#[derive(Debug, Clone)]
-pub enum UploadMethod {
-    /// Just call `glTexSubImage` directly with the CPU data pointer
-    Immediate,
-    /// Accumulate the changes in PBO first before transferring to a texture.
-    PixelBuffer(VertexUsageHint),
-}
-
-/// Plain old data that can be used to initialize a texture.
-pub unsafe trait Texel: Copy {}
-unsafe impl Texel for u8 {}
-unsafe impl Texel for f32 {}
-
-/// Returns the size in bytes of a depth target with the given dimensions.
-fn depth_target_size_in_bytes(dimensions: &DeviceIntSize) -> usize {
-    // DEPTH24 textures generally reserve 3 bytes for depth and 1 byte
-    // for stencil, so we measure them as 32 bits.
-    let pixels = dimensions.width * dimensions.height;
-    (pixels as usize) * 4
 }
 
 pub fn get_gl_target(target: TextureTarget) -> gl::GLuint {
@@ -194,105 +67,6 @@ fn get_shader_version(gl: &dyn gl::Gl) -> &'static str {
         gl::GlType::Gl => SHADER_VERSION_GL,
         gl::GlType::Gles => SHADER_VERSION_GLES,
     }
-}
-
-// Get a shader string by name, from the built in resources or
-// an override path, if supplied.
-fn get_shader_source(shader_name: &str, base_path: Option<&PathBuf>) -> Cow<'static, str> {
-    if let Some(ref base) = base_path {
-        let shader_path = base.join(&format!("{}.glsl", shader_name));
-        Cow::Owned(shader_source_from_file(&shader_path))
-    } else {
-        Cow::Borrowed(
-            SHADERS
-            .get(shader_name)
-            .expect("Shader not found")
-            .source
-        )
-    }
-}
-
-/// Creates heap-allocated strings for both vertex and fragment shaders. Public
-/// to be accessible to tests.
-pub fn build_shader_strings(
-     gl_version_string: &str,
-     features: &str,
-     base_filename: &str,
-     override_path: Option<&PathBuf>,
-) -> (String, String) {
-    let mut vs_source = String::new();
-    do_build_shader_string(
-        gl_version_string,
-        features,
-        SHADER_KIND_VERTEX,
-        base_filename,
-        override_path,
-        |s| vs_source.push_str(s),
-    );
-
-    let mut fs_source = String::new();
-    do_build_shader_string(
-        gl_version_string,
-        features,
-        SHADER_KIND_FRAGMENT,
-        base_filename,
-        override_path,
-        |s| fs_source.push_str(s),
-    );
-
-    (vs_source, fs_source)
-}
-
-/// Walks the given shader string and applies the output to the provided
-/// callback. Assuming an override path is not used, does no heap allocation
-/// and no I/O.
-fn do_build_shader_string<F: FnMut(&str)>(
-    gl_version_string: &str,
-    features: &str,
-    kind: &str,
-    base_filename: &str,
-    override_path: Option<&PathBuf>,
-    mut output: F,
-) {
-    build_shader_prefix_string(gl_version_string, features, kind, base_filename, &mut output);
-    build_shader_main_string(base_filename, override_path, &mut output);
-}
-
-/// Walks the prefix section of the shader string, which manages the various
-/// defines for features etc.
-fn build_shader_prefix_string<F: FnMut(&str)>(
-    gl_version_string: &str,
-    features: &str,
-    kind: &str,
-    base_filename: &str,
-    output: &mut F,
-) {
-    // GLSL requires that the version number comes first.
-    output(gl_version_string);
-
-    // Insert the shader name to make debugging easier.
-    let name_string = format!("// {}\n", base_filename);
-    output(&name_string);
-
-    // Define a constant depending on whether we are compiling VS or FS.
-    output(kind);
-
-    // Add any defines that were passed by the caller.
-    output(features);
-}
-
-/// Walks the main .glsl file, including any imports.
-fn build_shader_main_string<F: FnMut(&str)>(
-    base_filename: &str,
-    override_path: Option<&PathBuf>,
-    output: &mut F,
-) {
-    let shared_source = get_shader_source(base_filename, override_path);
-    parse_shader_source(shared_source, &|f| get_shader_source(f, override_path), output);
-}
-
-pub trait FileWatcherHandler: Send {
-    fn file_changed(&self, path: PathBuf);
 }
 
 impl VertexAttributeKind {
@@ -476,156 +250,6 @@ impl<T> Drop for VBO<T> {
     }
 }
 
-#[cfg_attr(feature = "replay", derive(Clone))]
-#[derive(Debug)]
-pub struct ExternalTexture {
-    id: gl::GLuint,
-    target: gl::GLuint,
-    swizzle: Swizzle,
-}
-
-impl ExternalTexture {
-    pub fn new(id: u32, target: TextureTarget, swizzle: Swizzle) -> Self {
-        ExternalTexture {
-            id,
-            target: get_gl_target(target),
-            swizzle,
-        }
-    }
-
-    #[cfg(feature = "replay")]
-    pub fn internal_id(&self) -> gl::GLuint {
-        self.id
-    }
-}
-
-bitflags! {
-    #[derive(Default)]
-    pub struct TextureFlags: u32 {
-        /// This texture corresponds to one of the shared texture caches.
-        const IS_SHARED_TEXTURE_CACHE = 1 << 0;
-    }
-}
-
-/// WebRender interface to an OpenGL texture.
-///
-/// Because freeing a texture requires various device handles that are not
-/// reachable from this struct, manual destruction via `Device` is required.
-/// Our `Drop` implementation asserts that this has happened.
-#[derive(Debug)]
-pub struct Texture {
-    id: gl::GLuint,
-    target: gl::GLuint,
-    layer_count: i32,
-    format: ImageFormat,
-    size: DeviceIntSize,
-    filter: TextureFilter,
-    flags: TextureFlags,
-    /// An internally mutable swizzling state that may change between batches.
-    active_swizzle: Cell<Swizzle>,
-    /// Framebuffer Objects, one for each layer of the texture, allowing this
-    /// texture to be rendered to. Empty if this texture is not used as a render
-    /// target.
-    fbos: Vec<FBOId>,
-    /// Same as the above, but with a depth buffer attached.
-    ///
-    /// FBOs are cheap to create but expensive to reconfigure (since doing so
-    /// invalidates framebuffer completeness caching). Moreover, rendering with
-    /// a depth buffer attached but the depth write+test disabled relies on the
-    /// driver to optimize it out of the rendering pass, which most drivers
-    /// probably do but, according to jgilbert, is best not to rely on.
-    ///
-    /// So we lazily generate a second list of FBOs with depth. This list is
-    /// empty if this texture is not used as a render target _or_ if it is, but
-    /// the depth buffer has never been requested.
-    ///
-    /// Note that we always fill fbos, and then lazily create fbos_with_depth
-    /// when needed. We could make both lazy (i.e. render targets would have one
-    /// or the other, but not both, unless they were actually used in both
-    /// configurations). But that would complicate a lot of logic in this module,
-    /// and FBOs are cheap enough to create.
-    fbos_with_depth: Vec<FBOId>,
-    /// If we are unable to blit directly to a texture array then we need
-    /// an intermediate renderbuffer.
-    blit_workaround_buffer: Option<(RBOId, FBOId)>,
-    last_frame_used: GpuFrameId,
-}
-
-impl Texture {
-    pub fn get_dimensions(&self) -> DeviceIntSize {
-        self.size
-    }
-
-    pub fn get_layer_count(&self) -> i32 {
-        self.layer_count
-    }
-
-    pub fn get_format(&self) -> ImageFormat {
-        self.format
-    }
-
-    pub fn get_filter(&self) -> TextureFilter {
-        self.filter
-    }
-
-    pub fn supports_depth(&self) -> bool {
-        !self.fbos_with_depth.is_empty()
-    }
-
-    pub fn used_in_frame(&self, frame_id: GpuFrameId) -> bool {
-        self.last_frame_used == frame_id
-    }
-
-    /// Returns true if this texture was used within `threshold` frames of
-    /// the current frame.
-    pub fn used_recently(&self, current_frame_id: GpuFrameId, threshold: usize) -> bool {
-        self.last_frame_used + threshold >= current_frame_id
-    }
-
-    /// Returns the flags for this texture.
-    pub fn flags(&self) -> &TextureFlags {
-        &self.flags
-    }
-
-    /// Returns a mutable borrow of the flags for this texture.
-    pub fn flags_mut(&mut self) -> &mut TextureFlags {
-        &mut self.flags
-    }
-
-    /// Returns the number of bytes (generally in GPU memory) that each layer of
-    /// this texture consumes.
-    pub fn layer_size_in_bytes(&self) -> usize {
-        assert!(self.layer_count > 0 || self.size.width + self.size.height == 0);
-        let bpp = self.format.bytes_per_pixel() as usize;
-        let w = self.size.width as usize;
-        let h = self.size.height as usize;
-        bpp * w * h
-    }
-
-    /// Returns the number of bytes (generally in GPU memory) that this texture
-    /// consumes.
-    pub fn size_in_bytes(&self) -> usize {
-        self.layer_size_in_bytes() * (self.layer_count as usize)
-    }
-
-    #[cfg(feature = "replay")]
-    pub fn into_external(mut self) -> ExternalTexture {
-        let ext = ExternalTexture {
-            id: self.id,
-            target: self.target,
-            swizzle: Swizzle::default(),
-        };
-        self.id = 0; // don't complain, moved out
-        ext
-    }
-}
-
-impl Drop for Texture {
-    fn drop(&mut self) {
-        debug_assert!(thread::panicking() || self.id == 0);
-    }
-}
-
 pub struct Program {
     id: gl::GLuint,
     u_transform: gl::GLint,
@@ -680,60 +304,16 @@ impl Drop for VAO {
     }
 }
 
-pub struct PBO {
-    id: gl::GLuint,
-    reserved_size: usize,
-}
-
-impl PBO {
-    pub fn get_reserved_size(&self) -> usize {
-        self.reserved_size
-    }
-}
-
-impl Drop for PBO {
-    fn drop(&mut self) {
-        debug_assert!(
-            thread::panicking() || self.id == 0,
-            "renderer::deinit not called"
-        );
-    }
-}
-
-pub struct BoundPBO<'a> {
-    device: &'a mut Device,
-    pub data: &'a [u8]
-}
-
-impl<'a> Drop for BoundPBO<'a> {
+impl<'a, B: hal::Backend> Drop for BoundPBO<'a, B> {
     fn drop(&mut self) {
         self.device.gl.unmap_buffer(gl::PIXEL_PACK_BUFFER);
         self.device.gl.bind_buffer(gl::PIXEL_PACK_BUFFER, 0);
     }
 }
 
-#[derive(PartialEq, Eq, Hash, Debug, Copy, Clone)]
-pub struct FBOId(gl::GLuint);
-
-#[derive(PartialEq, Eq, Hash, Debug, Copy, Clone)]
-pub struct RBOId(gl::GLuint);
-
-#[derive(PartialEq, Eq, Hash, Debug, Copy, Clone)]
-pub struct VBOId(gl::GLuint);
-
-#[derive(PartialEq, Eq, Hash, Debug, Copy, Clone)]
-struct IBOId(gl::GLuint);
-
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct ProgramSourceInfo {
-    base_filename: &'static str,
-    features: String,
-    digest: ProgramSourceDigest,
-}
-
 impl ProgramSourceInfo {
-    fn new(
-        device: &Device,
+    fn new<B: hal::Backend>(
+        device: &Device<B>,
         name: &'static str,
         features: String,
     ) -> Self {
@@ -788,7 +368,7 @@ impl ProgramSourceInfo {
         }
     }
 
-    fn compute_source(&self, device: &Device, kind: &str) -> String {
+    fn compute_source<B: hal::Backend>(&self, device: &Device<B>, kind: &str) -> String {
         let mut src = String::new();
         device.build_shader_string(
             &self.features,
@@ -798,13 +378,6 @@ impl ProgramSourceInfo {
         );
         src
     }
-}
-
-#[cfg_attr(feature = "serialize_program", derive(Deserialize, Serialize))]
-pub struct ProgramBinary {
-    bytes: Vec<u8>,
-    format: gl::GLenum,
-    source_digest: ProgramSourceDigest,
 }
 
 impl ProgramBinary {
@@ -824,86 +397,6 @@ impl ProgramBinary {
     }
 }
 
-/// The interfaces that an application can implement to handle ProgramCache update
-pub trait ProgramCacheObserver {
-    fn update_disk_cache(&self, entries: Vec<Arc<ProgramBinary>>);
-    fn try_load_shader_from_disk(&self, digest: &ProgramSourceDigest, program_cache: &Rc<ProgramCache>);
-    fn notify_program_binary_failed(&self, program_binary: &Arc<ProgramBinary>);
-}
-
-struct ProgramCacheEntry {
-    /// The binary.
-    binary: Arc<ProgramBinary>,
-    /// True if the binary has been linked, i.e. used for rendering.
-    linked: bool,
-}
-
-pub struct ProgramCache {
-    entries: RefCell<FastHashMap<ProgramSourceDigest, ProgramCacheEntry>>,
-
-    /// True if we've already updated the disk cache with the shaders used during startup.
-    updated_disk_cache: Cell<bool>,
-
-    /// Optional trait object that allows the client
-    /// application to handle ProgramCache updating
-    program_cache_handler: Option<Box<dyn ProgramCacheObserver>>,
-}
-
-impl ProgramCache {
-    pub fn new(program_cache_observer: Option<Box<dyn ProgramCacheObserver>>) -> Rc<Self> {
-        Rc::new(
-            ProgramCache {
-                entries: RefCell::new(FastHashMap::default()),
-                updated_disk_cache: Cell::new(false),
-                program_cache_handler: program_cache_observer,
-            }
-        )
-    }
-
-    /// Notify that we've rendered the first few frames, and that the shaders
-    /// we've loaded correspond to the shaders needed during startup, and thus
-    /// should be the ones cached to disk.
-    fn startup_complete(&self) {
-        if self.updated_disk_cache.get() {
-            return;
-        }
-
-        if let Some(ref handler) = self.program_cache_handler {
-            let active_shaders = self.entries.borrow().values()
-                .filter(|e| e.linked).map(|e| e.binary.clone())
-                .collect::<Vec<_>>();
-            handler.update_disk_cache(active_shaders);
-            self.updated_disk_cache.set(true);
-        }
-    }
-
-    /// Load ProgramBinary to ProgramCache.
-    /// The function is typically used to load ProgramBinary from disk.
-    #[cfg(feature = "serialize_program")]
-    pub fn load_program_binary(&self, program_binary: Arc<ProgramBinary>) {
-        let digest = program_binary.source_digest.clone();
-        let entry = ProgramCacheEntry {
-            binary: program_binary,
-            linked: false,
-        };
-        self.entries.borrow_mut().insert(digest, entry);
-    }
-
-    /// Returns the number of bytes allocated for shaders in the cache.
-    pub fn report_memory(&self, op: VoidPtrToSizeFn) -> usize {
-        self.entries.borrow().values()
-            .map(|e| unsafe { op(e.binary.bytes.as_ptr() as *const c_void ) })
-            .sum()
-    }
-}
-
-#[derive(Debug, Copy, Clone)]
-pub enum VertexUsageHint {
-    Static,
-    Dynamic,
-    Stream,
-}
-
 impl VertexUsageHint {
     fn to_gl(&self) -> gl::GLuint {
         match *self {
@@ -921,51 +414,6 @@ impl UniformLocation {
     pub const INVALID: Self = UniformLocation(-1);
 }
 
-#[derive(Debug)]
-pub struct Capabilities {
-    /// Whether multisampled render targets are supported.
-    pub supports_multisampling: bool,
-    /// Whether the function `glCopyImageSubData` is available.
-    pub supports_copy_image_sub_data: bool,
-    /// Whether we are able to use `glBlitFramebuffers` with the draw fbo
-    /// bound to a non-0th layer of a texture array. This is buggy on
-    /// Adreno devices.
-    pub supports_blit_to_texture_array: bool,
-    /// Whether we can use the pixel local storage functionality that
-    /// is available on some mobile GPUs. This allows fast access to
-    /// the per-pixel tile memory.
-    pub supports_pixel_local_storage: bool,
-    /// Whether advanced blend equations are supported.
-    pub supports_advanced_blend_equation: bool,
-    /// Whether KHR_debug is supported for getting debug messages from
-    /// the driver.
-    pub supports_khr_debug: bool,
-    /// Whether we can configure texture units to do swizzling on sampling.
-    pub supports_texture_swizzle: bool,
-}
-
-#[derive(Clone, Debug)]
-pub enum ShaderError {
-    Compilation(String, String), // name, error message
-    Link(String, String),        // name, error message
-}
-
-/// A refcounted depth target, which may be shared by multiple textures across
-/// the device.
-struct SharedDepthTarget {
-    /// The Render Buffer Object representing the depth target.
-    rbo_id: RBOId,
-    /// Reference count. When this drops to zero, the RBO is deleted.
-    refcount: usize,
-}
-
-#[cfg(debug_assertions)]
-impl Drop for SharedDepthTarget {
-    fn drop(&mut self) {
-        debug_assert!(thread::panicking() || self.refcount == 0);
-    }
-}
-
 /// Describes for which texture formats to use the glTexStorage*
 /// family of functions.
 #[derive(PartialEq, Debug)]
@@ -975,8 +423,33 @@ enum TexStorageUsage {
     Always,
 }
 
+pub trait PrimitiveType { }
+impl PrimitiveType for crate::gpu_types::BorderInstance { }
+impl PrimitiveType for crate::gpu_types::BlurInstance { }
+impl PrimitiveType for crate::gpu_types::ClipMaskInstance { }
+impl PrimitiveType for crate::gpu_types::PrimitiveInstanceData { }
+impl PrimitiveType for crate::gpu_types::ScalingInstance { }
+impl PrimitiveType for crate::gpu_types::SvgFilterInstance { }
+impl PrimitiveType for crate::gpu_types::ResolveInstanceData { }
+impl PrimitiveType for crate::gpu_types::CompositeInstance { }
+impl PrimitiveType for crate::render_target::LineDecorationJob { }
+impl PrimitiveType for crate::render_target::GradientJob { }
 
-pub struct Device {
+pub struct DeviceInit<B: hal::Backend> {
+    pub gl: Rc<dyn gl::Gl>,
+    pub phantom_data: PhantomData<B>,
+}
+
+impl<B: hal::Backend> From<Rc<dyn gl::Gl>> for DeviceInit<B> {
+    fn from(gl: Rc<dyn gl::Gl>) -> Self {
+        DeviceInit {
+            gl,
+            phantom_data: PhantomData,
+        }
+    }
+}
+
+pub struct Device<B: hal::Backend> {
     gl: Rc<dyn gl::Gl>,
 
     /// If non-None, |gl| points to a profiling wrapper, and this points to the
@@ -1041,177 +514,12 @@ pub struct Device {
 
     /// Dumps the source of the shader with the given name
     dump_shader_source: Option<String>,
+    phantom_data: PhantomData<B>,
 }
 
-/// Contains the parameters necessary to bind a draw target.
-#[derive(Clone, Copy, Debug)]
-pub enum DrawTarget {
-    /// Use the device's default draw target, with the provided dimensions,
-    /// which are used to set the viewport.
-    Default {
-        /// Target rectangle to draw.
-        rect: FramebufferIntRect,
-        /// Total size of the target.
-        total_size: FramebufferIntSize,
-    },
-    /// Use the provided texture.
-    Texture {
-        /// Size of the texture in pixels
-        dimensions: DeviceIntSize,
-        /// The slice within the texture array to draw to
-        layer: LayerIndex,
-        /// Whether to draw with the texture's associated depth target
-        with_depth: bool,
-        /// Workaround buffers for devices with broken texture array copy implementation
-        blit_workaround_buffer: Option<(RBOId, FBOId)>,
-        /// FBO that corresponds to the selected layer / depth mode
-        fbo_id: FBOId,
-        /// Native GL texture ID
-        id: gl::GLuint,
-        /// Native GL texture target
-        target: gl::GLuint,
-    },
-    /// Use an FBO attached to an external texture.
-    External {
-        fbo: FBOId,
-        size: FramebufferIntSize,
-    },
-}
-
-impl DrawTarget {
-    pub fn new_default(size: DeviceIntSize) -> Self {
-        let total_size = FramebufferIntSize::from_untyped(size.to_untyped());
-        DrawTarget::Default {
-            rect: total_size.into(),
-            total_size,
-        }
-    }
-
-    /// Returns true if this draw target corresponds to the default framebuffer.
-    pub fn is_default(&self) -> bool {
-        match *self {
-            DrawTarget::Default {..} => true,
-            _ => false,
-        }
-    }
-
-    pub fn from_texture(
-        texture: &Texture,
-        layer: usize,
-        with_depth: bool,
-    ) -> Self {
-        let fbo_id = if with_depth {
-            texture.fbos_with_depth[layer]
-        } else {
-            texture.fbos[layer]
-        };
-
-        DrawTarget::Texture {
-            dimensions: texture.get_dimensions(),
-            fbo_id,
-            with_depth,
-            layer,
-            blit_workaround_buffer: texture.blit_workaround_buffer,
-            id: texture.id,
-            target: texture.target,
-        }
-    }
-
-    /// Returns the dimensions of this draw-target.
-    pub fn dimensions(&self) -> DeviceIntSize {
-        match *self {
-            DrawTarget::Default { total_size, .. } => DeviceIntSize::from_untyped(total_size.to_untyped()),
-            DrawTarget::Texture { dimensions, .. } => dimensions,
-            DrawTarget::External { size, .. } => DeviceIntSize::from_untyped(size.to_untyped()),
-        }
-    }
-
-    pub fn to_framebuffer_rect(&self, device_rect: DeviceIntRect) -> FramebufferIntRect {
-        let mut fb_rect = FramebufferIntRect::from_untyped(&device_rect.to_untyped());
-        match *self {
-            DrawTarget::Default { ref rect, .. } => {
-                // perform a Y-flip here
-                fb_rect.origin.y = rect.origin.y + rect.size.height - fb_rect.origin.y - fb_rect.size.height;
-                fb_rect.origin.x += rect.origin.x;
-            }
-            DrawTarget::Texture { .. } | DrawTarget::External { .. } => (),
-        }
-        fb_rect
-    }
-
-    /// Given a scissor rect, convert it to the right coordinate space
-    /// depending on the draw target kind. If no scissor rect was supplied,
-    /// returns a scissor rect that encloses the entire render target.
-    pub fn build_scissor_rect(
-        &self,
-        scissor_rect: Option<DeviceIntRect>,
-        content_origin: DeviceIntPoint,
-    ) -> FramebufferIntRect {
-        let dimensions = self.dimensions();
-
-        match scissor_rect {
-            Some(scissor_rect) => match *self {
-                DrawTarget::Default { ref rect, .. } => {
-                    self.to_framebuffer_rect(scissor_rect.translate(-content_origin.to_vector()))
-                        .intersection(rect)
-                        .unwrap_or_else(FramebufferIntRect::zero)
-                }
-                DrawTarget::Texture { .. } | DrawTarget::External { .. } => {
-                    FramebufferIntRect::from_untyped(&scissor_rect.to_untyped())
-                }
-            }
-            None => {
-                FramebufferIntRect::new(
-                    FramebufferIntPoint::zero(),
-                    FramebufferIntSize::from_untyped(dimensions.to_untyped()),
-                )
-            }
-        }
-    }
-}
-
-/// Contains the parameters necessary to bind a texture-backed read target.
-#[derive(Clone, Copy, Debug)]
-pub enum ReadTarget {
-    /// Use the device's default draw target.
-    Default,
-    /// Use the provided texture,
-    Texture {
-        /// ID of the FBO to read from.
-        fbo_id: FBOId,
-    },
-    /// Use an FBO attached to an external texture.
-    External {
-        fbo: FBOId,
-    },
-}
-
-impl ReadTarget {
-    pub fn from_texture(
-        texture: &Texture,
-        layer: usize,
-    ) -> Self {
-        ReadTarget::Texture {
-            fbo_id: texture.fbos[layer],
-        }
-    }
-}
-
-impl From<DrawTarget> for ReadTarget {
-    fn from(t: DrawTarget) -> Self {
-        match t {
-            DrawTarget::Default { .. } => ReadTarget::Default,
-            DrawTarget::Texture { fbo_id, .. } =>
-                ReadTarget::Texture { fbo_id },
-            DrawTarget::External { fbo, .. } =>
-                ReadTarget::External { fbo },
-        }
-    }
-}
-
-impl Device {
+impl<B: hal::Backend> Device<B> {
     pub fn new(
-        mut gl: Rc<dyn gl::Gl>,
+        init: DeviceInit<B>,
         resource_override_path: Option<PathBuf>,
         upload_method: UploadMethod,
         cached_programs: Option<Rc<ProgramCache>>,
@@ -1219,7 +527,8 @@ impl Device {
         allow_texture_storage_support: bool,
         allow_texture_swizzling: bool,
         dump_shader_source: Option<String>,
-    ) -> Device {
+    ) -> Device<B> {
+        let mut gl = init.gl;
         let mut max_texture_size = [0];
         let mut max_texture_layers = [0];
         unsafe {
@@ -1444,6 +753,7 @@ impl Device {
             texture_storage_usage,
             optimal_pbo_stride,
             dump_shader_source,
+            phantom_data: PhantomData,
         }
     }
 
@@ -1548,6 +858,139 @@ impl Device {
             }
             Ok(id)
         }
+    }
+
+    fn create_prim_shader(
+        &mut self,
+        name: &'static str,
+        features: &[&'static str],
+    ) -> Result<Program, ShaderError> {
+        let mut prefix = format!(
+            "#define WR_MAX_VERTEX_TEXTURE_WIDTH {}U\n",
+            crate::renderer::MAX_VERTEX_TEXTURE_WIDTH
+        );
+
+        for feature in features {
+            prefix.push_str(&format!("#define WR_FEATURE_{}\n", feature));
+        }
+
+        debug!("PrimShader {}", name);
+
+        self.create_program(name, prefix)
+    }
+
+    fn create_clip_shader(
+        &mut self,
+        name: &'static str,
+        features: &[&'static str],
+    ) -> Result<Program, ShaderError> {
+        let mut prefix = format!(
+            "#define WR_MAX_VERTEX_TEXTURE_WIDTH {}U\n",
+            crate::renderer::MAX_VERTEX_TEXTURE_WIDTH
+        );
+
+        for feature in features {
+            prefix.push_str(&format!("#define WR_FEATURE_{}\n", feature));
+        }
+
+        debug!("ClipShader {}", name);
+
+        self.create_program(name, prefix)
+    }
+
+    pub(crate) fn create_program_with_kind(
+        &mut self,
+        base_filename: &'static str,
+        shader_kind: &ShaderKind,
+        features: &[&'static str],
+        precache_flags: ShaderPrecacheFlags,
+    ) -> Result<Program, ShaderError> {
+        let mut program = match shader_kind {
+            ShaderKind::Primitive | ShaderKind::Brush | ShaderKind::Text | ShaderKind::Resolve => {
+                self.create_prim_shader(base_filename, features)?
+            }
+            ShaderKind::Cache(..) => {
+                self.create_prim_shader(base_filename, features)?
+            }
+            ShaderKind::VectorStencil => {
+                self.create_prim_shader(base_filename, features)?
+            }
+            ShaderKind::VectorCover => {
+                self.create_prim_shader(base_filename, features)?
+            }
+            ShaderKind::Composite => {
+                self.create_prim_shader(base_filename, features)?
+            }
+            ShaderKind::ClipCache => {
+                self.create_clip_shader(base_filename, features)?
+            }
+        };
+
+        if precache_flags.contains(ShaderPrecacheFlags::FULL_COMPILE) && !program.is_initialized() {
+            let vertex_format = match shader_kind {
+                ShaderKind::Primitive |
+                ShaderKind::Brush |
+                ShaderKind::Text => VertexArrayKind::Primitive,
+                ShaderKind::Cache(format) => *format,
+                ShaderKind::VectorStencil => VertexArrayKind::VectorStencil,
+                ShaderKind::VectorCover => VertexArrayKind::VectorCover,
+                ShaderKind::ClipCache => VertexArrayKind::Clip,
+                ShaderKind::Resolve => VertexArrayKind::Resolve,
+                ShaderKind::Composite => VertexArrayKind::Composite,
+            };
+
+            let vertex_descriptor = match vertex_format {
+                VertexArrayKind::Primitive => &crate::renderer::desc::PRIM_INSTANCES,
+                VertexArrayKind::LineDecoration => &crate::renderer::desc::LINE,
+                VertexArrayKind::Gradient => &crate::renderer::desc::GRADIENT,
+                VertexArrayKind::Blur => &crate::renderer::desc::BLUR,
+                VertexArrayKind::Clip => &crate::renderer::desc::CLIP,
+                VertexArrayKind::VectorStencil => &crate::renderer::desc::VECTOR_STENCIL,
+                VertexArrayKind::VectorCover => &crate::renderer::desc::VECTOR_COVER,
+                VertexArrayKind::Border => &crate::renderer::desc::BORDER,
+                VertexArrayKind::Scale => &crate::renderer::desc::SCALE,
+                VertexArrayKind::Resolve => &crate::renderer::desc::RESOLVE,
+                VertexArrayKind::SvgFilter => &crate::renderer::desc::SVG_FILTER,
+                VertexArrayKind::Composite => &crate::renderer::desc::COMPOSITE,
+            };
+
+            self.link_program(&mut program, vertex_descriptor)?;
+            self.bind_program(&mut program);
+            match shader_kind {
+                ShaderKind::ClipCache => {
+                    self.bind_shader_samplers(
+                        &program,
+                        &[
+                            ("sColor0", TextureSampler::Color0),
+                            ("sTransformPalette", TextureSampler::TransformPalette),
+                            ("sRenderTasks", TextureSampler::RenderTasks),
+                            ("sGpuCache", TextureSampler::GpuCache),
+                            ("sPrimitiveHeadersF", TextureSampler::PrimitiveHeadersF),
+                            ("sPrimitiveHeadersI", TextureSampler::PrimitiveHeadersI),
+                        ],
+                    );
+                }
+                _ => {
+                    self.bind_shader_samplers(
+                        &program,
+                        &[
+                            ("sColor0", TextureSampler::Color0),
+                            ("sColor1", TextureSampler::Color1),
+                            ("sColor2", TextureSampler::Color2),
+                            ("sDither", TextureSampler::Dither),
+                            ("sPrevPassAlpha", TextureSampler::PrevPassAlpha),
+                            ("sPrevPassColor", TextureSampler::PrevPassColor),
+                            ("sTransformPalette", TextureSampler::TransformPalette),
+                            ("sRenderTasks", TextureSampler::RenderTasks),
+                            ("sGpuCache", TextureSampler::GpuCache),
+                            ("sPrimitiveHeadersF", TextureSampler::PrimitiveHeadersF),
+                            ("sPrimitiveHeadersI", TextureSampler::PrimitiveHeadersI),
+                        ],
+                    );
+                }
+            }
+        }
+        Ok(program)
     }
 
     pub fn begin_frame(&mut self) -> GpuFrameId {
@@ -1823,7 +1266,7 @@ impl Device {
         if build_program {
             // Compile the vertex shader
             let vs_source = info.compute_source(self, SHADER_KIND_VERTEX);
-            let vs_id = match Device::compile_shader(&*self.gl, &info.base_filename, gl::VERTEX_SHADER, &vs_source) {
+            let vs_id = match Self::compile_shader(&*self.gl, &info.base_filename, gl::VERTEX_SHADER, &vs_source) {
                     Ok(vs_id) => vs_id,
                     Err(err) => return Err(err),
                 };
@@ -1831,7 +1274,7 @@ impl Device {
             // Compile the fragment shader
             let fs_source = info.compute_source(self, SHADER_KIND_FRAGMENT);
             let fs_id =
-                match Device::compile_shader(&*self.gl, &info.base_filename, gl::FRAGMENT_SHADER, &fs_source) {
+                match Self::compile_shader(&*self.gl, &info.base_filename, gl::FRAGMENT_SHADER, &fs_source) {
                     Ok(fs_id) => fs_id,
                     Err(err) => {
                         self.gl.delete_shader(vs_id);
@@ -2592,7 +2035,7 @@ impl Device {
         self.gl.bind_buffer(gl::PIXEL_PACK_BUFFER, 0);
     }
 
-    pub fn map_pbo_for_readback<'a>(&'a mut self, pbo: &'a PBO) -> Option<BoundPBO<'a>> {
+    pub fn map_pbo_for_readback<'a>(&'a mut self, pbo: &'a PBO) -> Option<BoundPBO<'a, B>> {
         self.gl.bind_buffer(gl::PIXEL_PACK_BUFFER, pbo.id);
 
         let buf_ptr = match self.gl.get_type() {
@@ -3285,7 +2728,7 @@ impl Device {
 
     pub fn echo_driver_messages(&self) {
         if self.capabilities.supports_khr_debug {
-            Device::log_driver_messages(self.gl());
+            Self::log_driver_messages(self.gl());
         }
     }
 

@@ -106,7 +106,7 @@ else:
 # This environment variable is used to point to the location of a cross-compiled
 # wrench for the CI on some platforms.
 if not wrench_headless_target:
-    build_cmd = ['cargo', 'build'] + extra_flags + ['--verbose', '--features', 'headless']
+    build_cmd = ['cargo', 'build'] + extra_flags + ['--verbose', '--features', 'gl,headless']
     if optimized_build():
         build_cmd += ['--release']
     subprocess.check_call(build_cmd)

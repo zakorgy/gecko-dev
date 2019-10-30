@@ -20,12 +20,12 @@ varying vec2 vLocalPos;
 flat varying vec2 vLayerAndPerspective;
 flat varying float vAmount;
 flat varying int vOp;
-flat varying mat3 vColorMat;
 flat varying vec3 vColorOffset;
 flat varying vec4 vUvClipBounds;
 flat varying int vTableAddress;
-flat varying int vFuncs[4];
 flat varying vec4 vFloodColor;
+flat varying ivec4 vFuncs;
+flat varying mat3 vColorMat;
 
 #ifdef WR_VERTEX_SHADER
 
@@ -203,7 +203,15 @@ vec4 ComponentTransfer(vec4 colora) {
         switch (vFuncs[i]) {
             case COMPONENT_TRANSFER_IDENTITY:
                 break;
-            case COMPONENT_TRANSFER_TABLE:
+            case COMPONENT_TRANSFER_TABLE: {
+                // fetch value from lookup table
+                k = int(floor(colora[i]*255.0));
+                texel = fetch_from_gpu_cache_1(vTableAddress + offset + k/4);
+                colora[i] = clamp(texel[k % 4], 0.0, 1.0);
+                // offset plus 256/4 blocks
+                offset = offset + 64;
+                break;
+            }
             case COMPONENT_TRANSFER_DISCRETE: {
                 // fetch value from lookup table
                 k = int(floor(colora[i]*255.0));

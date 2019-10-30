@@ -6,31 +6,39 @@
 :: Users may set the CARGOFLAGS environment variable to pass
 :: additional flags to cargo if desired.
 
-if NOT DEFINED CARGOFLAGS SET CARGOFLAGS=--verbose
-
 pushd webrender_api
-cargo test %CARGOFLAGS%
+cargo test
 if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
 popd
 
 pushd webrender
-cargo test %CARGOFLAGS%
+cargo test --features gl
+if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
+cargo check
 if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
 popd
 
 pushd wrench
-cargo test --verbose
+cargo check --features vulkan
 if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
-cargo run --release -- --angle reftest
+cargo check --features dx12
+if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
+cargo test --features gl
+if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
+cargo run --release --features gl -- --angle reftest
 if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
 popd
 
 pushd examples
-cargo check --verbose
+cargo check --features gl
+if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
+cargo check --features dx12
+if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
+cargo check --features vulkan
 if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
 popd
 
 pushd direct-composition
-cargo check --verbose
+cargo check
 if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
 popd

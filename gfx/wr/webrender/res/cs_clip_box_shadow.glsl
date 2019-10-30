@@ -70,7 +70,11 @@ void main(void) {
             vUv.x = (local_pos.x - dest_rect.p0.x) / bs_data.src_rect_size.x;
             break;
         }
-        case MODE_SIMPLE:
+        case MODE_SIMPLE: {
+            vEdge.xz = vec2(1.0);
+            vUv.x = (local_pos.x - dest_rect.p0.x) / dest_rect.size.x;
+            break;
+        }
         default: {
             vEdge.xz = vec2(1.0);
             vUv.x = (local_pos.x - dest_rect.p0.x) / dest_rect.size.x;
@@ -85,7 +89,11 @@ void main(void) {
             vUv.y = (local_pos.y - dest_rect.p0.y) / bs_data.src_rect_size.y;
             break;
         }
-        case MODE_SIMPLE:
+        case MODE_SIMPLE: {
+            vEdge.yw = vec2(1.0);
+            vUv.y = (local_pos.y - dest_rect.p0.y) / dest_rect.size.y;
+            break;
+        }
         default: {
             vEdge.yw = vec2(1.0);
             vUv.y = (local_pos.y - dest_rect.p0.y) / dest_rect.size.y;

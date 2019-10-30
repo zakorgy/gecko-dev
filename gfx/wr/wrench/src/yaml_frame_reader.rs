@@ -4,6 +4,7 @@
 
 use clap;
 use euclid::SideOffsets2D;
+#[cfg(feature = "gl")]
 use gleam::gl;
 use image;
 use image::GenericImageView;
@@ -62,10 +63,12 @@ impl FontDescriptor {
     }
 }
 
+#[cfg(feature = "gl")]
 struct LocalExternalImageHandler {
     texture_ids: Vec<(gl::GLuint, ImageDescriptor)>,
 }
 
+#[cfg(feature = "gl")]
 impl LocalExternalImageHandler {
     pub fn new() -> LocalExternalImageHandler {
         LocalExternalImageHandler {
@@ -102,7 +105,7 @@ impl LocalExternalImageHandler {
     }
 
     pub fn add_image(&mut self,
-        device: &webrender::Device,
+        device: &webrender::Device<back::Backend>,
         desc: ImageDescriptor,
         target: TextureTarget,
         image_data: ImageData,
@@ -138,6 +141,7 @@ impl LocalExternalImageHandler {
     }
 }
 
+#[cfg(feature = "gl")]
 impl webrender::ExternalImageHandler for LocalExternalImageHandler {
     fn lock(
         &mut self,
@@ -340,6 +344,7 @@ pub struct YamlFrameReader {
     yaml_string: String,
     keyframes: Option<Yaml>,
 
+    #[cfg(feature = "gl")]
     external_image_handler: Option<Box<LocalExternalImageHandler>>,
 }
 
@@ -367,6 +372,7 @@ impl YamlFrameReader {
             requested_frame: 0,
             built_frame: usize::MAX,
             keyframes: None,
+            #[cfg(feature = "gl")]
             external_image_handler: Some(Box::new(LocalExternalImageHandler::new())),
         }
     }
@@ -441,6 +447,7 @@ impl YamlFrameReader {
         let root_pipeline_id = wrench.root_pipeline_id;
         self.build_pipeline(wrench, root_pipeline_id, &yaml["root"]);
 
+        #[cfg(feature = "gl")]
         wrench.renderer.set_external_image_handler(self.external_image_handler.take().unwrap());
     }
 
@@ -741,6 +748,9 @@ impl YamlFrameReader {
                 }
             };
 
+            println!("## Missing external image data");
+
+            #[cfg(feature = "gl")]
             let external_image_data =
                 self.external_image_handler.as_mut().unwrap().add_image(
                     &wrench.renderer.device,
@@ -748,6 +758,7 @@ impl YamlFrameReader {
                     external_target,
                     image_data
                 );
+            #[cfg(feature = "gl")]
             txn.add_image(image_key, descriptor, external_image_data, tiling);
         } else {
             txn.add_image(image_key, descriptor, image_data, tiling);

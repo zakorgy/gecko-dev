@@ -81,6 +81,18 @@ pub enum TextureTarget {
     External = 3,
 }
 
+impl From<u32> for TextureTarget {
+    fn from(target: u32) -> Self {
+        match target {
+            0 => TextureTarget::Default,
+            1 => TextureTarget::Array,
+            2 => TextureTarget::Rect,
+            3 => TextureTarget::External,
+            _ => unimplemented!(),
+        }
+    }
+}
+
 /// Storage format identifier for externally-managed images.
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, Eq, Hash, PartialEq, Serialize, Deserialize)]

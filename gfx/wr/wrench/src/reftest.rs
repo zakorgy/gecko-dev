@@ -633,9 +633,15 @@ impl<'a> ReftestHarness<'a> {
             format!("size={:?} ws={:?}", size, window_size)
         );
 
-        // taking the bottom left sub-rectangle
+        #[cfg(feature = "gl")]
         let rect = FramebufferIntRect::new(
+            // taking the bottom left sub-rectangle
             FramebufferIntPoint::new(0, window_size.height - size.height),
+            FramebufferIntSize::new(size.width, size.height),
+        );
+        #[cfg(not(feature = "gl"))]
+        let rect = FramebufferIntRect::new(
+            FramebufferIntPoint::new(0, 0),
             FramebufferIntSize::new(size.width, size.height),
         );
         let pixels = self.wrench.renderer.read_pixels_rgba8(rect);

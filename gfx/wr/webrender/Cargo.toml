@@ -9,20 +9,26 @@ build = "build.rs"
 edition = "2018"
 
 [features]
-default = ["freetype-lib"]
+default = ["freetype-lib", "serde"]
+gl = ["gleam"]
 freetype-lib = ["freetype/servo-freetype-sys"]
 profiler = ["thread_profiler/thread_profiler"]
-debugger = ["ws", "serde_json", "serde", "image_loader", "base64"]
-capture = ["api/serialize", "ron", "serde", "smallvec/serde"]
-replay = ["api/deserialize", "ron", "serde", "smallvec/serde"]
+debugger = ["ws", "serde_json", "image_loader", "base64"]
+capture = ["api/serialize", "smallvec/serde"]
+replay = ["api/deserialize", "smallvec/serde"]
 display_list_stats = ["api/display_list_stats"]
-serialize_program = ["serde", "webrender_build/serialize_program"]
+serialize_program = ["webrender_build/serialize_program"]
 no_static_freetype = []
 
 [build-dependencies]
 webrender_build = { version = "0.0.1", path = "../webrender_build" }
+cfg-if = "0.1.2"
+gfx-hal = { version = "0.3.1", features = ["serde"] }
+ron = "0.1.7"
+serde = { version = "1.0", features = ["serde_derive"] }
 
 [dependencies]
+arrayvec = "0.4"
 base64 = { optional = true, version = "0.10" }
 bincode = "1.0"
 bitflags = "1.0"
@@ -31,7 +37,8 @@ cfg-if = "0.1.2"
 cstr = "0.1.2"
 euclid = { version = "0.20.0", features = ["serde"] }
 fxhash = "0.2.1"
-gleam = "0.6.17"
+gfx-hal = { version = "0.3.1", features = ["serde"] }
+gleam = { optional = true, version = "0.6.17" }
 image_loader = { optional = true, version = "0.22", package = "image", default-features = false, features = ["png_codec"] }
 lazy_static = "1"
 log = "0.4"
@@ -39,10 +46,14 @@ malloc_size_of_derive = "0.1"
 num-traits = "0.2"
 plane-split = "0.15"
 png = { optional = true, version = "0.15" }
-rayon = "1"
-ron = { optional = true, version = "0.1.7" }
 serde = { optional = true, version = "1.0", features = ["serde_derive"] }
 serde_json = { optional = true, version = "1.0" }
+rand ="0.4"
+rayon = "1"
+rendy-descriptor = "0.4.0"
+rendy-memory = { version = "0.4.0", features = ["serde"] }
+relevant = { version = "0.4", features = ["std"] }
+ron = "0.1.7"
 sha2 = "0.8"
 smallvec = "0.6"
 thread_profiler = "0.1.1"
