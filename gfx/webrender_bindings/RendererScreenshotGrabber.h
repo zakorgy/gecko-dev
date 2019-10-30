@@ -32,14 +32,14 @@ class RendererScreenshotGrabber final {
    * The captured screenshot will not be mapped until the second call to
    * |MaybeProcessQueue| after this call to |MaybeGrabScreenshot|.
    */
-  void MaybeGrabScreenshot(Renderer* aRenderer,
+  void MaybeGrabScreenshot(Renderer<void*>* aRenderer,
                            const gfx::IntSize& aWindowSize);
 
   /**
    * Process the screenshots pending in the queue if we are profiling and
    * screenshots are enabled.
    */
-  void MaybeProcessQueue(Renderer* aRenderer);
+  void MaybeProcessQueue(Renderer<void*>* aRenderer);
 
  private:
   /**
@@ -48,17 +48,17 @@ class RendererScreenshotGrabber final {
    * This will also instruct WebRender to drop all its Gecko profiler
    * associated memory.
    */
-  void Destroy(Renderer* aRenderer);
+  void Destroy(Renderer<void*>* aRenderer);
 
   /**
    * Actually grab a screenshot from WebRender.
    */
-  void GrabScreenshot(Renderer* aRenderer, const gfx::IntSize& aWindowSize);
+  void GrabScreenshot(Renderer<void*>* aRenderer, const gfx::IntSize& aWindowSize);
 
   /**
    * Process the screenshots pending in the queue.
    */
-  void ProcessQueue(Renderer* aRenderer);
+  void ProcessQueue(Renderer<void*>* aRenderer);
 
   struct QueueItem {
     mozilla::TimeStamp mTimeStamp;

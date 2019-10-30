@@ -18,6 +18,14 @@
 #include "TextDrawTarget.h"
 #include "malloc_decls.h"
 
+#if defined(XP_WIN)
+#include "mozilla/widget/WinCompositorWidget.h"
+#endif
+
+#if !(defined(XP_MACOSX) || defined(XP_WIN))
+#include "mozilla/widget/GtkCompositorWidget.h"
+#endif
+
 // clang-format off
 #define WRDL_LOG(...)
 //#define WRDL_LOG(...) printf_stderr("WRDL(%p): " __VA_ARGS__)
@@ -74,7 +82,25 @@ class NewRenderer : public RendererEvent {
     bool isMainWindow = true;  // TODO!
     bool supportLowPriorityTransactions = isMainWindow;
     bool supportPictureCaching = isMainWindow;
-    wr::Renderer* wrRenderer = nullptr;
+    wr::Renderer<void*>* wrRenderer = nullptr;
+
+#if defined(XP_MACOSX)
+        nsIWidget* compWidget = compositor->GetWidget()->RealWidget();
+        wr::SurfaceHandles surfaceHandles = wr::SurfaceHandles::MacosMetal(compWidget->GetNativeData(NS_NATIVE_WIDGET));
+#endif
+
+#if defined(XP_WIN)
+        widget::WinCompositorWidget* compWidget = compositor->GetWidget()->AsWindows();
+        MOZ_ASSERT(compWidget);
+        wr::SurfaceHandles surfaceHandles = wr::SurfaceHandles::Windows(GetModuleHandle(nullptr), compWidget->GetHwnd());
+#endif
+
+#if !(defined(XP_MACOSX) || defined(XP_WIN))
+        widget::GtkCompositorWidget* compWidget = compositor->GetWidget()->AsX11();
+        MOZ_ASSERT(compWidget);
+        wr::SurfaceHandles surfaceHandles = wr::SurfaceHandles::LinuxVulkan(compWidget->XDisplay(), compWidget->XWindow());
+#endif
+
     if (!wr_window_new(aWindowId, mSize.width, mSize.height,
                        supportLowPriorityTransactions, allow_texture_swizzling,
                        StaticPrefs::gfx_webrender_picture_caching() &&
@@ -85,6 +111,7 @@ class NewRenderer : public RendererEvent {
                        false,
 #endif
                        compositor->gl(),
+                       surfaceHandles,
                        aRenderThread.GetProgramCache()
                            ? aRenderThread.GetProgramCache()->Raw()
                            : nullptr,

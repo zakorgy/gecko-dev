@@ -9,7 +9,8 @@
 #include "GLContext.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/SyncObject.h"
-#include "mozilla/webrender/RenderCompositorOGL.h"
+//#include "mozilla/webrender/RenderCompositorOGL.h"
+#include "mozilla/webrender/RenderCompositorSZEGED.h"
 #include "mozilla/widget/CompositorWidget.h"
 
 #ifdef XP_WIN
@@ -44,7 +45,8 @@ UniquePtr<RenderCompositor> RenderCompositor::Create(
   // RenderCompositorOGL is not used on android
   return nullptr;
 #else
-  return RenderCompositorOGL::Create(std::move(aWidget));
+  //return RenderCompositorOGL::Create(std::move(aWidget));
+  return RenderCompositorSZEGED::Create(std::move(aWidget));
 #endif
 }
 

@@ -12,7 +12,7 @@ namespace layers {
 
 class RendererRecordedFrame final : public layers::RecordedFrame {
  public:
-  RendererRecordedFrame(const TimeStamp& aTimeStamp, wr::Renderer* aRenderer,
+  RendererRecordedFrame(const TimeStamp& aTimeStamp, wr::Renderer<void*>* aRenderer,
                         const wr::RecordedFrameHandle aHandle,
                         const gfx::IntSize& aSize)
       : RecordedFrame(aTimeStamp),
@@ -39,14 +39,14 @@ class RendererRecordedFrame final : public layers::RecordedFrame {
   }
 
  private:
-  wr::Renderer* mRenderer;
+  wr::Renderer<void*>* mRenderer;
   RefPtr<gfx::DataSourceSurface> mSurface;
   gfx::IntSize mSize;
   wr::RecordedFrameHandle mHandle;
 };
 
 void WebRenderCompositionRecorder::MaybeRecordFrame(
-    wr::Renderer* aRenderer, wr::WebRenderPipelineInfo* aFrameEpochs) {
+    wr::Renderer<void*>* aRenderer, wr::WebRenderPipelineInfo* aFrameEpochs) {
   MOZ_ASSERT(wr::RenderThread::IsInRenderThread());
 
   if (!aRenderer || !aFrameEpochs || !DidPaintContent(aFrameEpochs)) {

@@ -2,12 +2,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#![deny(warnings)]
+//#![deny(warnings)]
 
 extern crate webrender;
 extern crate euclid;
 extern crate app_units;
-extern crate gleam;
+//extern crate gleam;
+#[cfg(feature = "vulkan")]
+extern crate gfx_backend_vulkan as back;
+#[cfg(feature = "dx12")]
+extern crate gfx_backend_dx12 as back;
+#[cfg(feature = "metal")]
+extern crate gfx_backend_metal as back;
+extern crate dirs;
 extern crate nsstring;
 extern crate rayon;
 extern crate num_cpus;
@@ -15,6 +22,7 @@ extern crate thread_profiler;
 extern crate bincode;
 extern crate uuid;
 extern crate fxhash;
+extern crate ron;
 
 #[macro_use]
 extern crate log;

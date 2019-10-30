@@ -59,7 +59,7 @@ class WebRenderCompositionRecorder final : public CompositionRecorder {
    * true, it is safe to release both this object and Web Render's composition
    * recorder structures.
    */
-  void MaybeRecordFrame(wr::Renderer* aRenderer,
+  void MaybeRecordFrame(wr::Renderer<void*>* aRenderer,
                         wr::WebRenderPipelineInfo* aFrameEpochs);
 
  private:

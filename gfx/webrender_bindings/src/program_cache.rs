@@ -115,7 +115,7 @@ impl WrProgramBinaryDiskCache {
         info!("Updating on-disk shader cache");
 
         // Compute the digests in string form.
-        let mut entries: Vec<(String, Arc<ProgramBinary>)> =
+        /*let mut entries: Vec<(String, Arc<ProgramBinary>)> =
             entries.into_iter().map(|e| (format!("{}", e.source_digest()), e)).collect();
 
         let whitelist = entries.iter().map(|e| e.0.as_ref()).collect::<Vec<&str>>().join(WHITELIST_SEPARATOR);
@@ -188,7 +188,7 @@ impl WrProgramBinaryDiskCache {
                 info!("Wrote shader {} in {:?}", file_name, start.elapsed());
                 Ok(())
             }));
-        }
+        }*/
     }
 
     pub fn try_load_shader_from_disk(&mut self, filename: &str, program_cache: &Rc<ProgramCache>) {
@@ -202,7 +202,7 @@ impl WrProgramBinaryDiskCache {
 
             match deserialize_program_binary(&path) {
                 Ok(program) => {
-                    program_cache.load_program_binary(program);
+                    //program_cache.load_program_binary(program);
                 }
                 Err(err) => {
                     error!("shader-cache: Failed to deserialize program binary: {}", err);

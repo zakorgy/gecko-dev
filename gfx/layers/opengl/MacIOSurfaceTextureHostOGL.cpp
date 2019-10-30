@@ -9,6 +9,7 @@
 #include "mozilla/webrender/RenderMacIOSurfaceTextureHostOGL.h"
 #include "mozilla/webrender/RenderThread.h"
 #include "mozilla/webrender/WebRenderAPI.h"
+#include "mozilla/layers/ImageDataSerializer.h"
 #include "GLContextCGL.h"
 
 namespace mozilla {
@@ -168,6 +169,7 @@ void MacIOSurfaceTextureHostOGL::PushResourceUpdates(
                     : &wr::TransactionBuilder::UpdateExternalImage;
   auto imageType =
       wr::ExternalImageType::TextureHandle(wr::TextureTarget::Rect);
+  // auto bufferType = wr::WrExternalImageBufferType::ExternalBuffer;
 
   switch (GetFormat()) {
     case gfx::SurfaceFormat::R8G8B8X8:
@@ -192,6 +194,10 @@ void MacIOSurfaceTextureHostOGL::PushResourceUpdates(
       MOZ_ASSERT(mSurface->GetPlaneCount() == 0);
       wr::ImageDescriptor descriptor(GetSize(), gfx::SurfaceFormat::B8G8R8X8);
       (aResources.*method)(aImageKeys[0], descriptor, aExtID, imageType, 0);
+      /*wr::ImageDescriptor descriptor(GetSize(),
+                                ImageDataSerializer::ComputeRGBStride(GetFormat(), GetSize().width),
+                                gfx::SurfaceFormat::B8G8R8X8);
+      (aResources.*method)(aImageKeys[0], descriptor, aExtID, bufferType, 0);*/
       break;
     }
     case gfx::SurfaceFormat::NV12: {
@@ -239,6 +245,13 @@ void MacIOSurfaceTextureHostOGL::PushDisplayItems(
           aBounds, aClip, true, aImageKeys[0], wr::ColorDepth::Color8,
           wr::ToWrYuvColorSpace(GetYUVColorSpace()),
           wr::ToWrColorRange(GetColorRange()), aFilter);
+          wr::ToWrYuvColorSpace(YUVColorSpace::BT601), aFilter);
+
+      // Workaround for gfx-hal backend, since we use yuv images as raw data instead of native texture.
+      // In this case the raw data is in B8G8R8X8 format, which can be drawn directly to the screen
+      // without any yuv transformation. Basically we use brush_image instead of brush_yuv_image.
+      /*aBuilder.PushImage(aBounds, aClip, true, aFilter, aImageKeys[0],
+                    !(mFlags & TextureFlags::NON_PREMULTIPLIED));*/
       break;
     }
     case gfx::SurfaceFormat::NV12: {

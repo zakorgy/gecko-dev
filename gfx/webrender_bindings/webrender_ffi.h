@@ -91,7 +91,9 @@ void apz_sample_transforms(mozilla::wr::WrWindowId aWindowId,
 void apz_deregister_sampler(mozilla::wr::WrWindowId aWindowId);
 }  // extern "C"
 
+#define Backend void*
 #include "webrender_ffi_generated.h"
+#undef Backend
 
 // More functions invoked from Rust code. These are down here because they
 // refer to data structures from webrender_ffi_generated.h

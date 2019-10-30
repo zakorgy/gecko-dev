@@ -80,7 +80,7 @@ class RendererOGL {
   /// This can be called on the render thread only.
   RendererOGL(RefPtr<RenderThread>&& aThread,
               UniquePtr<RenderCompositor> aCompositor, wr::WindowId aWindowId,
-              wr::Renderer* aRenderer, layers::CompositorBridgeParent* aBridge);
+              wr::Renderer<void*>* aRenderer, layers::CompositorBridgeParent* aBridge);
 
   /// This can be called on the render thread only.
   void Pause();
@@ -101,7 +101,7 @@ class RendererOGL {
 
   void AccumulateMemoryReport(MemoryReport* aReport);
 
-  wr::Renderer* GetRenderer() { return mRenderer; }
+  wr::Renderer<void*>* GetRenderer() { return mRenderer; }
 
   gl::GLContext* gl() const;
 
@@ -110,7 +110,7 @@ class RendererOGL {
   UniquePtr<RenderCompositor> mCompositor;
   RefPtr<layers::NativeLayerRoot> mNativeLayerRoot;
   RefPtr<layers::NativeLayer> mNativeLayerForEntireWindow;
-  wr::Renderer* mRenderer;
+  wr::Renderer<void*>* mRenderer;
   layers::CompositorBridgeParent* mBridge;
   wr::WindowId mWindowId;
   TimeStamp mFrameStartTime;

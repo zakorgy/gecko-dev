@@ -16,7 +16,7 @@ RendererScreenshotGrabber::RendererScreenshotGrabber() {
 }
 
 void RendererScreenshotGrabber::MaybeGrabScreenshot(
-    Renderer* aRenderer, const gfx::IntSize& aWindowSize) {
+    Renderer<void*>* aRenderer, const gfx::IntSize& aWindowSize) {
   if (ProfilerScreenshots::IsEnabled()) {
     if (!mProfilerScreenshots) {
       mProfilerScreenshots = new ProfilerScreenshots();
@@ -28,7 +28,7 @@ void RendererScreenshotGrabber::MaybeGrabScreenshot(
   }
 }
 
-void RendererScreenshotGrabber::MaybeProcessQueue(Renderer* aRenderer) {
+void RendererScreenshotGrabber::MaybeProcessQueue(Renderer<void*>* aRenderer) {
   if (ProfilerScreenshots::IsEnabled()) {
     if (!mProfilerScreenshots) {
       mProfilerScreenshots = new ProfilerScreenshots();
@@ -40,7 +40,7 @@ void RendererScreenshotGrabber::MaybeProcessQueue(Renderer* aRenderer) {
   }
 }
 
-void RendererScreenshotGrabber::Destroy(Renderer* aRenderer) {
+void RendererScreenshotGrabber::Destroy(Renderer<void*>* aRenderer) {
   mQueue.Clear();
   mCurrentFrameQueueItem = Nothing();
   mProfilerScreenshots = nullptr;
@@ -49,7 +49,7 @@ void RendererScreenshotGrabber::Destroy(Renderer* aRenderer) {
 }
 
 void RendererScreenshotGrabber::GrabScreenshot(
-    Renderer* aRenderer, const gfx::IntSize& aWindowSize) {
+    Renderer<void*>* aRenderer, const gfx::IntSize& aWindowSize) {
   gfx::IntSize screenshotSize;
 
   AsyncScreenshotHandle handle = wr_renderer_get_screenshot_async(
@@ -66,7 +66,7 @@ void RendererScreenshotGrabber::GrabScreenshot(
   });
 }
 
-void RendererScreenshotGrabber::ProcessQueue(Renderer* aRenderer) {
+void RendererScreenshotGrabber::ProcessQueue(Renderer<void*>* aRenderer) {
   for (const auto& item : mQueue) {
     mProfilerScreenshots->SubmitScreenshot(
         item.mWindowIdentifier, item.mWindowSize, item.mScreenshotSize,
