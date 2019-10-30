@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::os::raw::c_void;
+use types::c_void;
 
 pub struct Frame {
     ctx: *mut uw::_Unwind_Context,
@@ -48,10 +48,8 @@ impl Frame {
 }
 
 #[inline(always)]
-pub fn trace(mut cb: &mut FnMut(&super::Frame) -> bool) {
-    unsafe {
-        uw::_Unwind_Backtrace(trace_fn, &mut cb as *mut _ as *mut _);
-    }
+pub unsafe fn trace(mut cb: &mut FnMut(&super::Frame) -> bool) {
+    uw::_Unwind_Backtrace(trace_fn, &mut cb as *mut _ as *mut _);
 
     extern fn trace_fn(ctx: *mut uw::_Unwind_Context,
                        arg: *mut c_void) -> uw::_Unwind_Reason_Code {
@@ -83,8 +81,8 @@ pub fn trace(mut cb: &mut FnMut(&super::Frame) -> bool) {
 mod uw {
     pub use self::_Unwind_Reason_Code::*;
 
-    use libc;
-    use std::os::raw::{c_int, c_void};
+    use libc::{self, c_int};
+    use types::c_void;
 
     #[repr(C)]
     pub enum _Unwind_Reason_Code {
@@ -115,12 +113,14 @@ mod uw {
 
         // available since GCC 4.2.0, should be fine for our purpose
         #[cfg(all(not(all(target_os = "android", target_arch = "arm")),
+                  not(all(target_os = "freebsd", target_arch = "arm")),
                   not(all(target_os = "linux", target_arch = "arm"))))]
         pub fn _Unwind_GetIPInfo(ctx: *mut _Unwind_Context,
                                  ip_before_insn: *mut c_int)
                     -> libc::uintptr_t;
 
         #[cfg(all(not(target_os = "android"),
+                  not(all(target_os = "freebsd", target_arch = "arm")),
                   not(all(target_os = "linux", target_arch = "arm"))))]
         pub fn _Unwind_FindEnclosingFunction(pc: *mut c_void)
             -> *mut c_void;
@@ -130,6 +130,7 @@ mod uw {
     // expansion of the macro. This is all copy/pasted directly from the
     // header file with the definition of _Unwind_GetIP.
     #[cfg(any(all(target_os = "android", target_arch = "arm"),
+              all(target_os = "freebsd", target_arch = "arm"),
               all(target_os = "linux", target_arch = "arm")))]
     pub unsafe fn _Unwind_GetIP(ctx: *mut _Unwind_Context) -> libc::uintptr_t {
         #[repr(C)]
@@ -177,6 +178,7 @@ mod uw {
     // This function doesn't exist on Android or ARM/Linux, so make it same
     // to _Unwind_GetIP
     #[cfg(any(all(target_os = "android", target_arch = "arm"),
+              all(target_os = "freebsd", target_arch = "arm"),
               all(target_os = "linux", target_arch = "arm")))]
     pub unsafe fn _Unwind_GetIPInfo(ctx: *mut _Unwind_Context,
                                     ip_before_insn: *mut c_int)
@@ -189,6 +191,7 @@ mod uw {
     // This function also doesn't exist on Android or ARM/Linux, so make it
     // a no-op
     #[cfg(any(target_os = "android",
+              all(target_os = "freebsd", target_arch = "arm"),
               all(target_os = "linux", target_arch = "arm")))]
     pub unsafe fn _Unwind_FindEnclosingFunction(pc: *mut c_void)
         -> *mut c_void

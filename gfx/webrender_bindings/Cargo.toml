@@ -6,6 +6,10 @@ license = "MPL-2.0"
 
 [features]
 webrender_debugger = ["webrender/debugger"]
+default = ["vulkan"]
+dx12 = ["gfx-backend-dx12", "dirs"]
+metal = ["gfx-backend-metal", "dirs"]
+vulkan = ["gfx-backend-vulkan", "dirs"]
 
 [dependencies]
 rayon = "1"
@@ -46,9 +50,3 @@ features = ["winit"]
 version = "0.3.3"
 optional = true
 features = ["winit", "x11"]
-
-[features]
-default = ["metal"]
-dx12 = ["gfx-backend-dx12", "dirs"]
-metal = ["gfx-backend-metal", "dirs"]
-vulkan = ["gfx-backend-vulkan", "dirs"]
