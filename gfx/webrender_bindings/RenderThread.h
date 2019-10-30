@@ -67,11 +67,11 @@ class WebRenderShaders {
   WebRenderShaders(gl::GLContext* gl, WebRenderProgramCache* programCache);
   ~WebRenderShaders();
 
-  wr::WrShaders* RawShaders() { return mShaders; }
+  wr::WrShaders<void*>* RawShaders() { return mShaders; }
 
  protected:
   RefPtr<gl::GLContext> mGL;
-  wr::WrShaders* mShaders;
+  wr::WrShaders<void*>* mShaders;
 };
 
 class WebRenderPipelineInfo {

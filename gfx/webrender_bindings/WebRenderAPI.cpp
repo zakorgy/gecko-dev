@@ -16,12 +16,17 @@
 #include "mozilla/layers/SynchronousTask.h"
 #include "TextDrawTarget.h"
 
+#if defined(XP_WIN)
+#include "mozilla/widget/WinCompositorWidget.h"
+#endif
+
+#if !(defined(XP_MACOSX) || defined(XP_WIN))
+#include "mozilla/widget/GtkCompositorWidget.h"
+#endif
+
 #define WRDL_LOG(...)
-
 //#define WRDL_LOG(...) printf_stderr("WRDL(%p): " __VA_ARGS__)
-
-//#define WRDL_LOG(...) if (XRE_IsContentProcess()) printf_stderr("WRDL(%p): "
-//__VA_ARGS__)
+//#define WRDL_LOG(...) if (XRE_IsContentProcess()) printf_stderr("WRDL(%p): " __VA_ARGS__)
 
 namespace mozilla {
 namespace wr {
@@ -70,11 +75,30 @@ class NewRenderer : public RendererEvent {
     *mUseTripleBuffering = compositor->UseTripleBuffering();
 
     bool supportLowPriorityTransactions = true;  // TODO only for main windows.
-    wr::Renderer* wrRenderer = nullptr;
+    wr::Renderer<void*>* wrRenderer = nullptr;
+
+    #if defined(XP_MACOSX)
+        nsIWidget* compWidget = compositor->GetWidget()->RealWidget();
+        wr::SurfaceHandles surfaceHandles = wr::SurfaceHandles::MacosMetal(compWidget->GetNativeData(NS_NATIVE_WIDGET));
+    #endif
+
+    #if defined(XP_WIN)
+        widget::WinCompositorWidget* compWidget = compositor->GetWidget()->AsWindows();
+        MOZ_ASSERT(compWidget);
+        wr::SurfaceHandles surfaceHandles = wr::SurfaceHandles::Windows(GetModuleHandle(nullptr), compWidget->GetHwnd());
+    #endif
+
+    #if !(defined(XP_MACOSX) || defined(XP_WIN))
+        widget::GtkCompositorWidget* compWidget = compositor->GetWidget()->AsX11();
+        MOZ_ASSERT(compWidget);
+        wr::SurfaceHandles surfaceHandles = wr::SurfaceHandles::LinuxVulkan(compWidget->XDisplay(), compWidget->XWindow());
+    #endif
+
     if (!wr_window_new(
             aWindowId, mSize.width, mSize.height,
             supportLowPriorityTransactions, gfxPrefs::WebRenderPictureCaching(),
             compositor->gl(),
+            surfaceHandles,
             aRenderThread.ProgramCache() ? aRenderThread.ProgramCache()->Raw()
                                          : nullptr,
             aRenderThread.Shaders() ? aRenderThread.Shaders()->RawShaders()

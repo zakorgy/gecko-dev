@@ -9,6 +9,8 @@
 #include "GLContextCGL.h"
 #include "mozilla/gfx/Logging.h"
 #include "ScopedGLHelpers.h"
+#include "mozilla/gfx/DataSurfaceHelpers.h"
+#include "MacIOSurfaceHelpers.h"
 
 namespace mozilla {
 namespace wr {
@@ -114,11 +116,36 @@ wr::WrExternalImage RenderMacIOSurfaceTextureHostOGL::Lock(
   }
 
   gfx::IntSize size = GetSize(aChannelIndex);
-  return NativeTextureToWrExternalImage(GetGLHandle(aChannelIndex), 0, 0,
-                                        size.width, size.height);
+  // return NativeTextureToWrExternalImage(GetGLHandle(aChannelIndex), 0, 0,
+  //                                       size.width, size.height);
+  RefPtr<gfx::SourceSurface> surf = layers::CreateSourceSurfaceFromMacIOSurface(mSurface);
+  mDataSurface = surf->GetDataSurface();
+
+  if (!mDataSurface->Map(gfx::DataSourceSurface::MapType::READ_WRITE, &mMap)) {
+    mDataSurface = nullptr;
+    gfxCriticalNote << "Failed to map mDataSurface";
+    return InvalidToWrExternalImage();
+  }
+
+  gfxCriticalNote << "mDataSurface info [stride:" << mMap.mStride << " size-width:" << mDataSurface->GetSize().width << " size-height:" << mDataSurface->GetSize().height << "]";
+  gfxCriticalNote << " surface format: " << mSurface->GetFormat() << " planeCount: " << mSurface->GetPlaneCount();
+
+  size_t dataWidth = mDataSurface->GetSize().width;
+  size_t dataHeight = mDataSurface->GetSize().height;
+  size_t bytesPerRow = mMap.mStride;
+  mData = UniquePtr<uint8_t[]>(new (fallible) uint8_t[4 * dataWidth * dataHeight]);
+  for (size_t i = 0; i < dataHeight; i++) {
+    memcpy(mData.get() + i * (dataWidth * 4), mMap.mData + i * bytesPerRow, dataWidth * 4);
+  }
+  mDataSurface->Unmap();
+  mDataSurface = nullptr;
+
+  return RawDataToWrExternalImage(mData.get(), 4 * dataWidth * dataHeight);
 }
 
-void RenderMacIOSurfaceTextureHostOGL::Unlock() {}
+void RenderMacIOSurfaceTextureHostOGL::Unlock() {
+  mData = nullptr;
+}
 
 void RenderMacIOSurfaceTextureHostOGL::DeleteTextureHandle() {
   if (mTextureHandles[0] != 0 && mGL && mGL->MakeCurrent()) {

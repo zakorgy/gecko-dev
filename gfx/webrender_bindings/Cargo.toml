@@ -9,12 +9,14 @@ rayon = "1"
 thread_profiler = "0.1.1"
 euclid = { version = "0.19.4", features = ["serde"] }
 app_units = "0.7"
-gleam = "0.6.8"
+#gleam = "0.6.8"
 log = "0.4"
 nsstring = { path = "../../xpcom/rust/nsstring" } 
 bincode = "1.0"
 uuid = { version = "0.6", features = ["v4"] }
 fxhash = "0.2.1"
+ron = "0.1.7"
+dirs = { version = "1.0", optional = true }
 
 [dependencies.webrender]
 path = "../wr/webrender"
@@ -24,9 +26,25 @@ features = ["capture", "serialize_program"]
 
 [target.'cfg(target_os = "windows")'.dependencies]
 dwrote = "0.8"
+gfx-backend-dx12 = { version = "0.3.4", optional = true, features = ["winit"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.6"
-core-graphics = "0.17.1"
+core-graphics = "0.17"
 foreign-types = "0.3.0"
 
+[target.'cfg(target_os = "macos")'.dependencies.gfx-backend-metal]
+version = "0.3.3"
+optional = true
+features = ["winit"]
+
+[target.'cfg(all(any(unix, windows), not(target_os = "macos")))'.dependencies.gfx-backend-vulkan]
+version = "0.3.3"
+optional = true
+features = ["winit", "x11"]
+
+[features]
+default = ["metal"]
+dx12 = ["gfx-backend-dx12", "dirs"]
+metal = ["gfx-backend-metal", "dirs"]
+vulkan = ["gfx-backend-vulkan", "dirs"]

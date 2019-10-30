@@ -9,14 +9,14 @@ use std::io::Cursor;
 use std::{mem, slice, ptr, env};
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::cell::RefCell;
+//use std::cell::RefCell;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::ops::Range;
-use std::os::raw::{c_void, c_char};
+use std::os::raw::{c_void, c_char, c_ulong};
 #[cfg(target_os = "android")]
 use std::os::raw::{c_int};
-use gleam::gl;
+//use gleam::gl;
 
 use webrender::api::*;
 use webrender::{ReadPixelsFormat, Renderer, RendererOptions, RendererStats, ThreadListener};
@@ -33,6 +33,11 @@ use app_units::Au;
 use rayon;
 use euclid::SideOffsets2D;
 use nsstring::nsAString;
+
+use back;
+use dirs;
+use webrender::hal::Instance;
+use webrender::{BackendApiType, DeviceInit, HeapsConfig};
 
 #[cfg(target_os = "macos")]
 use core_foundation::string::CFString;
@@ -52,6 +57,17 @@ pub const ROOT_CLIP_CHAIN: u64 = !0;
 
 fn next_namespace_id() -> IdNamespace {
     IdNamespace(NEXT_NAMESPACE_ID.fetch_add(1, Ordering::Relaxed) as u32)
+}
+
+#[derive(Debug)]
+#[repr(u32)]
+pub enum SurfaceHandles {
+    // Display and Window
+    LinuxVulkan(*mut c_void, c_ulong),
+    // NSView
+    MacosMetal(*mut c_void),
+    // Hinstance and HWND (DX12 and Vulkan)
+    Windows(*mut c_void, *mut c_void),
 }
 
 /// Whether a border should be antialiased.
@@ -630,7 +646,7 @@ impl RenderNotifier for CppNotifier {
 }
 
 #[no_mangle]
-pub extern "C" fn wr_renderer_set_external_image_handler(renderer: &mut Renderer,
+pub extern "C" fn wr_renderer_set_external_image_handler(renderer: &mut Renderer<back::Backend>,
                                                          external_image_handler: *mut WrExternalImageHandler) {
     if !external_image_handler.is_null() {
         renderer.set_external_image_handler(Box::new(unsafe {
@@ -645,12 +661,12 @@ pub extern "C" fn wr_renderer_set_external_image_handler(renderer: &mut Renderer
 }
 
 #[no_mangle]
-pub extern "C" fn wr_renderer_update(renderer: &mut Renderer) {
+pub extern "C" fn wr_renderer_update(renderer: &mut Renderer<back::Backend>) {
     renderer.update();
 }
 
 #[no_mangle]
-pub extern "C" fn wr_renderer_render(renderer: &mut Renderer,
+pub extern "C" fn wr_renderer_render(renderer: &mut Renderer<back::Backend>,
                                      width: i32,
                                      height: i32,
                                      had_slow_frame: bool,
@@ -678,7 +694,7 @@ pub extern "C" fn wr_renderer_render(renderer: &mut Renderer,
 
 // Call wr_renderer_render() before calling this function.
 #[no_mangle]
-pub unsafe extern "C" fn wr_renderer_readback(renderer: &mut Renderer,
+pub unsafe extern "C" fn wr_renderer_readback(renderer: &mut Renderer<back::Backend>,
                                               width: i32,
                                               height: i32,
                                               dst_buffer: *mut u8,
@@ -694,7 +710,7 @@ pub unsafe extern "C" fn wr_renderer_readback(renderer: &mut Renderer,
 }
 
 #[no_mangle]
-pub extern "C" fn wr_renderer_current_epoch(renderer: &mut Renderer,
+pub extern "C" fn wr_renderer_current_epoch(renderer: &mut Renderer<back::Backend>,
                                             pipeline_id: WrPipelineId,
                                             out_epoch: &mut WrEpoch)
                                             -> bool {
@@ -707,14 +723,14 @@ pub extern "C" fn wr_renderer_current_epoch(renderer: &mut Renderer,
 
 /// cbindgen:postfix=WR_DESTRUCTOR_SAFE_FUNC
 #[no_mangle]
-pub unsafe extern "C" fn wr_renderer_delete(renderer: *mut Renderer) {
+pub unsafe extern "C" fn wr_renderer_delete(renderer: *mut Renderer<back::Backend>) {
     let renderer = Box::from_raw(renderer);
     renderer.deinit();
     // let renderer go out of scope and get dropped
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn wr_renderer_accumulate_memory_report(renderer: &mut Renderer,
+pub unsafe extern "C" fn wr_renderer_accumulate_memory_report(renderer: &mut Renderer<back::Backend>,
                                                               report: &mut MemoryReport) {
     *report += renderer.report_memory();
 }
@@ -762,7 +778,7 @@ impl WrPipelineInfo {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn wr_renderer_flush_pipeline_info(renderer: &mut Renderer) -> WrPipelineInfo {
+pub unsafe extern "C" fn wr_renderer_flush_pipeline_info(renderer: &mut Renderer<back::Backend>) -> WrPipelineInfo {
     let info = renderer.flush_pipeline_info();
     WrPipelineInfo::new(&info)
 }
@@ -974,7 +990,7 @@ pub unsafe extern "C" fn remove_program_binary_disk_cache(prof_path: &nsAString)
 }
 
 #[no_mangle]
-pub extern "C" fn wr_renderer_update_program_cache(renderer: &mut Renderer, program_cache: &mut WrProgramCache) {
+pub extern "C" fn wr_renderer_update_program_cache(renderer: &mut Renderer<back::Backend>, program_cache: &mut WrProgramCache) {
     let program_cache = Rc::clone(&program_cache.rc_get());
     renderer.update_program_cache(program_cache);
 }
@@ -985,7 +1001,7 @@ fn env_var_to_bool(key: &'static str) -> bool {
 }
 
 // Call MakeCurrent before this.
-fn wr_device_new(gl_context: *mut c_void, pc: Option<&mut WrProgramCache>)
+/*fn wr_device_new(gl_context: *mut c_void, pc: Option<&mut WrProgramCache>)
     -> Device
 {
     assert!(unsafe { is_in_render_thread() });
@@ -1025,7 +1041,7 @@ fn wr_device_new(gl_context: *mut c_void, pc: Option<&mut WrProgramCache>)
     };
 
     Device::new(gl, resource_override_path, upload_method, cached_programs)
-}
+}*/
 
 // Call MakeCurrent before this.
 #[no_mangle]
@@ -1035,13 +1051,14 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
                                 support_low_priority_transactions: bool,
                                 enable_picture_caching: bool,
                                 gl_context: *mut c_void,
+                                handles: SurfaceHandles,
                                 program_cache: Option<&mut WrProgramCache>,
-                                shaders: Option<&mut WrShaders>,
+                                shaders: Option<&mut WrShaders<back::Backend>>,
                                 thread_pool: *mut WrThreadPool,
                                 size_of_op: VoidPtrToSizeFn,
                                 enclosing_size_of_op: VoidPtrToSizeFn,
                                 out_handle: &mut *mut DocumentHandle,
-                                out_renderer: &mut *mut Renderer,
+                                out_renderer: &mut *mut Renderer<back::Backend>,
                                 out_max_texture_size: *mut i32)
                                 -> bool {
     assert!(unsafe { is_in_render_thread() });
@@ -1053,7 +1070,7 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
         None
     };
 
-    let gl;
+    /*let gl;
     if unsafe { is_glcontext_egl(gl_context) } {
         gl = unsafe { gl::GlesFns::load_with(|symbol| get_proc_address(gl_context, symbol)) };
     } else {
@@ -1063,17 +1080,17 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
 
     let version = gl.get_string(gl::VERSION);
 
-    info!("WebRender - OpenGL version new {}", version);
+    info!("WebRender - OpenGL version new {}", version);*/
 
     let workers = unsafe {
         Arc::clone(&(*thread_pool).0)
     };
 
-    let upload_method = if unsafe { is_glcontext_angle(gl_context) } {
+    let upload_method = /*if unsafe { is_glcontext_angle(gl_context) } {
         UploadMethod::Immediate
-    } else {
-        UploadMethod::PixelBuffer(VertexUsageHint::Dynamic)
-    };
+    } else {*/
+        UploadMethod::PixelBuffer(VertexUsageHint::Dynamic);
+    //};
 
     let precache_flags = if env_var_to_bool("MOZ_WR_PRECACHE_SHADERS") {
         ShaderPrecacheFlags::FULL_COMPILE
@@ -1084,6 +1101,16 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
     let cached_programs = match program_cache {
         Some(program_cache) => Some(Rc::clone(&program_cache.rc_get())),
         None => None,
+    };
+
+    let heaps_config = {
+        let config_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("wr/webrender/res/mem_config.ron");
+        let source = std::fs::read_to_string(&config_path)
+            .expect(&format!("Unable to open memory config file from {:?}", config_path));
+        ron::de::from_str(&source).expect("Unable to parse HeapsConfig")
     };
 
     let opts = RendererOptions {
@@ -1097,7 +1124,7 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
         size_of_op: Some(size_of_op),
         enclosing_size_of_op: Some(enclosing_size_of_op),
         cached_programs,
-        resource_override_path: unsafe {
+        /*resource_override_path: unsafe {
             let override_charptr = gfx_wr_resource_path_override();
             if override_charptr.is_null() {
                 None
@@ -1107,7 +1134,7 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
                     _ => None
                 }
             }
-        },
+        },*/
         renderer_id: Some(window_id.0),
         upload_method,
         scene_builder_hooks: Some(Box::new(APZCallbacks::new(window_id))),
@@ -1117,13 +1144,52 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
         precache_flags,
         namespace_alloc_by_client: true,
         enable_picture_caching,
+        heaps_config,
         ..Default::default()
     };
 
     let notifier = Box::new(CppNotifier {
         window_id: window_id,
     });
-    let (renderer, sender) = match Renderer::new(gl, notifier, opts, shaders) {
+
+    let (adapter, surface, instance) = {
+        let instance = back::Instance::create("gfx-rs instance", 1);
+        let mut adapters = instance.enumerate_adapters();
+        let adapter = adapters.remove(0);
+        let surface = match handles {
+            #[cfg(all(unix, not(target_os = "macos")))]
+            SurfaceHandles::LinuxVulkan(display, window) => instance.create_surface_from_xlib(display as _, window as _),
+            #[cfg(target_os = "macos")]
+            SurfaceHandles::MacosMetal(nsview) => instance.create_surface_from_nsview(nsview as _, false),
+            #[cfg(windows)]
+            SurfaceHandles::Windows(hinstance, hwnd) => instance.create_surface_from_hwnd(hinstance as _,hwnd as _),
+            h => panic!("Wrong handle variant: {:?}", h),
+        };
+        ( adapter, surface, instance)
+    };
+
+    let cache_dir = dirs::cache_dir().expect("User's cache directory not found");
+    let cache_path = Some(PathBuf::from(&cache_dir).join("pipeline_cache.bin"));
+    let init = DeviceInit {
+        instance: Box::new(instance),
+        adapter: adapter,
+        surface: Some(surface),
+        window_size: (window_width, window_height),
+        descriptor_count: None,
+        cache_path,
+        save_cache: false,
+        backend_api: BackendApiType::Vulkan,
+    };
+
+    let (renderer, sender) = match Renderer::new(
+        init,
+        //handles,
+        //window_width,
+        //window_height,
+        notifier,
+        opts,
+        shaders,
+    ) {
         Ok((renderer, sender)) => (renderer, sender),
         Err(e) => {
             warn!(" Failed to create a Renderer: {:?}", e);
@@ -2878,17 +2944,17 @@ impl WrSpatialId {
     }
 }
 
-/// cbindgen:postfix=WR_DESTRUCTOR_SAFE_FUNC
+/*/// cbindgen:postfix=WR_DESTRUCTOR_SAFE_FUNC
 #[no_mangle]
 pub unsafe extern "C" fn wr_device_delete(device: *mut Device) {
     Box::from_raw(device);
-}
+}*/
 
 // Call MakeCurrent before this.
 #[no_mangle]
 pub extern "C" fn wr_shaders_new(gl_context: *mut c_void,
-                                 program_cache: Option<&mut WrProgramCache>) -> *mut WrShaders {
-    let mut device = wr_device_new(gl_context, program_cache);
+                                 program_cache: Option<&mut WrProgramCache>) -> *mut WrShaders<back::Backend> {
+    /*let mut device = wr_device_new(gl_context, program_cache);
 
     let precache_flags = if env_var_to_bool("MOZ_WR_PRECACHE_SHADERS") {
         ShaderPrecacheFlags::FULL_COMPILE
@@ -2919,17 +2985,18 @@ pub extern "C" fn wr_shaders_new(gl_context: *mut c_void,
     let shaders = WrShaders { shaders };
 
     device.end_frame();
-    Box::into_raw(Box::new(shaders))
+    Box::into_raw(Box::new(shaders))*/
+    return ptr::null_mut();
 }
 
 /// cbindgen:postfix=WR_DESTRUCTOR_SAFE_FUNC
 #[no_mangle]
-pub unsafe extern "C" fn wr_shaders_delete(shaders: *mut WrShaders, gl_context: *mut c_void) {
-    let mut device = wr_device_new(gl_context, None);
+pub unsafe extern "C" fn wr_shaders_delete(shaders: *mut WrShaders<back::Backend>, gl_context: *mut c_void) {
+    /*let mut device = wr_device_new(gl_context, None);
     let shaders = Box::from_raw(shaders);
     if let Ok(shaders) = Rc::try_unwrap(shaders.shaders) {
       shaders.into_inner().deinit(&mut device);
-    }
+    }*/
     // let shaders go out of scope and get dropped
 }
 

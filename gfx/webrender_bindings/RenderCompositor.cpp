@@ -9,7 +9,8 @@
 #include "GLContext.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/SyncObject.h"
-#include "mozilla/webrender/RenderCompositorOGL.h"
+//#include "mozilla/webrender/RenderCompositorOGL.h"
+#include "mozilla/webrender/RenderCompositorSZEGED.h"
 #include "mozilla/widget/CompositorWidget.h"
 
 #ifdef XP_WIN
@@ -26,7 +27,7 @@ namespace wr {
     return RenderCompositorANGLE::Create(std::move(aWidget));
   }
 #endif
-  return RenderCompositorOGL::Create(std::move(aWidget));
+  return RenderCompositorSZEGED::Create(std::move(aWidget));
 }
 
 RenderCompositor::RenderCompositor(RefPtr<widget::CompositorWidget>&& aWidget)

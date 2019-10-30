@@ -2786,17 +2786,22 @@ void gfxPlatform::InitWebRenderConfig() {
           FeatureStatus::Unavailable, "ANGLE is disabled",
           NS_LITERAL_CSTRING("FEATURE_FAILURE_ANGLE_DISABLED"));
     } else {
-      gfxVars::SetUseWebRenderANGLE(gfxConfig::IsEnabled(Feature::WEBRENDER));
+      //gfxVars::SetUseWebRenderANGLE(gfxConfig::IsEnabled(Feature::WEBRENDER));
+
     }
   }
 #endif
 
   if (Preferences::GetBool("gfx.webrender.program-binary", false)) {
     gfxVars::SetUseWebRenderProgramBinary(
-        gfxConfig::IsEnabled(Feature::WEBRENDER));
+        //gfxConfig::IsEnabled(Feature::WEBRENDER)
+        false
+    );
     if (Preferences::GetBool("gfx.webrender.program-binary-disk", false)) {
       gfxVars::SetUseWebRenderProgramBinaryDisk(
-          gfxConfig::IsEnabled(Feature::WEBRENDER));
+          //gfxConfig::IsEnabled(Feature::WEBRENDER)
+          false
+      );
     }
   }
 
