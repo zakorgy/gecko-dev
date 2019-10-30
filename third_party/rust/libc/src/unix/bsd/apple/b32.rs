@@ -5,11 +5,6 @@ pub type c_ulong = u32;
 pub type boolean_t = ::c_int;
 
 s! {
-    pub struct pthread_attr_t {
-        __sig: c_long,
-        __opaque: [::c_char; 36]
-    }
-
     pub struct if_data {
         pub ifi_type: ::c_uchar,
         pub ifi_typelen: ::c_uchar,
@@ -44,11 +39,51 @@ s! {
 
     pub struct bpf_hdr {
         pub bh_tstamp: ::timeval,
-        pub bh_caplen: ::uint32_t,
-        pub bh_datalen: ::uint32_t,
+        pub bh_caplen: u32,
+        pub bh_datalen: u32,
         pub bh_hdrlen: ::c_ushort,
     }
 }
+
+s_no_extra_traits!{
+    pub struct pthread_attr_t {
+        __sig: c_long,
+        __opaque: [::c_char; 36]
+    }
+}
+
+cfg_if! {
+    if #[cfg(feature = "extra_traits")] {
+        impl PartialEq for pthread_attr_t {
+            fn eq(&self, other: &pthread_attr_t) -> bool {
+                self.__sig == other.__sig
+                    && self.__opaque
+                    .iter()
+                    .zip(other.__opaque.iter())
+                    .all(|(a,b)| a == b)
+            }
+        }
+        impl Eq for pthread_attr_t {}
+        impl ::fmt::Debug for pthread_attr_t {
+            fn fmt(&self, f: &mut ::fmt::Formatter) -> ::fmt::Result {
+                f.debug_struct("pthread_attr_t")
+                    .field("__sig", &self.__sig)
+                // FIXME: .field("__opaque", &self.__opaque)
+                    .finish()
+            }
+        }
+        impl ::hash::Hash for pthread_attr_t {
+            fn hash<H: ::hash::Hasher>(&self, state: &mut H) {
+                self.__sig.hash(state);
+                self.__opaque.hash(state);
+            }
+        }
+    }
+}
+
+#[doc(hidden)]
+#[deprecated(since = "0.2.55")]
+pub const NET_RT_MAXID: ::c_int = 10;
 
 pub const __PTHREAD_MUTEX_SIZE__: usize = 40;
 pub const __PTHREAD_COND_SIZE__: usize = 24;
@@ -58,3 +93,9 @@ pub const __PTHREAD_RWLOCKATTR_SIZE__: usize = 12;
 
 pub const TIOCTIMESTAMP: ::c_ulong = 0x40087459;
 pub const TIOCDCDTIMESTAMP: ::c_ulong = 0x40087458;
+
+extern {
+    pub fn exchangedata(path1: *const ::c_char,
+                        path2: *const ::c_char,
+                        options: ::c_ulong) -> ::c_int;
+}
