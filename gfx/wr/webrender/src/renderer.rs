@@ -37,23 +37,34 @@ use batch::{BatchKind, BatchTextures, BrushBatchKind};
 use capture::{CaptureConfig, ExternalCaptureImage, PlainExternalImage};
 use debug_colors;
 use debug_render::{DebugItem, DebugRenderer};
-use device::{DepthFunction, Device, GpuFrameId, Program, UploadMethod, Texture, PBO};
-use device::{DrawTarget, ExternalTexture, FBOId, ReadTarget, TextureSlot};
-use device::{ShaderError, TextureFilter, TextureFlags,
-             VertexUsageHint, VAO, VBO, CustomVAO};
+use device::desc;
+#[cfg(feature = "replay")]
+use device::IdType;
+use device::{DepthFunction, Device, GpuFrameId, UploadMethod, Texture, PBO};
+use device::{DrawTarget, ExternalTexture, FBOId, ReadTarget};
+use device::{ShaderError, TextureFilter, TextureFlags, VertexUsageHint, VAO};
+use device::{create_projection, DeviceInit, PrimitiveType, ShaderPrecacheFlags, TextureSampler, VertexArrayKind};
 use device::{ProgramCache, ReadPixelsFormat};
 use device::query::GpuTimer;
+#[cfg(feature = "gleam")]
+use device::{CustomVAO, Program, VBO};
+#[cfg(not(feature="gleam"))]
+use device::{BufferMemorySlice, DrawTargetUsage};
 use euclid::rect;
 use euclid::Transform3D;
 use frame_builder::{ChasePrimitive, FrameBuilderConfig};
+#[cfg(feature = "gleam")]
 use gleam::gl;
 use glyph_rasterizer::{GlyphFormat, GlyphRasterizer};
-use gpu_cache::{GpuBlockData, GpuCacheUpdate, GpuCacheUpdateList};
-use gpu_cache::{GpuCacheDebugChunk, GpuCacheDebugCmd};
+#[cfg(not(feature="gleam"))]
+use gpu_cache::BufferInfo;
+use gpu_cache::{GpuBlockData, GpuCacheUpdate};
+use gpu_cache::{GpuCacheUpdateList, GpuCacheDebugChunk, GpuCacheDebugCmd};
 #[cfg(feature = "pathfinder")]
 use gpu_glyph_renderer::GpuGlyphRenderer;
 use gpu_types::ScalingInstance;
-use internal_types::{TextureSource, ORTHO_FAR_PLANE, ORTHO_NEAR_PLANE, ResourceCacheError};
+use hal;
+use internal_types::{TextureSource, ResourceCacheError};
 use internal_types::{CacheTextureId, DebugOutput, FastHashMap, LayerIndex, RenderedDocument, ResultMsg};
 use internal_types::{TextureCacheAllocationKind, TextureCacheUpdate, TextureUpdateList, TextureUpdateSource};
 use internal_types::{RenderTargetInfo, SavedTargetIndex};
@@ -69,6 +80,8 @@ use render_backend::{FrameId, RenderBackend};
 use scene_builder::{SceneBuilder, LowPrioritySceneBuilder};
 use shade::{Shaders, WrShaders};
 use smallvec::SmallVec;
+#[cfg(not(feature = "gleam"))]
+use rendy_memory::HeapsConfig;
 use render_task::{RenderTask, RenderTaskKind, RenderTaskTree};
 use resource_cache::ResourceCache;
 use util::drain_filter;
@@ -78,6 +91,7 @@ use std::cmp;
 use std::collections::VecDeque;
 use std::collections::hash_map::Entry;
 use std::f32;
+use std::marker::PhantomData;
 use std::mem;
 use std::os::raw::c_void;
 use std::path::PathBuf;
@@ -276,389 +290,22 @@ impl From<GlyphFormat> for ShaderColorMode {
     }
 }
 
-/// Enumeration of the texture samplers used across the various WebRender shaders.
-///
-/// Each variant corresponds to a uniform declared in shader source. We only bind
-/// the variants we need for a given shader, so not every variant is bound for every
-/// batch.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum TextureSampler {
-    Color0,
-    Color1,
-    Color2,
-    PrevPassAlpha,
-    PrevPassColor,
-    GpuCache,
-    TransformPalette,
-    RenderTasks,
-    Dither,
-    PrimitiveHeadersF,
-    PrimitiveHeadersI,
-}
-
-impl TextureSampler {
-    pub(crate) fn color(n: usize) -> TextureSampler {
-        match n {
-            0 => TextureSampler::Color0,
-            1 => TextureSampler::Color1,
-            2 => TextureSampler::Color2,
-            _ => {
-                panic!("There are only 3 color samplers.");
-            }
-        }
-    }
-}
-
-impl Into<TextureSlot> for TextureSampler {
-    fn into(self) -> TextureSlot {
-        match self {
-            TextureSampler::Color0 => TextureSlot(0),
-            TextureSampler::Color1 => TextureSlot(1),
-            TextureSampler::Color2 => TextureSlot(2),
-            TextureSampler::PrevPassAlpha => TextureSlot(3),
-            TextureSampler::PrevPassColor => TextureSlot(4),
-            TextureSampler::GpuCache => TextureSlot(5),
-            TextureSampler::TransformPalette => TextureSlot(6),
-            TextureSampler::RenderTasks => TextureSlot(7),
-            TextureSampler::Dither => TextureSlot(8),
-            TextureSampler::PrimitiveHeadersF => TextureSlot(9),
-            TextureSampler::PrimitiveHeadersI => TextureSlot(10),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct PackedVertex {
     pub pos: [f32; 2],
 }
 
-pub(crate) mod desc {
-    use device::{VertexAttribute, VertexAttributeKind, VertexDescriptor};
-
-    pub const PRIM_INSTANCES: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[
-            VertexAttribute {
-                name: "aPosition",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-        ],
-        instance_attributes: &[
-            VertexAttribute {
-                name: "aData",
-                count: 4,
-                kind: VertexAttributeKind::I32,
-            },
-        ],
-    };
-
-    pub const BLUR: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[
-            VertexAttribute {
-                name: "aPosition",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-        ],
-        instance_attributes: &[
-            VertexAttribute {
-                name: "aBlurRenderTaskAddress",
-                count: 1,
-                kind: VertexAttributeKind::I32,
-            },
-            VertexAttribute {
-                name: "aBlurSourceTaskAddress",
-                count: 1,
-                kind: VertexAttributeKind::I32,
-            },
-            VertexAttribute {
-                name: "aBlurDirection",
-                count: 1,
-                kind: VertexAttributeKind::I32,
-            },
-        ],
-    };
-
-    pub const LINE: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[
-            VertexAttribute {
-                name: "aPosition",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-        ],
-        instance_attributes: &[
-            VertexAttribute {
-                name: "aTaskRect",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aLocalSize",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aWavyLineThickness",
-                count: 1,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aStyle",
-                count: 1,
-                kind: VertexAttributeKind::I32,
-            },
-            VertexAttribute {
-                name: "aOrientation",
-                count: 1,
-                kind: VertexAttributeKind::I32,
-            },
-        ],
-    };
-
-    pub const BORDER: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[
-            VertexAttribute {
-                name: "aPosition",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-        ],
-        instance_attributes: &[
-            VertexAttribute {
-                name: "aTaskOrigin",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aRect",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aColor0",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aColor1",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aFlags",
-                count: 1,
-                kind: VertexAttributeKind::I32,
-            },
-            VertexAttribute {
-                name: "aWidths",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aRadii",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aClipParams1",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aClipParams2",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-        ],
-    };
-
-    pub const SCALE: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[
-            VertexAttribute {
-                name: "aPosition",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-        ],
-        instance_attributes: &[
-            VertexAttribute {
-                name: "aScaleRenderTaskAddress",
-                count: 1,
-                kind: VertexAttributeKind::I32,
-            },
-            VertexAttribute {
-                name: "aScaleSourceTaskAddress",
-                count: 1,
-                kind: VertexAttributeKind::I32,
-            },
-        ],
-    };
-
-    pub const CLIP: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[
-            VertexAttribute {
-                name: "aPosition",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-        ],
-        instance_attributes: &[
-            VertexAttribute {
-                name: "aClipRenderTaskAddress",
-                count: 1,
-                kind: VertexAttributeKind::I32,
-            },
-            VertexAttribute {
-                name: "aClipTransformId",
-                count: 1,
-                kind: VertexAttributeKind::I32,
-            },
-            VertexAttribute {
-                name: "aPrimTransformId",
-                count: 1,
-                kind: VertexAttributeKind::I32,
-            },
-            VertexAttribute {
-                name: "aClipDataResourceAddress",
-                count: 4,
-                kind: VertexAttributeKind::U16,
-            },
-            VertexAttribute {
-                name: "aClipLocalPos",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aClipTileRect",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aClipDeviceArea",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            }
-        ],
-    };
-
-    pub const GPU_CACHE_UPDATE: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[
-            VertexAttribute {
-                name: "aPosition",
-                count: 2,
-                kind: VertexAttributeKind::U16Norm,
-            },
-            VertexAttribute {
-                name: "aValue",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-        ],
-        instance_attributes: &[],
-    };
-
-    pub const VECTOR_STENCIL: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[
-            VertexAttribute {
-                name: "aPosition",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-        ],
-        instance_attributes: &[
-            VertexAttribute {
-                name: "aFromPosition",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aCtrlPosition",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aToPosition",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aFromNormal",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aCtrlNormal",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aToNormal",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aPathID",
-                count: 1,
-                kind: VertexAttributeKind::U16,
-            },
-            VertexAttribute {
-                name: "aPad",
-                count: 1,
-                kind: VertexAttributeKind::U16,
-            },
-        ],
-    };
-
-    pub const VECTOR_COVER: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[
-            VertexAttribute {
-                name: "aPosition",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-        ],
-        instance_attributes: &[
-            VertexAttribute {
-                name: "aTargetRect",
-                count: 4,
-                kind: VertexAttributeKind::I32,
-            },
-            VertexAttribute {
-                name: "aStencilOrigin",
-                count: 2,
-                kind: VertexAttributeKind::I32,
-            },
-            VertexAttribute {
-                name: "aSubpixel",
-                count: 1,
-                kind: VertexAttributeKind::U16,
-            },
-            VertexAttribute {
-                name: "aPad",
-                count: 1,
-                kind: VertexAttributeKind::U16,
-            },
-        ],
-    };
-}
-
-#[derive(Debug, Copy, Clone)]
-pub(crate) enum VertexArrayKind {
-    Primitive,
-    Blur,
-    Clip,
-    VectorStencil,
-    VectorCover,
-    Border,
-    Scale,
-    LineDecoration,
+#[cfg(not(feature = "gleam"))]
+impl PrimitiveType for PackedVertex {
+    type Primitive = [f32; 2];
+    fn to_primitive_type(&self) -> [f32; 2] { self.pos }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum GraphicsApi {
     OpenGL,
+    Gfx,
 }
 
 #[derive(Clone, Debug)]
@@ -740,12 +387,14 @@ impl CpuProfile {
 }
 
 #[cfg(not(feature = "pathfinder"))]
-pub struct GpuGlyphRenderer;
+pub struct GpuGlyphRenderer<B: hal::Backend> {
+    phantom_data: PhantomData<B>,
+}
 
 #[cfg(not(feature = "pathfinder"))]
-impl GpuGlyphRenderer {
-    fn new(_: &mut Device, _: &VAO, _: ShaderPrecacheFlags) -> Result<GpuGlyphRenderer, RendererError> {
-        Ok(GpuGlyphRenderer)
+impl<B: hal::Backend> GpuGlyphRenderer<B> {
+    fn new(_: &mut Device<B>, _: &VAO, _: ShaderPrecacheFlags) -> Result<GpuGlyphRenderer<B>, RendererError> {
+        Ok(GpuGlyphRenderer { phantom_data: PhantomData })
     }
 }
 
@@ -764,7 +413,7 @@ struct ActiveTexture {
 /// Manages the mapping between the at-a-distance texture handles used by the
 /// `RenderBackend` (which does not directly interface with the GPU) and actual
 /// device texture handles.
-struct TextureResolver {
+struct TextureResolver<B: hal::Backend> {
     /// A map to resolve texture cache IDs to native textures.
     texture_cache_map: FastHashMap<CacheTextureId, Texture>,
 
@@ -801,10 +450,11 @@ struct TextureResolver {
     /// See the comments in `allocate_target_texture` for more insight on why
     /// reuse is a win.
     render_target_pool: Vec<Texture>,
+    phantom_data: PhantomData<B>,
 }
 
-impl TextureResolver {
-    fn new(device: &mut Device) -> TextureResolver {
+impl<B: hal::Backend> TextureResolver<B> {
+    fn new(device: &mut Device<B>) -> TextureResolver<B> {
         let dummy_cache_texture = device
             .create_texture(
                 TextureTarget::Array,
@@ -824,10 +474,11 @@ impl TextureResolver {
             prev_pass_color: None,
             saved_targets: Vec::default(),
             render_target_pool: Vec::new(),
+            phantom_data: PhantomData,
         }
     }
 
-    fn deinit(self, device: &mut Device) {
+    fn deinit(self, device: &mut Device<B>) {
         device.delete_texture(self.dummy_cache_texture);
 
         for (_id, texture) in self.texture_cache_map {
@@ -845,7 +496,7 @@ impl TextureResolver {
         assert!(self.saved_targets.is_empty());
     }
 
-    fn end_frame(&mut self, device: &mut Device, frame_id: GpuFrameId) {
+    fn end_frame(&mut self, device: &mut Device<B>, frame_id: GpuFrameId) {
         // return the cached targets to the pool
         self.end_pass(device, None, None);
         // return the saved targets as well
@@ -862,17 +513,28 @@ impl TextureResolver {
         // flush all the WebRender caches in that case [1].
         //
         // [1] https://bugzilla.mozilla.org/show_bug.cgi?id=1494099
-        self.retain_targets(device, |texture| texture.used_recently(frame_id, 30));
+        #[cfg(not(feature = "gleam"))]
+        let frame_count = device.frame_count;
+        self.retain_targets(device, |texture| {
+            // We ignore the textures which are still used by the GPU
+            #[cfg(not(feature = "gleam"))]
+                {
+                    if texture.still_in_flight(frame_id, frame_count) {
+                        return true;
+                    }
+                }
+            texture.used_recently(frame_id, 0)
+        });
     }
 
     /// Transfers ownership of a render target back to the pool.
-    fn return_to_pool(&mut self, device: &mut Device, target: Texture) {
+    fn return_to_pool(&mut self, device: &mut Device<B>, target: Texture) {
         device.invalidate_render_target(&target);
         self.render_target_pool.push(target);
     }
 
     /// Drops all targets from the render target pool that do not satisfy the predicate.
-    pub fn retain_targets<F: Fn(&Texture) -> bool>(&mut self, device: &mut Device, f: F) {
+    pub fn retain_targets<F: Fn(&Texture) -> bool>(&mut self, device: &mut Device<B>, f: F) {
         // We can't just use retain() because `Texture` requires manual cleanup.
         let mut tmp = SmallVec::<[Texture; 8]>::new();
         for target in self.render_target_pool.drain(..) {
@@ -887,7 +549,7 @@ impl TextureResolver {
 
     fn end_pass(
         &mut self,
-        device: &mut Device,
+        device: &mut Device<B>,
         a8_texture: Option<ActiveTexture>,
         rgba8_texture: Option<ActiveTexture>,
     ) {
@@ -919,9 +581,12 @@ impl TextureResolver {
     }
 
     // Bind a source texture to the device.
-    fn bind(&self, texture_id: &TextureSource, sampler: TextureSampler, device: &mut Device) {
+    fn bind(&self, texture_id: &TextureSource, sampler: TextureSampler, device: &mut Device<B>) {
         match *texture_id {
-            TextureSource::Invalid => {}
+            TextureSource::Invalid => {
+                #[cfg(not(feature = "gleam"))]
+                device.bind_texture(sampler, &self.dummy_cache_texture);
+            }
             TextureSource::PrevPassAlpha => {
                 let texture = match self.prev_pass_alpha {
                     Some(ref at) => &at.texture,
@@ -937,10 +602,15 @@ impl TextureResolver {
                 device.bind_texture(sampler, texture);
             }
             TextureSource::External(external_image) => {
-                let texture = self.external_images
-                    .get(&(external_image.id, external_image.channel_index))
-                    .expect(&format!("BUG: External image should be resolved by now"));
-                device.bind_external_texture(sampler, texture);
+                if cfg!(feature = "gleam") {
+                    let texture = self.external_images
+                        .get(&(external_image.id, external_image.channel_index))
+                        .expect(&format!("BUG: External image should be resolved by now"));
+                    device.bind_external_texture(sampler, texture);
+                } else {
+                    warn!("External textures are not supported");
+                    device.bind_texture(sampler, &self.dummy_cache_texture);
+                }
             }
             TextureSource::TextureCache(index) => {
                 let texture = &self.texture_cache_map[&index];
@@ -1033,6 +703,11 @@ impl CacheRow {
 /// The bus over which CPU and GPU versions of the GPU cache
 /// get synchronized.
 enum GpuCacheBus {
+    /// Persistently mapped buffer-based updates
+    #[cfg(not(feature = "gleam"))]
+    PersistentlyMappedBuffer {
+        slice: Option<BufferMemorySlice>,
+    },
     /// PBO-based updates, currently operate on a row granularity.
     /// Therefore, are subject to fragmentation issues.
     PixelBuffer {
@@ -1043,6 +718,7 @@ enum GpuCacheBus {
     },
     /// Shader-based scattering updates. Currently rendered by a set
     /// of points into the GPU texture, each carrying a `GpuBlockData`.
+    #[cfg(feature = "gleam")]
     Scatter {
         /// Special program to run the scattered update.
         program: Program,
@@ -1058,16 +734,17 @@ enum GpuCacheBus {
 }
 
 /// The device-specific representation of the cache texture in gpu_cache.rs
-struct GpuCacheTexture {
+struct GpuCacheTexture<B: hal::Backend> {
     texture: Option<Texture>,
     bus: GpuCacheBus,
+    phantom_data: PhantomData<B>,
 }
 
-impl GpuCacheTexture {
+impl<B: hal::Backend> GpuCacheTexture<B> {
 
     /// Ensures that we have an appropriately-sized texture. Returns true if a
     /// new texture was created.
-    fn ensure_texture(&mut self, device: &mut Device, height: i32) {
+    fn ensure_texture(&mut self, device: &mut Device<B>, height: i32) {
         // If we already have a texture that works, we're done.
         if self.texture.as_ref().map_or(false, |t| t.get_dimensions().height >= height) {
             if GPU_CACHE_RESIZE_TEST {
@@ -1083,6 +760,16 @@ impl GpuCacheTexture {
         // Create the new texture.
         assert!(height >= 2, "Height is too small for ANGLE");
         let new_size = DeviceIntSize::new(MAX_VERTEX_TEXTURE_WIDTH as _, height);
+
+        #[cfg(not(feature = "gleam"))]
+        {
+            if let GpuCacheBus::PersistentlyMappedBuffer { .. } = self.bus {
+                let texture = device.create_dummy_gpu_cache_texture();
+                self.texture = Some(texture);
+                return
+            }
+        }
+
         let rt_info = Some(RenderTargetInfo { has_depth: false });
         let mut texture = device.create_texture(
             TextureTarget::Default,
@@ -1103,51 +790,87 @@ impl GpuCacheTexture {
         self.texture = Some(texture);
     }
 
-    fn new(device: &mut Device, use_scatter: bool) -> Result<Self, RendererError> {
-        let bus = if use_scatter {
-            let program = device.create_program_linked(
-                "gpu_cache_update",
-                String::new(),
-                &desc::GPU_CACHE_UPDATE,
-            )?;
-            let buf_position = device.create_vbo();
-            let buf_value = device.create_vbo();
-            //Note: the vertex attributes have to be supplied in the same order
-            // as for program creation, but each assigned to a different stream.
-            let vao = device.create_custom_vao(&[
-                buf_position.stream_with(&desc::GPU_CACHE_UPDATE.vertex_attributes[0..1]),
-                buf_value   .stream_with(&desc::GPU_CACHE_UPDATE.vertex_attributes[1..2]),
-            ]);
-            GpuCacheBus::Scatter {
-                program,
-                vao,
-                buf_position,
-                buf_value,
-                count: 0,
+    fn new(device: &mut Device<B>, use_scatter: bool, _use_pmb: bool) -> Result<Self, RendererError> {
+        if use_scatter && cfg!(not(feature = "gleam")) {
+            warn!("GpuCacheBus::Scatter is not supported with gfx backend");
+        }
+        let bus;
+        #[cfg(feature = "gleam")]
+        {
+            if use_scatter {
+                let program = device.create_program_linked(
+                    "gpu_cache_update",
+                    String::new(),
+                    &desc::GPU_CACHE_UPDATE,
+                )?;
+                let buf_position = device.create_vbo();
+                let buf_value = device.create_vbo();
+                //Note: the vertex attributes have to be supplied in the same order
+                // as for program creation, but each assigned to a different stream.
+                let vao = device.create_custom_vao(&[
+                    buf_position.stream_with(&desc::GPU_CACHE_UPDATE.vertex_attributes[0..1]),
+                    buf_value   .stream_with(&desc::GPU_CACHE_UPDATE.vertex_attributes[1..2]),
+                ]);
+                bus = GpuCacheBus::Scatter {
+                    program,
+                    vao,
+                    buf_position,
+                    buf_value,
+                    count: 0,
+                }
+            } else {
+                let buffer = device.create_pbo();
+                bus = GpuCacheBus::PixelBuffer {
+                    buffer,
+                    rows: Vec::new(),
+                }
             }
-        } else {
-            let buffer = device.create_pbo();
-            GpuCacheBus::PixelBuffer {
-                buffer,
-                rows: Vec::new(),
+        }
+        #[cfg(not(feature = "gleam"))]
+        {
+            if _use_pmb {
+                bus = GpuCacheBus::PersistentlyMappedBuffer { slice: None };
+                let texture = device.create_dummy_gpu_cache_texture();
+                return Ok(GpuCacheTexture {
+                    texture: Some(texture),
+                    bus,
+                    phantom_data: PhantomData,
+                })
+            } else {
+                let buffer = device.create_pbo();
+                bus = GpuCacheBus::PixelBuffer {
+                    buffer,
+                    rows: Vec::new(),
+                }
             }
         };
 
         Ok(GpuCacheTexture {
             texture: None,
             bus,
+            phantom_data: PhantomData,
         })
     }
 
-    fn deinit(mut self, device: &mut Device) {
-        if let Some(t) = self.texture.take() {
-            device.delete_texture(t);
-        }
+    fn deinit(mut self, device: &mut Device<B>) {
         match self.bus {
+            #[cfg(not(feature = "gleam"))]
+            GpuCacheBus::PersistentlyMappedBuffer { .. } => {
+                if let Some(t) = self.texture.take() {
+                    device.delete_texture(t);
+                }
+            }
             GpuCacheBus::PixelBuffer { buffer, ..} => {
                 device.delete_pbo(buffer);
+                if let Some(t) = self.texture.take() {
+                    device.delete_texture(t);
+                }
             }
+            #[cfg(feature = "gleam")]
             GpuCacheBus::Scatter { program, vao, buf_position, buf_value, ..} => {
+                if let Some(t) = self.texture.take() {
+                    device.delete_texture(t);
+                }
                 device.delete_program(program);
                 device.delete_custom_vao(vao);
                 device.delete_vbo(buf_position);
@@ -1162,13 +885,16 @@ impl GpuCacheTexture {
 
     fn prepare_for_updates(
         &mut self,
-        device: &mut Device,
-        total_block_count: usize,
+        device: &mut Device<B>,
+        _total_block_count: usize,
         max_height: i32,
     ) {
         self.ensure_texture(device, max_height);
         match self.bus {
+            #[cfg(not(feature = "gleam"))]
+            GpuCacheBus::PersistentlyMappedBuffer { .. } => {},
             GpuCacheBus::PixelBuffer { .. } => {},
+            #[cfg(feature = "gleam")]
             GpuCacheBus::Scatter {
                 ref mut buf_position,
                 ref mut buf_value,
@@ -1176,16 +902,34 @@ impl GpuCacheTexture {
                 ..
             } => {
                 *count = 0;
-                if total_block_count > buf_value.allocated_count() {
-                    device.allocate_vbo(buf_position, total_block_count, VertexUsageHint::Stream);
-                    device.allocate_vbo(buf_value,    total_block_count, VertexUsageHint::Stream);
+                if _total_block_count > buf_value.allocated_count() {
+                    device.allocate_vbo(buf_position, _total_block_count, VertexUsageHint::Stream);
+                    device.allocate_vbo(buf_value,    _total_block_count, VertexUsageHint::Stream);
                 }
             }
         }
     }
 
-    fn update(&mut self, device: &mut Device, updates: &GpuCacheUpdateList) {
+    fn update(&mut self, _device: &mut Device<B>, updates: &GpuCacheUpdateList) {
         match self.bus {
+            #[cfg(not(feature = "gleam"))]
+            GpuCacheBus::PersistentlyMappedBuffer { ref mut slice } => {
+                let slice = slice.as_mut().unwrap();
+                let writer_slice = slice.slice_mut::<GpuBlockData>();
+                for update in &updates.updates {
+                    match *update {
+                        GpuCacheUpdate::Copy {
+                            block_index,
+                            block_count,
+                            address,
+                        } => {
+                            let address = address.v as usize * MAX_VERTEX_TEXTURE_WIDTH + address.u as usize;
+                            writer_slice[address .. address + block_count]
+                                .copy_from_slice(&updates.blocks[block_index .. block_index + block_count]);
+                        }
+                    }
+                }
+            }
             GpuCacheBus::PixelBuffer { ref mut rows, .. } => {
                 for update in &updates.updates {
                     match *update {
@@ -1216,6 +960,7 @@ impl GpuCacheTexture {
                     }
                 }
             }
+            #[cfg(feature = "gleam")]
             GpuCacheBus::Scatter {
                 ref buf_position,
                 ref buf_value,
@@ -1245,16 +990,18 @@ impl GpuCacheTexture {
                     }
                 }
 
-                device.fill_vbo(buf_value, &updates.blocks, *count);
-                device.fill_vbo(buf_position, &position_data, *count);
+                _device.fill_vbo(buf_value, &updates.blocks, *count);
+                _device.fill_vbo(buf_position, &position_data, *count);
                 *count += position_data.len();
             }
         }
     }
 
-    fn flush(&mut self, device: &mut Device) -> usize {
+    fn flush(&mut self, device: &mut Device<B>) -> usize {
         let texture = self.texture.as_ref().unwrap();
         match self.bus {
+            #[cfg(not(feature = "gleam"))]
+            GpuCacheBus::PersistentlyMappedBuffer { .. } => 0,
             GpuCacheBus::PixelBuffer { ref buffer, ref mut rows } => {
                 let rows_dirty = rows
                     .iter()
@@ -1287,6 +1034,7 @@ impl GpuCacheTexture {
 
                 rows_dirty
             }
+            #[cfg(feature = "gleam")]
             GpuCacheBus::Scatter { ref program, ref vao, count, .. } => {
                 device.disable_depth();
                 device.set_blend(false);
@@ -1306,19 +1054,20 @@ impl GpuCacheTexture {
     }
 }
 
-struct VertexDataTexture {
+struct VertexDataTexture<B: hal::Backend> {
     texture: Option<Texture>,
     format: ImageFormat,
     pbo: PBO,
+    phantom_data: PhantomData<B>,
 }
 
-impl VertexDataTexture {
+impl<B: hal::Backend> VertexDataTexture<B> {
     fn new(
-        device: &mut Device,
+        device: &mut Device<B>,
         format: ImageFormat,
-    ) -> VertexDataTexture {
+    ) -> VertexDataTexture<B> {
         let pbo = device.create_pbo();
-        VertexDataTexture { texture: None, format, pbo }
+        VertexDataTexture { texture: None, format, pbo, phantom_data: PhantomData }
     }
 
     /// Returns a borrow of the GPU texture. Panics if it hasn't been initialized.
@@ -1331,7 +1080,7 @@ impl VertexDataTexture {
         self.texture.as_ref().map_or(0, |t| t.size_in_bytes())
     }
 
-    fn update<T>(&mut self, device: &mut Device, data: &mut Vec<T>) {
+    fn update<T>(&mut self, device: &mut Device<B>, data: &mut Vec<T>) {
         debug_assert!(mem::size_of::<T>() % 16 == 0);
         let texels_per_item = mem::size_of::<T>() / 16;
         let items_per_row = MAX_VERTEX_TEXTURE_WIDTH / texels_per_item;
@@ -1396,7 +1145,7 @@ impl VertexDataTexture {
             .upload(rect, 0, None, data);
     }
 
-    fn deinit(mut self, device: &mut Device) {
+    fn deinit(mut self, device: &mut Device<B>) {
         device.delete_pbo(self.pbo);
         if let Some(t) = self.texture.take() {
             device.delete_texture(t);
@@ -1416,20 +1165,22 @@ struct TargetSelector {
     format: ImageFormat,
 }
 
-struct LazyInitializedDebugRenderer {
+struct LazyInitializedDebugRenderer<B: hal::Backend> {
     debug_renderer: Option<DebugRenderer>,
     failed: bool,
+    phantom_data: PhantomData<B>,
 }
 
-impl LazyInitializedDebugRenderer {
+impl<B: hal::Backend> LazyInitializedDebugRenderer<B> {
     pub fn new() -> Self {
         Self {
             debug_renderer: None,
             failed: false,
+            phantom_data: PhantomData,
         }
     }
 
-    pub fn get_mut<'a>(&'a mut self, device: &mut Device) -> Option<&'a mut DebugRenderer> {
+    pub fn get_mut<'a>(&'a mut self, device: &mut Device<B>) -> Option<&'a mut DebugRenderer> {
         if self.failed {
             return None;
         }
@@ -1451,10 +1202,15 @@ impl LazyInitializedDebugRenderer {
         self.debug_renderer.as_mut()
     }
 
-    pub fn deinit(self, device: &mut Device) {
+    pub fn deinit(self, device: &mut Device<B>) {
         if let Some(debug_renderer) = self.debug_renderer {
             debug_renderer.deinit(device);
         }
+    }
+
+    #[cfg(not(feature = "gleam"))]
+    fn take(&mut self) -> Option<DebugRenderer> {
+        self.debug_renderer.take()
     }
 }
 
@@ -1474,25 +1230,26 @@ pub struct RendererVAOs {
 ///
 /// We have a separate `Renderer` instance for each instance of WebRender (generally
 /// one per OS window), and all instances share the same thread.
-pub struct Renderer {
-    result_rx: Receiver<ResultMsg>,
+pub struct Renderer<B: hal::Backend> {
+    result_rx: Receiver<ResultMsg<B>>,
     debug_server: DebugServer,
-    pub device: Device,
+    pub device: Device<B>,
     pending_texture_updates: Vec<TextureUpdateList>,
     pending_gpu_cache_updates: Vec<GpuCacheUpdateList>,
     pending_gpu_cache_clear: bool,
+    new_gpu_cache_bus: Option<GpuCacheBus>,
     pending_shader_updates: Vec<PathBuf>,
     active_documents: Vec<(DocumentId, RenderedDocument)>,
 
-    shaders: Rc<RefCell<Shaders>>,
+    shaders: Rc<RefCell<Shaders<B>>>,
 
-    pub gpu_glyph_renderer: GpuGlyphRenderer,
+    pub gpu_glyph_renderer: GpuGlyphRenderer<B>,
 
     max_recorded_profiles: usize,
 
     clear_color: Option<ColorF>,
-    enable_clear_scissor: bool,
-    debug: LazyInitializedDebugRenderer,
+    _enable_clear_scissor: bool,
+    debug: LazyInitializedDebugRenderer<B>,
     debug_flags: DebugFlags,
     backend_profile_counters: BackendProfileCounters,
     profile_counters: RendererProfileCounters,
@@ -1508,11 +1265,11 @@ pub struct Renderer {
     pub gpu_profile: GpuProfiler<GpuProfileTag>,
     vaos: RendererVAOs,
 
-    prim_header_f_texture: VertexDataTexture,
-    prim_header_i_texture: VertexDataTexture,
-    transforms_texture: VertexDataTexture,
-    render_task_texture: VertexDataTexture,
-    gpu_cache_texture: GpuCacheTexture,
+    prim_header_f_texture: VertexDataTexture<B>,
+    prim_header_i_texture: VertexDataTexture<B>,
+    transforms_texture: VertexDataTexture<B>,
+    render_task_texture: VertexDataTexture<B>,
+    gpu_cache_texture: GpuCacheTexture<B>,
 
     /// When the GPU cache debugger is enabled, we keep track of the live blocks
     /// in the GPU cache so that we can use them for the debug display. This
@@ -1525,7 +1282,7 @@ pub struct Renderer {
     pipeline_info: PipelineInfo,
 
     // Manages and resolves source textures IDs to real texture IDs.
-    texture_resolver: TextureResolver,
+    texture_resolver: TextureResolver<B>,
 
     // A PBO used to do asynchronous texture cache uploads.
     texture_cache_upload_pbo: PBO,
@@ -1534,12 +1291,12 @@ pub struct Renderer {
 
     /// Optional trait object that allows the client
     /// application to provide external buffers for image data.
-    external_image_handler: Option<Box<ExternalImageHandler>>,
+    external_image_handler: Option<Box<dyn ExternalImageHandler>>,
 
     /// Optional trait object that allows the client
     /// application to provide a texture handle to
     /// copy the WR output to.
-    output_image_handler: Option<Box<OutputImageHandler>>,
+    output_image_handler: Option<Box<dyn OutputImageHandler>>,
 
     /// Optional function pointers for measuring memory used by a given
     /// heap-allocated pointer.
@@ -1564,6 +1321,7 @@ pub struct Renderer {
     read_fbo: FBOId,
     #[cfg(feature = "replay")]
     owned_external_images: FastHashMap<(ExternalImageId, u8), ExternalTexture>,
+    phantom_data: PhantomData<B>,
 }
 
 #[derive(Debug)]
@@ -1592,7 +1350,7 @@ impl From<ResourceCacheError> for RendererError {
     }
 }
 
-impl Renderer {
+impl<B: hal::Backend> Renderer<B> {
     /// Initializes WebRender and creates a `Renderer` and `RenderApiSender`.
     ///
     /// # Examples
@@ -1611,28 +1369,42 @@ impl Renderer {
     /// ```
     /// [rendereroptions]: struct.RendererOptions.html
     pub fn new(
-        gl: Rc<gl::Gl>,
-        notifier: Box<RenderNotifier>,
+        init: DeviceInit<B>,
+        notifier: Box<dyn RenderNotifier>,
         mut options: RendererOptions,
-        shaders: Option<&mut WrShaders>
+        shaders: Option<&mut WrShaders<B>>
     ) -> Result<(Self, RenderApiSender), RendererError> {
         let (api_tx, api_rx) = channel::msg_channel()?;
         let (payload_tx, payload_rx) = channel::payload_channel()?;
         let (result_tx, result_rx) = channel();
-        let gl_type = gl.get_type();
+        #[cfg(feature = "gleam")]
+        let gl_type = init.gl.get_type();
+        #[cfg(not(feature = "gleam"))]
+        let gl_type = ();
 
         let debug_server = DebugServer::new(api_tx.clone());
 
         let mut device = Device::new(
-            gl,
+            init,
             options.resource_override_path.clone(),
             options.upload_method.clone(),
             options.cached_programs.take(),
+            #[cfg(not(feature = "gleam"))]
+            options.heaps_config,
+            #[cfg(not(feature = "gleam"))]
+            options.instance_buffer_size,
+            #[cfg(not(feature = "gleam"))]
+            options.texture_cahce_size,
         );
 
+        #[cfg(feature = "gleam")]
         let ext_dual_source_blending = !options.disable_dual_source_blending &&
             device.supports_extension("GL_ARB_blend_func_extended") &&
             device.supports_extension("GL_ARB_explicit_attrib_location");
+
+        #[cfg(not(feature = "gleam"))]
+        let ext_dual_source_blending = !options.disable_dual_source_blending &&
+            device.supports_features(hal::Features::DUAL_SRC_BLENDING);
 
         // 512 is the minimum that the texture cache can work with.
         const MIN_TEXTURE_SIZE: i32 = 512;
@@ -1731,7 +1503,7 @@ impl Renderer {
                 21,
             ];
 
-            let mut texture = device.create_texture(
+            let texture = device.create_texture(
                 TextureTarget::Default,
                 ImageFormat::R8,
                 8,
@@ -1786,6 +1558,7 @@ impl Renderer {
         let gpu_cache_texture = GpuCacheTexture::new(
             &mut device,
             options.scatter_gpu_cache_updates,
+            true,
         )?;
 
         device.end_frame();
@@ -1897,6 +1670,12 @@ impl Renderer {
             scene_tx.clone()
         };
 
+        #[cfg(not(feature = "gleam"))]
+        let device_clone = Arc::clone(&device.device);
+        #[cfg(not(feature = "gleam"))]
+        let heaps_clone = Arc::downgrade(&device.heaps);
+        #[cfg(not(feature = "gleam"))]
+        let non_coherent_atom_size_mask = (device.limits.non_coherent_atom_size - 1) as u64;
         thread::Builder::new().name(rb_thread_name.clone()).spawn(move || {
             register_thread_with_profiler(rb_thread_name.clone());
             if let Some(ref thread_listener) = *thread_listener_for_render_backend {
@@ -1914,7 +1693,7 @@ impl Renderer {
                 blob_image_handler,
             );
 
-            let mut backend = RenderBackend::new(
+            let mut backend: RenderBackend<B> = RenderBackend::new(
                 api_rx,
                 payload_rx_for_backend,
                 result_tx,
@@ -1930,15 +1709,27 @@ impl Renderer {
                 make_size_of_ops(),
                 debug_flags,
                 namespace_alloc_by_client,
+                #[cfg(not(feature = "gleam"))]
+                device_clone,
+                #[cfg(not(feature = "gleam"))]
+                heaps_clone,
+                #[cfg(not(feature = "gleam"))]
+                non_coherent_atom_size_mask,
             );
             backend.run(backend_profile_counters);
+            backend.deinit();
             if let Some(ref thread_listener) = *thread_listener_for_render_backend {
                 thread_listener.thread_stopped(&rb_thread_name);
             }
         })?;
 
-        let ext_debug_marker = device.supports_extension("GL_EXT_debug_marker");
-        let gpu_profile = GpuProfiler::new(Rc::clone(device.rc_gl()), ext_debug_marker);
+        let gpu_profile = GpuProfiler::new(
+            #[cfg(feature = "gleam")]
+            Rc::clone(device.rc_gl()),
+            #[cfg(feature = "gleam")]
+            device.supports_extension("GL_EXT_debug_marker")
+        );
+
         #[cfg(feature = "capture")]
         let read_fbo = device.create_fbo();
 
@@ -1950,6 +1741,7 @@ impl Renderer {
             pending_texture_updates: Vec::new(),
             pending_gpu_cache_updates: Vec::new(),
             pending_gpu_cache_clear: false,
+            new_gpu_cache_bus: None,
             pending_shader_updates: Vec::new(),
             shaders,
             debug: LazyInitializedDebugRenderer::new(),
@@ -1964,7 +1756,7 @@ impl Renderer {
             slow_frame_indicator: ChangeIndicator::new(),
             max_recorded_profiles: options.max_recorded_profiles,
             clear_color: options.clear_color,
-            enable_clear_scissor: options.enable_clear_scissor,
+            _enable_clear_scissor: options.enable_clear_scissor,
             last_time: 0,
             gpu_profile,
             gpu_glyph_renderer,
@@ -2001,6 +1793,7 @@ impl Renderer {
             owned_external_images: FastHashMap::default(),
             notifications: Vec::new(),
             framebuffer_size: None,
+            phantom_data: PhantomData,
         };
 
         // We initially set the flags to default and then now call set_debug_flags
@@ -2016,11 +1809,19 @@ impl Renderer {
     }
 
     pub fn get_graphics_api_info(&self) -> GraphicsApiInfo {
-        GraphicsApiInfo {
+        #[cfg(feature = "gleam")]
+        let api_info = GraphicsApiInfo {
             kind: GraphicsApi::OpenGL,
             version: self.device.gl().get_string(gl::VERSION),
             renderer: self.device.gl().get_string(gl::RENDERER),
-        }
+        };
+        #[cfg(not(feature = "gleam"))]
+        let api_info = GraphicsApiInfo {
+            kind: GraphicsApi::Gfx,
+            version: "0.1".to_owned(),
+            renderer: "Gfx-rs".to_owned(),
+        };
+        api_info
     }
 
     /// Returns the Epoch of the current frame in a pipeline.
@@ -2046,6 +1847,10 @@ impl Renderer {
         // Pull any pending results and return the most recent.
         while let Ok(msg) = self.result_rx.try_recv() {
             match msg {
+                #[cfg(not(feature = "gleam"))]
+                ResultMsg::UpdateWindowSize(window_size) => {
+                    self.resize(Some((window_size.width, window_size.height)));
+                }
                 ResultMsg::PublishPipelineInfo(mut pipeline_info) => {
                     for (pipeline_id, epoch) in pipeline_info.epochs {
                         self.pipeline_info.epochs.insert(pipeline_id, epoch);
@@ -2054,7 +1859,7 @@ impl Renderer {
                 }
                 ResultMsg::PublishDocument(
                     document_id,
-                    mut doc,
+                    doc,
                     texture_update_list,
                     profile_counters,
                 ) => {
@@ -2118,6 +1923,48 @@ impl Renderer {
                     }
                     self.pending_gpu_cache_updates.push(list);
                 }
+                #[cfg(not(feature="gleam"))]
+                ResultMsg::UpdateGpuCacheBuffer(mut update) => {
+                    if !matches!(self.gpu_cache_texture.bus, GpuCacheBus::PersistentlyMappedBuffer { .. }) {
+                        panic!("We should not receive this message if the cache bus is not a persistently mapped buffer!");
+                    }
+                    match update.buffer_update {
+                        BufferInfo::TransitRangeUpdate(new_range) => {
+                            self.device.gpu_cache_buffer.as_mut().unwrap().update_transit_range(new_range);
+                        }
+                        BufferInfo::BufferUpdate { buffer_memory_slice, new_buffer_info, old_buffer } => {
+                            self.new_gpu_cache_bus = Some(GpuCacheBus::PersistentlyMappedBuffer{ slice: Some(buffer_memory_slice) });
+                            self.device.set_gpu_cache_buffer(new_buffer_info);
+                            if let Some(buffer) = old_buffer {
+                                self.device.gpu_cache_buffers.insert(self.gpu_cache_texture.texture.as_ref().unwrap().id(), buffer);
+                            }
+                            self.pending_gpu_cache_clear = true;
+                        }
+                    }
+                    if update.frame_id > self.gpu_cache_frame_id {
+                        self.gpu_cache_frame_id = update.frame_id
+                    }
+
+                    for cmd in mem::replace(&mut update.debug_commands, Vec::new()) {
+                        match cmd {
+                            GpuCacheDebugCmd::Alloc(chunk) => {
+                                let row = chunk.address.v as usize;
+                                if row >= self.gpu_cache_debug_chunks.len() {
+                                    self.gpu_cache_debug_chunks.resize(row + 1, Vec::new());
+                                }
+                                self.gpu_cache_debug_chunks[row].push(chunk);
+                            },
+                            GpuCacheDebugCmd::Free(address) => {
+                                let chunks = &mut self.gpu_cache_debug_chunks[address.v as usize];
+                                let pos = chunks.iter()
+                                    .position(|x| x.address == address).unwrap();
+                                chunks.remove(pos);
+                            },
+                        }
+                    }
+                }
+                #[cfg(feature="gleam")]
+                ResultMsg::Phantom(..) => {}
                 ResultMsg::UpdateResources {
                     updates,
                     memory_pressure,
@@ -2185,6 +2032,16 @@ impl Renderer {
         // Avoid unused param warning.
         let _ = &self.debug_server;
         String::new()
+    }
+
+    #[cfg(not(feature = "gleam"))]
+    pub fn resize(&mut self, window_size: Option<(i32, i32)>) -> DeviceIntSize {
+        self.shaders.borrow_mut().reset();
+        let size = self.device.recreate_swapchain(window_size);
+        if let Some(debug_renderer) = self.debug.take() {
+            debug_renderer.deinit(&mut self.device);
+        }
+        size
     }
 
 
@@ -2390,6 +2247,11 @@ impl Renderer {
                             row.is_dirty = true;
                         }
                     }
+                    #[cfg(not(feature = "gleam"))]
+                    GpuCacheBus::PersistentlyMappedBuffer { .. } => {
+                        info!("Invalidating GPU caches");
+                    }
+                    #[cfg(feature = "gleam")]
                     GpuCacheBus::Scatter { .. } => {
                         warn!("Unable to invalidate scattered GPU cache");
                     }
@@ -2402,12 +2264,12 @@ impl Renderer {
     }
 
     /// Set a callback for handling external images.
-    pub fn set_external_image_handler(&mut self, handler: Box<ExternalImageHandler>) {
+    pub fn set_external_image_handler(&mut self, handler: Box<dyn ExternalImageHandler>) {
         self.external_image_handler = Some(handler);
     }
 
     /// Set a callback for handling external outputs.
-    pub fn set_output_image_handler(&mut self, handler: Box<OutputImageHandler>) {
+    pub fn set_output_image_handler(&mut self, handler: Box<dyn OutputImageHandler>) {
         self.output_image_handler = Some(handler);
     }
 
@@ -2508,6 +2370,8 @@ impl Renderer {
             samplers
         };
 
+        #[cfg(not(feature="gleam"))]
+        self.device.set_next_frame_id();
 
         let cpu_frame_id = profile_timers.cpu_time.profile(|| {
             let _gm = self.gpu_profile.start_marker("begin frame");
@@ -2679,6 +2543,9 @@ impl Renderer {
             if let Some(debug_renderer) = self.debug.try_get_mut() {
                 debug_renderer.render(&mut self.device, framebuffer_size);
             }
+
+            #[cfg(not(feature="gleam"))]
+            self.device.submit_to_gpu();
             self.device.end_frame();
         });
         if framebuffer_size.is_some() {
@@ -2716,6 +2583,7 @@ impl Renderer {
                 (count + list.blocks.len(), cmp::max(height, list.height))
             });
 
+
         if max_requested_height > self.get_max_texture_size() && !self.gpu_cache_overflow {
             self.gpu_cache_overflow = true;
             self.renderer_errors.push(RendererError::MaxTextureSize);
@@ -2735,8 +2603,7 @@ impl Renderer {
             if update_list.frame_id > self.gpu_cache_frame_id {
                 self.gpu_cache_frame_id = update_list.frame_id
             }
-            self.gpu_cache_texture
-                .update(&mut self.device, &update_list);
+            self.gpu_cache_texture.update(&mut self.device, &update_list);
         }
 
         let mut upload_time = TimeProfileCounter::new("GPU cache upload time", false);
@@ -2752,17 +2619,27 @@ impl Renderer {
 
     fn prepare_gpu_cache(&mut self, frame: &Frame) {
         if self.pending_gpu_cache_clear {
-            let use_scatter =
-                matches!(self.gpu_cache_texture.bus, GpuCacheBus::Scatter { .. });
-            let new_cache = GpuCacheTexture::new(&mut self.device, use_scatter).unwrap();
+            #[cfg(feature="gleam")]
+            let use_scatter = matches!(self.gpu_cache_texture.bus, GpuCacheBus::Scatter { .. });
+            #[cfg(feature="gleam")]
+            let use_pmb = false;
+
+            #[cfg(not(feature="gleam"))]
+            let use_scatter = false;
+            #[cfg(not(feature="gleam"))]
+            let use_pmb = matches!(self.gpu_cache_texture.bus, GpuCacheBus::PersistentlyMappedBuffer { .. });
+
+            let new_cache = GpuCacheTexture::new(&mut self.device, use_scatter, use_pmb).unwrap();
             let old_cache = mem::replace(&mut self.gpu_cache_texture, new_cache);
+            if use_pmb {
+                self.gpu_cache_texture.bus = self.new_gpu_cache_bus.take().unwrap();
+            }
             old_cache.deinit(&mut self.device);
             self.pending_gpu_cache_clear = false;
         }
 
         let deferred_update_list = self.update_deferred_resolves(&frame.deferred_resolves);
         self.pending_gpu_cache_updates.extend(deferred_update_list);
-
         self.update_gpu_cache();
 
         // Note: the texture might have changed during the `update`,
@@ -2771,6 +2648,9 @@ impl Renderer {
             TextureSampler::GpuCache,
             self.gpu_cache_texture.texture.as_ref().unwrap(),
         );
+
+        #[cfg(not(feature = "gleam"))]
+        self.device.transit_gpu_cache_buffer();
     }
 
     fn update_texture_cache(&mut self) {
@@ -2882,11 +2762,15 @@ impl Renderer {
                             size
                         }
                         TextureUpdateSource::DebugClear => {
-                            self.device.bind_draw_target(DrawTarget::Texture {
-                                texture,
-                                layer: layer_index as usize,
-                                with_depth: false,
-                            });
+                            self.device.bind_draw_target(
+                                DrawTarget::Texture {
+                                    texture,
+                                    layer: layer_index as usize,
+                                    with_depth: false,
+                                },
+                                #[cfg(not(feature="gleam"))]
+                                DrawTargetUsage::Draw,
+                            );
                             self.device.clear_target(
                                 Some(TEXTURE_CACHE_DBG_CLEAR_COLOR),
                                 None,
@@ -2908,7 +2792,7 @@ impl Renderer {
         self.resource_upload_time += upload_time.get();
     }
 
-    pub(crate) fn draw_instanced_batch<T>(
+    pub(crate) fn draw_instanced_batch<T: PrimitiveType>(
         &mut self,
         data: &[T],
         vertex_array_kind: VertexArrayKind,
@@ -2931,7 +2815,7 @@ impl Renderer {
         self.draw_instanced_batch_with_previously_bound_textures(data, vertex_array_kind, stats)
     }
 
-    pub(crate) fn draw_instanced_batch_with_previously_bound_textures<T>(
+    pub(crate) fn draw_instanced_batch_with_previously_bound_textures<T: PrimitiveType>(
         &mut self,
         data: &[T],
         vertex_array_kind: VertexArrayKind,
@@ -3008,7 +2892,11 @@ impl Renderer {
             layer: readback_layer.0 as usize,
             with_depth: false,
         };
-        self.device.bind_draw_target(cache_draw_target);
+        self.device.bind_draw_target(
+            cache_draw_target,
+            #[cfg(not(feature="gleam"))]
+            DrawTargetUsage::CopyOnly,
+        );
 
         let mut src = DeviceIntRect::new(
             source_screen_origin + (backdrop_rect.origin - backdrop_screen_origin),
@@ -3018,7 +2906,7 @@ impl Renderer {
 
         // Need to invert the y coordinates and flip the image vertically when
         // reading back from the framebuffer.
-        if draw_target.is_default() {
+        if cfg!(feature = "gleam") && draw_target.is_default() {
             src.origin.y = draw_target.dimensions().height as i32 - src.size.height - src.origin.y;
             dest.origin.y += dest.size.height;
             dest.size.height = -dest.size.height;
@@ -3029,7 +2917,11 @@ impl Renderer {
 
         // Restore draw target to current pass render target + layer, and reset
         // the read target.
-        self.device.bind_draw_target(draw_target);
+        self.device.bind_draw_target(
+            draw_target,
+            #[cfg(not(feature="gleam"))]
+            DrawTargetUsage::Draw,
+        );
         self.device.reset_read_target();
 
         if uses_scissor {
@@ -3144,7 +3036,11 @@ impl Renderer {
 
         {
             let _timer = self.gpu_profile.start_timer(GPU_TAG_SETUP_TARGET);
-            self.device.bind_draw_target(draw_target);
+            self.device.bind_draw_target(
+                draw_target,
+                #[cfg(not(feature="gleam"))]
+                DrawTargetUsage::Draw,
+            );
             self.device.disable_depth();
             self.set_blend(false, framebuffer_kind);
 
@@ -3155,8 +3051,9 @@ impl Renderer {
                 None
             };
 
+            #[cfg(feature = "gleam")]
             let clear_rect = if !draw_target.is_default() {
-                if self.enable_clear_scissor {
+                if self._enable_clear_scissor {
                     // TODO(gw): Applying a scissor rect and minimal clear here
                     // is a very large performance win on the Intel and nVidia
                     // GPUs that I have tested with. It's possible it may be a
@@ -3182,6 +3079,8 @@ impl Renderer {
                 rect.origin.y = draw_target.dimensions().height as i32 - rect.origin.y - rect.size.height;
                 Some(rect)
             };
+            #[cfg(not(feature = "gleam"))]
+            let clear_rect = None;
 
             self.device.clear_target(clear_color, depth_clear, clear_rect);
 
@@ -3192,6 +3091,9 @@ impl Renderer {
 
         // Handle any blits from the texture cache to this target.
         self.handle_blits(&target.blits, render_tasks);
+
+        #[cfg(not(feature = "gleam"))]
+        self.device.begin_render_pass();
 
         // Draw any blurs for this target.
         // Blurs are rendered as a standard 2-pass
@@ -3242,13 +3144,15 @@ impl Renderer {
             }
         }
 
-        for alpha_batch_container in &target.alpha_batch_containers {
+        let alpha_batches = target.alpha_batch_containers.len();
+        for (i, alpha_batch_container) in target.alpha_batch_containers.iter().enumerate() {
             let uses_scissor = alpha_batch_container.task_scissor_rect.is_some() ||
                                !alpha_batch_container.regions.is_empty();
 
+            let scissor_rect;
             if uses_scissor {
                 self.device.enable_scissor();
-                let scissor_rect = draw_target.build_scissor_rect(
+                scissor_rect = draw_target.build_scissor_rect(
                     alpha_batch_container.task_scissor_rect,
                     framebuffer_target_rect,
                 );
@@ -3271,6 +3175,15 @@ impl Renderer {
                     .iter()
                     .rev()
                 {
+                    #[cfg(not(feature = "gleam"))]
+                    {
+                        if let BatchKind::Brush(BrushBatchKind::YuvImage(image_buffer_kind, ..)) = batch.key.kind {
+                            if !image_buffer_kind.has_platform_support() {
+                                warn!("Skipping draw with YUV shader with image_buffer_kind : {:?}", image_buffer_kind);
+                                continue;
+                            }
+                        }
+                    }
                     self.shaders.borrow_mut()
                         .get(&batch.key, self.debug_flags)
                         .bind(
@@ -3312,6 +3225,15 @@ impl Renderer {
                 let mut prev_blend_mode = BlendMode::None;
 
                 for batch in &alpha_batch_container.alpha_batches {
+                    #[cfg(not(feature = "gleam"))]
+                    {
+                        if let BatchKind::Brush(BrushBatchKind::YuvImage(image_buffer_kind, ..)) = batch.key.kind {
+                            if !image_buffer_kind.has_platform_support() {
+                                warn!("Skipping draw with YUV shader with image_buffer_kind : {:?}", image_buffer_kind);
+                                continue;
+                            }
+                        }
+                    }
                     self.shaders.borrow_mut()
                         .get(&batch.key, self.debug_flags)
                         .bind(
@@ -3361,6 +3283,8 @@ impl Renderer {
                         // composites can't be grouped together because
                         // they may overlap and affect each other.
                         debug_assert_eq!(batch.instances.len(), 1);
+                        #[cfg(not(feature = "gleam"))]
+                        self.device.end_render_pass();
                         self.handle_readback_composite(
                             draw_target,
                             uses_scissor,
@@ -3368,6 +3292,8 @@ impl Renderer {
                             &render_tasks[task_id],
                             &render_tasks[backdrop_id],
                         );
+                        #[cfg(not(feature = "gleam"))]
+                        self.device.begin_render_pass();
                     }
 
                     let _timer = self.gpu_profile.start_timer(batch.key.kind.sampler_tag());
@@ -3403,7 +3329,6 @@ impl Renderer {
 
                                 self.set_blend_mode_subpixel_with_bg_color_pass2(framebuffer_kind);
                                 self.device.switch_mode(ShaderColorMode::SubpixelWithBgColorPass2 as _);
-
                                 self.device
                                     .draw_indexed_triangles_instanced_u16(6, batch.instances.len() as i32);
                             }
@@ -3427,6 +3352,9 @@ impl Renderer {
             // At the end of rendering a container, blit across any cache tiles
             // to the texture cache for use on subsequent frames.
             if !alpha_batch_container.tile_blits.is_empty() {
+                #[cfg(not(feature = "gleam"))]
+                self.device.end_render_pass();
+
                 let _timer = self.gpu_profile.start_timer(GPU_TAG_BLIT);
 
                 self.device.bind_read_target(draw_target.into());
@@ -3436,11 +3364,15 @@ impl Renderer {
                         .resolve(&blit.target.texture_id)
                         .expect("BUG: invalid target texture");
 
-                    self.device.bind_draw_target(DrawTarget::Texture {
-                        texture,
-                        layer: blit.target.texture_layer as usize,
-                        with_depth: false,
-                    });
+                    self.device.bind_draw_target(
+                        DrawTarget::Texture {
+                            texture,
+                            layer: blit.target.texture_layer as usize,
+                            with_depth: false,
+                        },
+                        #[cfg(not(feature="gleam"))]
+                        DrawTargetUsage::CopyOnly,
+                    );
 
                     let mut src_rect = DeviceIntRect::new(
                         blit.src_offset,
@@ -3457,10 +3389,12 @@ impl Renderer {
                         blit.size,
                     );
 
-                    // Modify the src/dest rects since we are blitting from the framebuffer
-                    src_rect.origin.y = draw_target.dimensions().height as i32 - src_rect.size.height - src_rect.origin.y;
-                    dest_rect.origin.y += dest_rect.size.height;
-                    dest_rect.size.height = -dest_rect.size.height;
+                    if cfg!(feature = "gleam") {
+                        // Modify the src/dest rects since we are blitting from the framebuffer
+                        src_rect.origin.y = draw_target.dimensions().height as i32 - src_rect.size.height - src_rect.origin.y;
+                        dest_rect.origin.y += dest_rect.size.height;
+                        dest_rect.size.height = -dest_rect.size.height;
+                    }
 
                     self.device.blit_render_target(
                         src_rect,
@@ -3468,9 +3402,22 @@ impl Renderer {
                     );
                 }
 
-                self.device.bind_draw_target(draw_target);
+                self.device.bind_draw_target(
+                    draw_target,
+                    #[cfg(not(feature="gleam"))]
+                    DrawTargetUsage::Draw,
+                );
+
+                // Don't create a new RP if it's the last element
+                if i < alpha_batches - 1 {
+                    #[cfg(not(feature = "gleam"))]
+                    self.device.begin_render_pass();
+                }
             }
         }
+        #[cfg(not(feature = "gleam"))]
+        self.device.end_render_pass();
+
 
         // For any registered image outputs on this render target,
         // get the texture from caller and blit it.
@@ -3523,9 +3470,16 @@ impl Renderer {
 
         {
             let _timer = self.gpu_profile.start_timer(GPU_TAG_SETUP_TARGET);
-            self.device.bind_draw_target(draw_target);
+            self.device.bind_draw_target(
+                draw_target,
+                #[cfg(not(feature="gleam"))]
+                DrawTargetUsage::Draw,
+            );
             self.device.disable_depth();
             self.device.disable_depth_write();
+
+            #[cfg(not(feature = "gleam"))]
+            self.device.begin_render_pass();
 
             // TODO(gw): Applying a scissor rect and minimal clear here
             // is a very large performance win on the Intel and nVidia
@@ -3648,6 +3602,9 @@ impl Renderer {
             }
         }
 
+        #[cfg(not(feature = "gleam"))]
+        self.device.end_render_pass();
+
         self.gpu_profile.finish_sampler(alpha_sampler);
     }
 
@@ -3665,13 +3622,12 @@ impl Renderer {
                 .resolve(&texture_source)
                 .expect("BUG: invalid target texture");
             let target_size = texture.get_dimensions();
-            let projection = Transform3D::ortho(
+            let projection = create_projection(
                 0.0,
                 target_size.width as f32,
                 0.0,
                 target_size.height as f32,
-                ORTHO_NEAR_PLANE,
-                ORTHO_FAR_PLANE,
+                false,
             );
             (target_size, projection)
         };
@@ -3688,11 +3644,15 @@ impl Renderer {
             let texture = self.texture_resolver
                 .resolve(&texture_source)
                 .expect("BUG: invalid target texture");
-            self.device.bind_draw_target(DrawTarget::Texture {
-                texture,
-                layer,
-                with_depth: false,
-            });
+            self.device.bind_draw_target(
+                DrawTarget::Texture {
+                    texture,
+                    layer,
+                    with_depth: false,
+                },
+                #[cfg(not(feature="gleam"))]
+                DrawTargetUsage::Draw,
+            );
         }
 
         self.device.disable_depth();
@@ -3705,6 +3665,9 @@ impl Renderer {
 
         // Handle any blits to this texture from child tasks.
         self.handle_blits(&target.blits, render_tasks);
+
+        #[cfg(not(feature = "gleam"))]
+        self.device.begin_render_pass();
 
         // Draw any borders for this target.
         if !target.border_segments_solid.is_empty() ||
@@ -3792,6 +3755,9 @@ impl Renderer {
                 stats,
             );
         }
+
+        #[cfg(not(feature = "gleam"))]
+        self.device.end_render_pass();
 
         // Blit any Pathfinder glyphs to the cache texture.
         if let Some(stencil_page) = stencil_page {
@@ -3920,6 +3886,8 @@ impl Renderer {
         &mut self,
         list: &mut RenderTargetList<T>,
         counters: &mut FrameProfileCounters,
+        // TODO: check if we still need this with gfx
+        _frame_id: GpuFrameId,
     ) -> Option<ActiveTexture> {
         if list.targets.is_empty() {
             return None
@@ -3951,6 +3919,13 @@ impl Renderer {
         let index = self.texture_resolver.render_target_pool
             .iter()
             .position(|texture| {
+                // We ignore the textures which are still used by the GPU
+                #[cfg(not(feature = "gleam"))]
+                {
+                    if texture.still_in_flight(_frame_id, self.device.frame_count) {
+                        return false;
+                    }
+                }
                 selector == TargetSelector {
                     size: texture.get_dimensions(),
                     num_layers: texture.get_layer_count() as usize,
@@ -4067,13 +4042,12 @@ impl Renderer {
                         stats.color_target_count += 1;
 
                         let clear_color = frame.background_color.map(|color| color.to_array());
-                        let projection = Transform3D::ortho(
+                        let projection = create_projection(
                             0.0,
                             framebuffer_size.width as f32,
                             framebuffer_size.height as f32,
                             0.0,
-                            ORTHO_NEAR_PLANE,
-                            ORTHO_FAR_PLANE,
+                            true,
                         );
 
                         self.draw_color_target(
@@ -4092,8 +4066,8 @@ impl Renderer {
                     (None, None)
                 }
                 RenderPassKind::OffScreen { ref mut alpha, ref mut color, ref mut texture_cache } => {
-                    let alpha_tex = self.allocate_target_texture(alpha, &mut frame.profile_counters);
-                    let color_tex = self.allocate_target_texture(color, &mut frame.profile_counters);
+                    let alpha_tex = self.allocate_target_texture(alpha, &mut frame.profile_counters, frame_id);
+                    let color_tex = self.allocate_target_texture(color, &mut frame.profile_counters, frame_id);
 
                     // If this frame has already been drawn, then any texture
                     // cache targets have already been updated and can be
@@ -4118,13 +4092,12 @@ impl Renderer {
                             with_depth: false,
                         };
 
-                        let projection = Transform3D::ortho(
+                        let projection = create_projection(
                             0.0,
                             draw_target.dimensions().width as f32,
                             0.0,
                             draw_target.dimensions().height as f32,
-                            ORTHO_NEAR_PLANE,
-                            ORTHO_FAR_PLANE,
+                            false,
                         );
 
                         self.draw_alpha_target(
@@ -4144,13 +4117,12 @@ impl Renderer {
                             with_depth: target.needs_depth(),
                         };
 
-                        let projection = Transform3D::ortho(
+                        let projection = create_projection(
                             0.0,
                             draw_target.dimensions().width as f32,
                             0.0,
                             draw_target.dimensions().height as f32,
-                            ORTHO_NEAR_PLANE,
-                            ORTHO_FAR_PLANE,
+                            false,
                         );
 
                         self.draw_color_target(
@@ -4325,12 +4297,12 @@ impl Renderer {
     }
 
     fn do_debug_blit(
-        device: &mut Device,
+        device: &mut Device<B>,
         debug_renderer: &mut DebugRenderer,
         mut textures: Vec<&Texture>,
         framebuffer_size: DeviceIntSize,
         bottom: i32,
-        select_color: &Fn(&Texture) -> [f32; 4],
+        select_color: &dyn Fn(&Texture) -> [f32; 4],
     ) {
         let mut spacing = 16;
         let mut size = 512;
@@ -4378,7 +4350,11 @@ impl Renderer {
                 let text_margin = 1;
                 let text_height = 14; // Visually aproximated.
                 let tag_height = text_height + text_margin * 2;
-                let tag_rect = rect(x, y, size, tag_height);
+                let tag_rect = if cfg!(feature = "gleam") {
+                    rect(x, y, size, tag_height)
+                } else {
+                    rect(x, fb_height - (y + tag_height), size, tag_height)
+                };
                 let tag_color = select_color(texture);
                 device.clear_target(Some(tag_color), None, Some(tag_rect));
 
@@ -4398,7 +4374,11 @@ impl Renderer {
                 // Blit the contents of the layer. We need to invert Y because
                 // we're blitting from a texture to the main framebuffer, which
                 // use different conventions.
-                let dest_rect = rect(x, y + tag_height, size, size);
+                let dest_rect = if cfg!(feature = "gleam") {
+                    rect(x, y + tag_height, size, size)
+                } else {
+                    rect(x, fb_height - (y + tag_height + size), size, size)
+                };
                 device.blit_render_target_invert_y(src_rect, dest_rect);
                 i += 1;
             }
@@ -4510,6 +4490,8 @@ impl Renderer {
     pub fn deinit(mut self) {
         //Note: this is a fake frame, only needed because texture deletion is require to happen inside a frame
         self.device.begin_frame();
+        #[cfg(not(feature = "gleam"))]
+        self.device.wait_for_resources_and_reset();
         self.gpu_cache_texture.deinit(&mut self.device);
         if let Some(dither_matrix_texture) = self.dither_matrix_texture {
             self.device.delete_texture(dither_matrix_texture);
@@ -4542,6 +4524,8 @@ impl Renderer {
             self.device.delete_external_texture(ext);
         }
         self.device.end_frame();
+        #[cfg(not(feature = "gleam"))]
+        self.device.deinit();
     }
 
     fn size_of<T>(&self, ptr: *const T) -> usize {
@@ -4554,10 +4538,13 @@ impl Renderer {
         let mut report = MemoryReport::default();
 
         // GPU cache CPU memory.
-        if let GpuCacheBus::PixelBuffer{ref rows, ..} = self.gpu_cache_texture.bus {
-            for row in rows.iter() {
-                report.gpu_cache_cpu_mirror += self.size_of(&*row.cpu_blocks as *const _);
+        match self.gpu_cache_texture.bus {
+            GpuCacheBus::PixelBuffer{ref rows, ..} => {
+                for row in rows.iter() {
+                    report.gpu_cache_cpu_mirror += self.size_of(&*row.cpu_blocks as *const _);
+                }
             }
+            _ => {}
         }
 
         // GPU cache GPU memory.
@@ -4634,11 +4621,15 @@ impl Renderer {
     /// Clears all the layers of a texture with a given color.
     fn clear_texture(&mut self, texture: &Texture, color: [f32; 4]) {
         for i in 0..texture.get_layer_count() {
-            self.device.bind_draw_target(DrawTarget::Texture {
-                texture: &texture,
-                layer: i as usize,
-                with_depth: false,
-            });
+            self.device.bind_draw_target(
+                DrawTarget::Texture {
+                    texture: &texture,
+                    layer: i as usize,
+                    with_depth: false,
+                },
+                #[cfg(not(feature="gleam"))]
+                DrawTargetUsage::Draw,
+            );
             self.device.clear_target(Some(color), None, None);
         }
     }
@@ -4744,21 +4735,6 @@ pub trait AsyncPropertySampler {
     fn deregister(&self);
 }
 
-/// Flags that control how shaders are pre-cached, if at all.
-bitflags! {
-    #[derive(Default)]
-    pub struct ShaderPrecacheFlags: u32 {
-        /// Needed for const initialization
-        const EMPTY                 = 0;
-
-        /// Only start async compile
-        const ASYNC_COMPILE         = 1 << 2;
-
-        /// Do a full compile/link during startup
-        const FULL_COMPILE          = 1 << 3;
-    }
-}
-
 pub struct RendererOptions {
     pub device_pixel_ratio: f32,
     pub resource_override_path: Option<PathBuf>,
@@ -4774,21 +4750,27 @@ pub struct RendererOptions {
     pub scatter_gpu_cache_updates: bool,
     pub upload_method: UploadMethod,
     pub workers: Option<Arc<ThreadPool>>,
-    pub blob_image_handler: Option<Box<BlobImageHandler>>,
-    pub recorder: Option<Box<ApiRecordingReceiver>>,
-    pub thread_listener: Option<Box<ThreadListener + Send + Sync>>,
+    pub blob_image_handler: Option<Box<dyn BlobImageHandler>>,
+    pub recorder: Option<Box<dyn ApiRecordingReceiver>>,
+    pub thread_listener: Option<Box<dyn ThreadListener + Send + Sync>>,
     pub size_of_op: Option<VoidPtrToSizeFn>,
     pub enclosing_size_of_op: Option<VoidPtrToSizeFn>,
     pub cached_programs: Option<Rc<ProgramCache>>,
     pub debug_flags: DebugFlags,
     pub renderer_id: Option<u64>,
     pub disable_dual_source_blending: bool,
-    pub scene_builder_hooks: Option<Box<SceneBuilderHooks + Send>>,
-    pub sampler: Option<Box<AsyncPropertySampler + Send>>,
+    pub scene_builder_hooks: Option<Box<dyn SceneBuilderHooks + Send>>,
+    pub sampler: Option<Box<dyn AsyncPropertySampler + Send>>,
     pub chase_primitive: ChasePrimitive,
     pub support_low_priority_transactions: bool,
     pub namespace_alloc_by_client: bool,
     pub enable_picture_caching: bool,
+    #[cfg(not(feature = "gleam"))]
+    pub heaps_config: HeapsConfig,
+    // The size of an instance buffer in bytes
+    pub instance_buffer_size: usize,
+    // The size of a staging buffer for image data upload in bytes
+    pub texture_cahce_size: usize,
 }
 
 impl Default for RendererOptions {
@@ -4826,6 +4808,13 @@ impl Default for RendererOptions {
             support_low_priority_transactions: false,
             namespace_alloc_by_client: false,
             enable_picture_caching: false,
+            #[cfg(not(feature = "gleam"))]
+            heaps_config: HeapsConfig {
+                linear: None,
+                dynamic: None,
+            },
+            instance_buffer_size: 1 << 20,
+            texture_cahce_size: 16 << 20,
         }
     }
 }
@@ -4894,7 +4883,7 @@ struct PlainRenderer {
 
 #[cfg(feature = "replay")]
 enum CapturedExternalImageData {
-    NativeTexture(gl::GLuint),
+    NativeTexture(IdType),
     Buffer(Arc<Vec<u8>>),
 }
 
@@ -4934,10 +4923,10 @@ pub struct PipelineInfo {
     pub removed_pipelines: Vec<PipelineId>,
 }
 
-impl Renderer {
+impl<B: hal::Backend> Renderer<B> {
     #[cfg(feature = "capture")]
     fn save_texture(
-        texture: &Texture, name: &str, root: &PathBuf, device: &mut Device
+        texture: &Texture, name: &str, root: &PathBuf, device: &mut Device<B>
     ) -> PlainTexture {
         use std::fs;
         use std::io::Write;
@@ -4979,6 +4968,8 @@ impl Renderer {
                 );
             }
             device.read_pixels_into(rect, read_format, &mut data);
+            #[cfg(not(feature = "gleam"))]
+            device.invalidate_read_texture();
             file.write_all(&data)
                 .unwrap();
         }
@@ -4997,7 +4988,7 @@ impl Renderer {
         plain: &PlainTexture,
         rt_info: Option<RenderTargetInfo>,
         root: &PathBuf,
-        device: &mut Device
+        device: &mut Device<B>
     ) -> (Texture, Vec<u8>)
     {
         use std::fs::File;
@@ -5015,7 +5006,11 @@ impl Renderer {
             plain.size.0.width,
             plain.size.0.height,
             plain.filter,
-            rt_info,
+            if plain.format == ImageFormat::RGBAF32 {
+                None
+            } else {
+                rt_info
+            },
             plain.size.1,
         );
         device.upload_texture_immediate(&texture, &texels);
@@ -5122,7 +5117,7 @@ impl Renderer {
             self.update_gpu_cache(); // flush pending updates
             let mut plain_self = PlainRenderer {
                 gpu_cache: Self::save_texture(
-                    &self.gpu_cache_texture.texture.as_ref().unwrap(),
+                    &self.gpu_cache_texture.texture.as_ref().expect("No gpu cache texture exist"),
                     "gpu", &config.root, &mut self.device,
                 ),
                 gpu_cache_frame_id: self.gpu_cache_frame_id,
@@ -5230,12 +5225,12 @@ impl Renderer {
                         row.cpu_blocks.copy_from_slice(chunk);
                     }
                 }
-                GpuCacheBus::Scatter { .. } => {}
+                _ => {}
             }
             self.gpu_cache_frame_id = renderer.gpu_cache_frame_id;
 
             info!("loading external texture-backed images");
-            let mut native_map = FastHashMap::<String, gl::GLuint>::default();
+            let mut native_map = FastHashMap::<String, IdType>::default();
             for ExternalCaptureImage { short_path, external, descriptor } in renderer.external_images {
                 let target = match external.image_type {
                     ExternalImageType::TextureHandle(target) => target,
@@ -5283,10 +5278,11 @@ impl Renderer {
 }
 
 #[cfg(feature = "pathfinder")]
-fn get_vao<'a>(vertex_array_kind: VertexArrayKind,
-               vaos: &'a RendererVAOs,
-               gpu_glyph_renderer: &'a GpuGlyphRenderer)
-               -> &'a VAO {
+fn get_vao<'a, B: hal::Backend>(
+    vertex_array_kind: VertexArrayKind,
+    vaos: &'a RendererVAOs,
+    gpu_glyph_renderer: &'a GpuGlyphRenderer<B>,
+) -> &'a VAO {
     match vertex_array_kind {
         VertexArrayKind::Primitive => &vaos.prim_vao,
         VertexArrayKind::Clip => &vaos.clip_vao,
@@ -5300,10 +5296,11 @@ fn get_vao<'a>(vertex_array_kind: VertexArrayKind,
 }
 
 #[cfg(not(feature = "pathfinder"))]
-fn get_vao<'a>(vertex_array_kind: VertexArrayKind,
-               vaos: &'a RendererVAOs,
-               _: &'a GpuGlyphRenderer)
-               -> &'a VAO {
+fn get_vao<'a, B: hal::Backend>(
+    vertex_array_kind: VertexArrayKind,
+    vaos: &'a RendererVAOs,
+    _: &'a GpuGlyphRenderer<B>,
+) -> &'a VAO {
     match vertex_array_kind {
         VertexArrayKind::Primitive => &vaos.prim_vao,
         VertexArrayKind::Clip => &vaos.clip_vao,
@@ -5320,4 +5317,3 @@ enum FramebufferKind {
     Main,
     Other,
 }
-

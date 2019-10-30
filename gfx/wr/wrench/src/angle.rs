@@ -42,32 +42,32 @@ impl Context {
 }
 
 #[cfg(not(windows))]
-impl glutin::GlContext for Context {
-    unsafe fn make_current(&self) -> Result<(), glutin::ContextError> {
+impl Context {
+    pub unsafe fn make_current(&self) -> Result<(), glutin::ContextError> {
         match *self {}
     }
 
-    fn is_current(&self) -> bool {
+    pub fn is_current(&self) -> bool {
         match *self {}
     }
 
-    fn get_proc_address(&self, _: &str) -> *const () {
+    pub fn get_proc_address(&self, _: &str) -> *const () {
         match *self {}
     }
 
-    fn swap_buffers(&self) -> Result<(), glutin::ContextError> {
+    pub fn swap_buffers(&self) -> Result<(), glutin::ContextError> {
         match *self {}
     }
 
-    fn get_api(&self) -> glutin::Api {
+    pub fn get_api(&self) -> glutin::Api {
         match *self {}
     }
 
-    fn get_pixel_format(&self) -> glutin::PixelFormat {
+    pub fn get_pixel_format(&self) -> glutin::PixelFormat {
         match *self {}
     }
 
-    fn resize(&self, _: PhysicalSize) {
+    pub fn resize(&self, _: PhysicalSize) {
         match *self {}
     }
 }

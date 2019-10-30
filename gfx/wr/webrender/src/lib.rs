@@ -61,11 +61,13 @@ extern crate lazy_static;
 extern crate log;
 #[macro_use]
 extern crate malloc_size_of_derive;
-#[cfg(any(feature = "serde"))]
 #[macro_use]
 extern crate serde;
 #[macro_use]
 extern crate thread_profiler;
+pub extern crate gfx_hal as hal;
+#[cfg(any(not(feature = "gleam"), test))]
+extern crate rand;
 
 extern crate wr_malloc_size_of;
 use wr_malloc_size_of as malloc_size_of;
@@ -164,9 +166,11 @@ extern crate libc;
 extern crate dwrote;
 
 extern crate app_units;
+extern crate arrayvec;
 extern crate bincode;
 extern crate byteorder;
 extern crate fxhash;
+#[cfg(feature = "gleam")]
 extern crate gleam;
 extern crate num_traits;
 #[cfg(feature = "pathfinder")]
@@ -179,7 +183,8 @@ extern crate pathfinder_partitioner;
 extern crate pathfinder_path_utils;
 extern crate plane_split;
 extern crate rayon;
-#[cfg(feature = "ron")]
+extern crate rendy_descriptor;
+extern crate rendy_memory;
 extern crate ron;
 #[cfg(feature = "debugger")]
 extern crate serde_json;
@@ -194,8 +199,6 @@ extern crate image as image_loader;
 extern crate base64;
 #[cfg(all(feature = "capture", feature = "png"))]
 extern crate png;
-#[cfg(test)]
-extern crate rand;
 
 #[macro_use]
 pub extern crate webrender_api;
@@ -203,14 +206,18 @@ extern crate webrender_build;
 
 #[doc(hidden)]
 pub use device::{build_shader_strings, ReadPixelsFormat, UploadMethod, VertexUsageHint};
-pub use device::{ProgramBinary, ProgramCache, ProgramCacheObserver};
-pub use device::Device;
+pub use device::{ProgramBinary, ProgramCache, ProgramCacheObserver, ShaderPrecacheFlags};
+pub use device::{Device, DeviceInit};
 pub use frame_builder::ChasePrimitive;
 pub use renderer::{AsyncPropertySampler, CpuProfile, DebugFlags, OutputImageHandler, RendererKind};
 pub use renderer::{ExternalImage, ExternalImageHandler, ExternalImageSource, GpuProfile};
 pub use renderer::{GraphicsApi, GraphicsApiInfo, PipelineInfo, Renderer, RendererOptions};
-pub use renderer::{RendererStats, SceneBuilderHooks, ThreadListener, ShaderPrecacheFlags};
+pub use renderer::{RendererStats, SceneBuilderHooks, ThreadListener};
 pub use renderer::MAX_VERTEX_TEXTURE_WIDTH;
+pub use rendy_memory::{DynamicConfig, HeapsConfig, LinearConfig};
 pub use shade::{Shaders, WrShaders};
 pub use webrender_api as api;
 pub use webrender_api::euclid;
+
+#[cfg(not(feature = "gleam"))]
+pub use device::BackendApiType;

@@ -892,7 +892,7 @@ impl<'a> DisplayListFlattener<'a> {
                 // refer to another user defined clip-chain. If none is specified,
                 // the parent is the root clip-chain for the given pipeline. This
                 // is used to provide a root clip chain for iframes.
-                let mut parent_clip_chain_id = match info.parent {
+                let parent_clip_chain_id = match info.parent {
                     Some(id) => {
                         self.id_to_index_mapper.get_clip_chain_id(ClipId::ClipChain(id))
                     }

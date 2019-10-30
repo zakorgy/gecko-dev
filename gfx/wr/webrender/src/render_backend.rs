@@ -25,8 +25,13 @@ use api::CapturedDocument;
 use clip_scroll_tree::{SpatialNodeIndex, ClipScrollTree};
 #[cfg(feature = "debugger")]
 use debug_server;
+#[cfg(not(feature="gleam"))]
+use device::PersistentlyMappedBuffer;
 use frame_builder::{FrameBuilder, FrameBuilderConfig};
 use gpu_cache::GpuCache;
+#[cfg(not(feature="gleam"))]
+use gpu_cache::{GpuBlockData, GPU_CACHE_INITIAL_HEIGHT};
+use hal;
 use hit_test::{HitTest, HitTester};
 use intern_types;
 use internal_types::{DebugOutput, FastHashMap, FastHashSet, RenderedDocument, ResultMsg};
@@ -37,6 +42,10 @@ use prim_store::{PrimitiveInstanceKind, PrimTemplateCommonData};
 use profiler::{BackendProfileCounters, IpcProfileCounters, ResourceProfileCounters};
 use record::ApiRecordingReceiver;
 use renderer::{AsyncPropertySampler, PipelineInfo};
+#[cfg(not(feature="gleam"))]
+use renderer::MAX_VERTEX_TEXTURE_WIDTH;
+#[cfg(not(feature="gleam"))]
+use rendy_memory::Heaps;
 use resource_cache::ResourceCache;
 #[cfg(feature = "replay")]
 use resource_cache::PlainCacheOwn;
@@ -52,6 +61,8 @@ use serde_json;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::mem::replace;
+#[cfg(not(feature="gleam"))]
+use std::sync::{Arc, Mutex, Weak};
 use std::sync::mpsc::{channel, Sender, Receiver};
 use std::time::{UNIX_EPOCH, SystemTime};
 use std::u32;
@@ -84,7 +95,7 @@ impl DocumentView {
 }
 
 #[derive(Copy, Clone, Hash, MallocSizeOf, PartialEq, PartialOrd, Debug, Eq, Ord)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(any(feature = "capture", feature = "serialize_program"), derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct FrameId(usize);
 
@@ -661,10 +672,19 @@ struct PlainRenderBackend {
 /// GPU-friendly work which is then submitted to the renderer in the form of a frame::Frame.
 ///
 /// The render backend operates on its own thread.
-pub struct RenderBackend {
+pub struct RenderBackend<B: hal::Backend> {
+    #[cfg(not(feature="gleam"))]
+    device: Arc<B::Device>,
+    #[cfg(not(feature="gleam"))]
+    heaps: Weak<Mutex<Heaps<B>>>,
+    #[cfg(not(feature="gleam"))]
+    gpu_cache_buffer: PersistentlyMappedBuffer<B>,
+    #[cfg(not(feature="gleam"))]
+    send_buffer_handle_to_renderer: bool,
+
     api_rx: MsgReceiver<ApiMsg>,
     payload_rx: Receiver<Payload>,
-    result_tx: Sender<ResultMsg>,
+    result_tx: Sender<ResultMsg<B>>,
     scene_tx: Sender<SceneBuilderRequest>,
     low_priority_scene_tx: Sender<SceneBuilderRequest>,
     scene_rx: Receiver<SceneBuilderResult>,
@@ -679,9 +699,9 @@ pub struct RenderBackend {
     frame_config: FrameBuilderConfig,
     documents: FastHashMap<DocumentId, Document>,
 
-    notifier: Box<RenderNotifier>,
-    recorder: Option<Box<ApiRecordingReceiver>>,
-    sampler: Option<Box<AsyncPropertySampler + Send>>,
+    notifier: Box<dyn RenderNotifier>,
+    recorder: Option<Box<dyn ApiRecordingReceiver>>,
+    sampler: Option<Box<dyn AsyncPropertySampler + Send>>,
     size_of_ops: Option<MallocSizeOfOps>,
     debug_flags: DebugFlags,
     namespace_alloc_by_client: bool,
@@ -689,24 +709,82 @@ pub struct RenderBackend {
     recycler: Recycler,
 }
 
-impl RenderBackend {
+impl<B: hal::Backend> RenderBackend<B> {
+    #[cfg(not(feature="gleam"))]
     pub fn new(
         api_rx: MsgReceiver<ApiMsg>,
         payload_rx: Receiver<Payload>,
-        result_tx: Sender<ResultMsg>,
+        result_tx: Sender<ResultMsg<B>>,
         scene_tx: Sender<SceneBuilderRequest>,
         low_priority_scene_tx: Sender<SceneBuilderRequest>,
         scene_rx: Receiver<SceneBuilderResult>,
         default_device_pixel_ratio: f32,
         resource_cache: ResourceCache,
-        notifier: Box<RenderNotifier>,
+        notifier: Box<dyn RenderNotifier>,
         frame_config: FrameBuilderConfig,
-        recorder: Option<Box<ApiRecordingReceiver>>,
-        sampler: Option<Box<AsyncPropertySampler + Send>>,
+        recorder: Option<Box<dyn ApiRecordingReceiver>>,
+        sampler: Option<Box<dyn AsyncPropertySampler + Send>>,
         size_of_ops: Option<MallocSizeOfOps>,
         debug_flags: DebugFlags,
         namespace_alloc_by_client: bool,
-    ) -> RenderBackend {
+        device: Arc<B::Device>,
+        heaps: Weak<Mutex<Heaps<B>>>,
+        non_coherent_atom_size_mask: u64,
+    ) -> RenderBackend<B> {
+        let heaps_strong = heaps.upgrade().unwrap();
+        let gpu_cache_buffer = PersistentlyMappedBuffer::new::<GpuBlockData>(
+            device.as_ref(),
+            &mut heaps_strong.lock().unwrap(),
+            non_coherent_atom_size_mask,
+            MAX_VERTEX_TEXTURE_WIDTH as _,
+            GPU_CACHE_INITIAL_HEIGHT as _,
+            None,
+        );
+        RenderBackend {
+            device,
+            heaps,
+            gpu_cache_buffer,
+            send_buffer_handle_to_renderer: true,
+            api_rx,
+            payload_rx,
+            result_tx,
+            scene_tx,
+            low_priority_scene_tx,
+            scene_rx,
+            payload_buffer: Vec::new(),
+            default_device_pixel_ratio,
+            resource_cache,
+            gpu_cache: GpuCache::new(),
+            frame_config,
+            documents: FastHashMap::default(),
+            notifier,
+            recorder,
+            sampler,
+            size_of_ops,
+            debug_flags,
+            namespace_alloc_by_client,
+            recycler: Recycler::new(),
+        }
+    }
+
+    #[cfg(feature="gleam")]
+    pub fn new(
+        api_rx: MsgReceiver<ApiMsg>,
+        payload_rx: Receiver<Payload>,
+        result_tx: Sender<ResultMsg<B>>,
+        scene_tx: Sender<SceneBuilderRequest>,
+        low_priority_scene_tx: Sender<SceneBuilderRequest>,
+        scene_rx: Receiver<SceneBuilderResult>,
+        default_device_pixel_ratio: f32,
+        resource_cache: ResourceCache,
+        notifier: Box<dyn RenderNotifier>,
+        frame_config: FrameBuilderConfig,
+        recorder: Option<Box<dyn ApiRecordingReceiver>>,
+        sampler: Option<Box<dyn AsyncPropertySampler + Send>>,
+        size_of_ops: Option<MallocSizeOfOps>,
+        debug_flags: DebugFlags,
+        namespace_alloc_by_client: bool,
+    ) -> RenderBackend<B> {
         RenderBackend {
             api_rx,
             payload_rx,
@@ -727,6 +805,13 @@ impl RenderBackend {
             debug_flags,
             namespace_alloc_by_client,
             recycler: Recycler::new(),
+        }
+    }
+
+    pub fn deinit(self) {
+        #[cfg(not(feature="gleam"))] {
+            let heaps_strong = self.heaps.upgrade().unwrap();
+            heaps_strong.lock().unwrap().free(self.device.as_ref(), self.gpu_cache_buffer.memory_block);
         }
     }
 
@@ -755,6 +840,8 @@ impl RenderBackend {
                 doc.view.window_size = window_size;
                 doc.view.inner_rect = inner_rect;
                 doc.view.device_pixel_ratio = device_pixel_ratio;
+                #[cfg(not(feature = "gleam"))]
+                self.result_tx.send(ResultMsg::UpdateWindowSize(window_size)).unwrap();
             }
             SceneMsg::SetDisplayList {
                 epoch,
@@ -857,7 +944,7 @@ impl RenderBackend {
 
                             doc.removed_pipelines.append(&mut txn.removed_pipelines);
 
-                            if let Some(mut built_scene) = txn.built_scene.take() {
+                            if let Some(built_scene) = txn.built_scene.take() {
                                 doc.new_async_scene_ready(
                                     built_scene,
                                     &mut self.recycler,
@@ -1372,7 +1459,48 @@ impl RenderBackend {
                 debug!("generated frame for document {:?} with {} passes",
                     document_id, rendered_document.frame.passes.len());
 
+                #[cfg(feature="gleam")]
                 let msg = ResultMsg::UpdateGpuCache(self.gpu_cache.extract_updates());
+
+                #[cfg(not(feature="gleam"))]
+                let msg = {
+                    let clear = self.gpu_cache.pending_clear;
+                    let resize = self.gpu_cache.height() > self.gpu_cache_buffer.height;
+                    let old_buffer = if clear || resize {
+                        let heaps_strong = self.heaps.upgrade().unwrap();
+                        let new_buffer = PersistentlyMappedBuffer::new::<GpuBlockData>(
+                            self.device.as_ref(),
+                            &mut heaps_strong.lock().unwrap(),
+                            self.gpu_cache_buffer.non_coherent_atom_size_mask,
+                            MAX_VERTEX_TEXTURE_WIDTH as _,
+                            self.gpu_cache.height(),
+                            if resize {
+                                Some(&mut self.gpu_cache_buffer)
+                            } else {
+                                None
+                            },
+                        );
+
+                        let old_buffer = replace(&mut self.gpu_cache_buffer, new_buffer);
+                        self.send_buffer_handle_to_renderer = true;
+                        if clear {
+                            self.gpu_cache.pending_clear = false;
+                        }
+                        Some(old_buffer)
+                    } else {
+                        None
+                    };
+
+                    let msg = ResultMsg::UpdateGpuCacheBuffer(self.gpu_cache.write_updates(
+                        &mut self.gpu_cache_buffer,
+                        self.device.as_ref(),
+                        old_buffer,
+                        self.send_buffer_handle_to_renderer,
+                    ));
+
+                    self.send_buffer_handle_to_renderer = false;
+                    msg
+                };
                 self.result_tx.send(msg).unwrap();
 
                 frame_build_time = Some(precise_time_ns() - frame_build_start_time);
@@ -1427,6 +1555,36 @@ impl RenderBackend {
 
         if !doc.hit_tester_is_valid {
             doc.rebuild_hit_tester();
+        }
+    }
+
+    #[cfg(all(not(feature = "gleam"), any(feature = "capture", feature = "replay")))]
+    fn ensure_buffer(&mut self) -> Option<PersistentlyMappedBuffer<B>> {
+        let clear = self.gpu_cache.pending_clear;
+        let resize = self.gpu_cache.height() > self.gpu_cache_buffer.height;
+        if clear || resize {
+            let heaps_strong = self.heaps.upgrade().unwrap();
+            let new_buffer = PersistentlyMappedBuffer::new::<GpuBlockData>(
+                self.device.as_ref(),
+                &mut heaps_strong.lock().unwrap(),
+                self.gpu_cache_buffer.non_coherent_atom_size_mask,
+                MAX_VERTEX_TEXTURE_WIDTH as _,
+                self.gpu_cache.height(),
+                if resize {
+                    Some(&mut self.gpu_cache_buffer)
+                } else {
+                    None
+                },
+            );
+
+            let old_buffer = replace(&mut self.gpu_cache_buffer, new_buffer);
+            self.send_buffer_handle_to_renderer = true;
+            if clear {
+                self.gpu_cache.pending_clear = false;
+            }
+            Some(old_buffer)
+        } else {
+            None
         }
     }
 
@@ -1595,7 +1753,7 @@ impl ToDebugString for SpecificDisplayItem {
     }
 }
 
-impl RenderBackend {
+impl<B: hal::Backend> RenderBackend<B> {
     #[cfg(feature = "capture")]
     // Note: the mutable `self` is only needed here for resolving blob images
     fn save_capture(
@@ -1664,7 +1822,21 @@ impl RenderBackend {
             // After we rendered the frames, there are pending updates to both
             // GPU cache and resources. Instead of serializing them, we are going to make sure
             // they are applied on the `Renderer` side.
+
+            #[cfg(feature="gleam")]
             let msg_update_gpu_cache = ResultMsg::UpdateGpuCache(self.gpu_cache.extract_updates());
+            #[cfg(not(feature="gleam"))]
+            let msg_update_gpu_cache = {
+                let old_buffer = self.ensure_buffer();
+                let msg = ResultMsg::UpdateGpuCacheBuffer(self.gpu_cache.write_updates(
+                    &mut self.gpu_cache_buffer,
+                    self.device.as_ref(),
+                    old_buffer,
+                    self.send_buffer_handle_to_renderer,
+                ));
+                self.send_buffer_handle_to_renderer = false;
+                msg
+            };
             self.result_tx.send(msg_update_gpu_cache).unwrap();
             let msg_update_resources = ResultMsg::UpdateResources {
                 updates: self.resource_cache.pending_updates(),
@@ -1730,7 +1902,7 @@ impl RenderBackend {
             let data_stores = CaptureConfig::deserialize::<DataStores, _>(root, &data_stores_name)
                 .expect(&format!("Unable to open {}.ron", data_stores_name));
 
-            let mut doc = Document {
+            let doc = Document {
                 scene: scene.clone(),
                 removed_pipelines: Vec::new(),
                 view: view.clone(),
@@ -1754,7 +1926,20 @@ impl RenderBackend {
                 Some(frame) => {
                     info!("\tloaded a built frame with {} passes", frame.passes.len());
 
+                    #[cfg(feature="gleam")]
                     let msg_update = ResultMsg::UpdateGpuCache(self.gpu_cache.extract_updates());
+                    #[cfg(not(feature="gleam"))]
+                    let msg_update = {
+                        let old_buffer = self.ensure_buffer();
+                        let msg = ResultMsg::UpdateGpuCacheBuffer(self.gpu_cache.write_updates(
+                            &mut self.gpu_cache_buffer,
+                            self.device.as_ref(),
+                            old_buffer,
+                            self.send_buffer_handle_to_renderer,
+                        ));
+                        self.send_buffer_handle_to_renderer = false;
+                        msg
+                    };
                     self.result_tx.send(msg_update).unwrap();
 
                     let msg_publish = ResultMsg::PublishDocument(

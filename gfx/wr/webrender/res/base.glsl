@@ -2,6 +2,43 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+const bool alpha_pass =
+#ifdef WR_FEATURE_ALPHA_PASS
+  true;
+#else
+  false;
+#endif
+
+ const bool color_target =
+#ifdef WR_FEATURE_COLOR_TARGET
+     true;
+#else
+    false;
+#endif
+
+ const bool glyph_transform_f =
+#ifdef WR_FEATURE_GLYPH_TRANSFORM
+     true;
+#else
+    false;
+#endif
+
+ const bool dithering =
+#ifdef WR_FEATURE_DITHERING
+    true;
+#else
+    false;
+#endif
+
+ const bool debug_overdraw =
+#ifdef WR_FEATURE_DEBUG_OVERDRAW
+    true;
+#else
+    false;
+#endif
+
+const bool push_constants = false;
+
 #if defined(GL_ES)
     #if GL_ES == 1
         #ifdef GL_FRAGMENT_PRECISION_HIGH
