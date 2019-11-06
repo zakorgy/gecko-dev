@@ -1054,7 +1054,7 @@ impl<B: hal::Backend> TextureResolver<B> {
                     return true;
                 }
             }
-            texture.used_recently(frame_id, 30)
+            texture.used_recently(frame_id, 2)
         });
     }
 

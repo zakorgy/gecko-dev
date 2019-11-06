@@ -1276,7 +1276,7 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
     });
 
     let (adapter, surface, instance) = {
-        let instance = back::Instance::create("gfx-rs instance", 1);
+        let instance = back::Instance::create("gfx-rs instance", 1).expect("Failed to create instance");
         let mut adapters = instance.enumerate_adapters();
         let adapter = adapters.remove(0);
         let surface = match handles {
@@ -1288,13 +1288,13 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
             SurfaceHandles::Windows(hinstance, hwnd) => instance.create_surface_from_hwnd(hinstance as _,hwnd as _),
             h => panic!("Wrong handle variant: {:?}", h),
         };
-        ( adapter, surface, instance)
+        (adapter, surface, instance)
     };
 
     let cache_dir = dirs::cache_dir().expect("User's cache directory not found");
     let cache_path = Some(PathBuf::from(&cache_dir).join("pipeline_cache.bin"));
     let init = DeviceInit {
-        instance: Box::new(instance),
+        instance,
         adapter: adapter,
         surface: Some(surface),
         window_size: (window_width, window_height),
