@@ -626,7 +626,21 @@ impl<'a> ReftestHarness<'a> {
         self.rx.recv().unwrap();
         let results = self.wrench.render();
 
+        #[cfg(feature = "gl")]
         let window_size = self.window.get_inner_size();
+
+        #[cfg(feature = "gfx")]
+        let window_size = {
+            if let Some(window) = self.window.get_window() {
+                let size = window
+                    .get_inner_size()
+                    .unwrap()
+                    .to_physical(window.get_hidpi_factor());
+                DeviceIntSize::new(size.width as i32, size.height as i32)
+            } else {
+                self.window.get_inner_size()
+            }
+        };
         assert!(
             size.width <= window_size.width &&
             size.height <= window_size.height,

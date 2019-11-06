@@ -191,10 +191,12 @@ pub fn main_wrapper<E: Example>(
     #[cfg(feature = "gfx-hal")]
     let (init, window) = {
         let window = window_builder.build(&events_loop).unwrap();
-        let instance = back::Instance::create("gfx-rs instance", 1);
+        let instance = back::Instance::create("gfx-rs instance", 1).expect("Instance creation failed");
         let mut adapters = instance.enumerate_adapters();
         let adapter = adapters.remove(0);
-        let surface = Some(instance.create_surface(&window));
+        let surface = Some(
+            unsafe { instance.create_surface(&window) }.expect("Surface creation failed")
+        );
         let winit::dpi::LogicalSize { width, height } = window.get_inner_size().unwrap();
         let init = {
             let cache_dir = dirs::cache_dir().expect("User's cache directory not found");
@@ -208,7 +210,7 @@ pub fn main_wrapper<E: Example>(
             let backend_api = webrender::BackendApiType::Dx12;
 
             webrender::DeviceInit {
-                instance: Box::new(instance),
+                instance,
                 adapter,
                 surface,
                 window_size: (width as i32, height as i32),

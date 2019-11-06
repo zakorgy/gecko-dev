@@ -7,7 +7,7 @@ edition = "2018"
 
 [target.'cfg(windows)'.dependencies]
 euclid = "0.20"
-gfx-backend-empty = "0.3.0"
+gfx-backend-empty = "0.4.0"
 gleam = "0.6.2"
 mozangle = {version = "0.3.1", features = ["egl"]}
 webrender = {path = "../webrender", features = ["gl"] }

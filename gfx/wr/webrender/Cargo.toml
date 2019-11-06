@@ -23,7 +23,7 @@ no_static_freetype = []
 [build-dependencies]
 webrender_build = { version = "0.0.1", path = "../webrender_build" }
 cfg-if = "0.1.2"
-gfx-hal = { version = "0.3.1", features = ["serde"] }
+gfx-hal = { version = "0.4.0", features = ["serde"] }
 ron = "0.1.7"
 serde = { version = "1.0", features = ["serde_derive"] }
 
@@ -37,7 +37,7 @@ cfg-if = "0.1.2"
 cstr = "0.1.2"
 euclid = { version = "0.20.0", features = ["serde"] }
 fxhash = "0.2.1"
-gfx-hal = { version = "0.3.1", features = ["serde"] }
+gfx-hal = { version = "0.4.0", features = ["serde"] }
 gleam = { optional = true, version = "0.6.17" }
 image_loader = { optional = true, version = "0.22", package = "image", default-features = false, features = ["png_codec"] }
 lazy_static = "1"
@@ -50,8 +50,8 @@ serde = { optional = true, version = "1.0", features = ["serde_derive"] }
 serde_json = { optional = true, version = "1.0" }
 rand ="0.4"
 rayon = "1"
-rendy-descriptor = "0.4.0"
-rendy-memory = { version = "0.4.0", features = ["serde"] }
+rendy-descriptor = "0.5.0"
+rendy-memory = { version = "0.5.0", features = ["serde"] }
 relevant = { version = "0.4", features = ["std"] }
 ron = "0.1.7"
 sha2 = "0.8"

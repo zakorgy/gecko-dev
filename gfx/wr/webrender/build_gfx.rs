@@ -676,7 +676,7 @@ fn compile_glsl_to_spirv(file_name_vector: Vec<String>, out_dir: &str, shader_fi
         let spirv_file_path = spirv_file_path.replace("\\", "/");
         write!(
             shader_file,
-            "    h.insert(\"{}\", hal::read_spirv(&std::fs::File::open(\"{}\").unwrap()).unwrap());\n",
+            "    h.insert(\"{}\", hal::pso::read_spirv(&std::fs::File::open(\"{}\").unwrap()).unwrap());\n",
             file_name,
             spirv_file_path,
         ).unwrap();

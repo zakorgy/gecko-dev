@@ -734,32 +734,32 @@ impl YamlFrameReader {
 
         let external = item["external"].as_bool().unwrap_or(false);
         if external {
-            // This indicates we want to simulate an external texture,
-            // ensure it gets created as such
-            let external_target = match item["external-target"].as_str() {
-                Some(ref s) => match &s[..] {
-                    "2d" => TextureTarget::Default,
-                    "array" => TextureTarget::Array,
-                    "rect" => TextureTarget::Rect,
-                    _ => panic!("Unsupported external texture target."),
-                }
-                None => {
-                    TextureTarget::Default
-                }
-            };
+            #[cfg(feature = "gl")] {
+                // This indicates we want to simulate an external texture,
+                // ensure it gets created as such
+                let external_target = match item["external-target"].as_str() {
+                    Some(ref s) => match &s[..] {
+                        "2d" => TextureTarget::Default,
+                        "array" => TextureTarget::Array,
+                        "rect" => TextureTarget::Rect,
+                        _ => panic!("Unsupported external texture target."),
+                    }
+                    None => {
+                        TextureTarget::Default
+                    }
+                };
 
-            println!("## Missing external image data");
-
-            #[cfg(feature = "gl")]
-            let external_image_data =
-                self.external_image_handler.as_mut().unwrap().add_image(
-                    &wrench.renderer.device,
-                    descriptor,
-                    external_target,
-                    image_data
-                );
-            #[cfg(feature = "gl")]
-            txn.add_image(image_key, descriptor, external_image_data, tiling);
+                let external_image_data =
+                    self.external_image_handler.as_mut().unwrap().add_image(
+                        &wrench.renderer.device,
+                        descriptor,
+                        external_target,
+                        image_data
+                    );
+                txn.add_image(image_key, descriptor, external_image_data, tiling);
+            }
+            #[cfg(not(feature = "gl"))]
+            warn!("External images are not yet supported with gfx-hal backends")
         } else {
             txn.add_image(image_key, descriptor, image_data, tiling);
         }

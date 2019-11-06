@@ -200,6 +200,7 @@ pub struct ResolveInstanceData {
 }
 
 impl ResolveInstanceData {
+    #[cfg(feature = "gl")]
     pub fn new(rect: DeviceIntRect) -> Self {
         ResolveInstanceData {
             rect: [

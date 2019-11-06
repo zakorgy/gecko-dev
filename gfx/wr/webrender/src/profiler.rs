@@ -64,6 +64,7 @@ pub struct ProfileScope {
     name: &'static CStr,
 }
 
+#[cfg(feature = "gl")]
 /// Records a marker of the given duration that just ended.
 pub fn add_text_marker(label: &CStr, text: &str, duration: Duration) {
     unsafe {
@@ -74,6 +75,7 @@ pub fn add_text_marker(label: &CStr, text: &str, duration: Duration) {
 }
 
 /// Returns true if the current thread is being profiled.
+#[cfg(feature = "gl")]
 pub fn thread_is_being_profiled() -> bool {
     unsafe {
         PROFILER_HOOKS.map_or(false, |h| h.thread_is_being_profiled())

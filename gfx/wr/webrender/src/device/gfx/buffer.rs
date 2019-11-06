@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use hal;
-use hal::Device as BackendDevice;
+use hal::device::Device as BackendDevice;
 use rendy_memory::{Block, Heaps, Kind, MappedRange, MemoryBlock, MemoryUsage, MemoryUsageValue, Write};
 
 use std::cell::Cell;

@@ -9,19 +9,13 @@ use std::marker::PhantomData;
 
 use api::{ImageFormat, TextureTarget};
 use api::units::*;
+#[cfg(feature = "gl")]
+use gleam::gl::GlType;
 
 use crate::device::{Device, PBO, DrawTarget, ReadTarget, Texture, TextureFilter};
 use crate::internal_types::RenderTargetInfo;
 use crate::renderer::Renderer;
 use crate::util::round_up_to_multiple;
-
-cfg_if! {
-    if #[cfg(feature = "gl")] {
-        use gleam::gl::GlType;
-    } else {
-        type GlType = ();
-    }
-}
 
 /// A handle to a screenshot that is being asynchronously captured and scaled.
 #[repr(C)]
@@ -34,6 +28,7 @@ pub struct AsyncScreenshotHandle(usize);
 pub struct RecordedFrameHandle(usize);
 
 /// An asynchronously captured screenshot bound to a PBO which has not yet been mapped for copying.
+#[cfg_attr(not(feature = "gl"), allow(unused))]
 struct AsyncScreenshot {
     /// The PBO that will contain the screenshot data.
     pbo: PBO,
@@ -328,6 +323,7 @@ impl<B: hal::Backend> AsyncScreenshotGrabber<B> {
 
     /// Map the contents of the screenshot given by the handle and copy it into
     /// the given buffer.
+    #[cfg(feature = "gl")]
     pub fn map_and_recycle_screenshot(
         &mut self,
         device: &mut Device<B>,
@@ -345,9 +341,7 @@ impl<B: hal::Backend> AsyncScreenshotGrabber<B> {
             None => return false,
         };
 
-        #[cfg(feature = "gl")]
         let gl_type = device.gl().get_type();
-        #[cfg(feature = "gl")]
         let success = if let Some(bound_pbo) = device.map_pbo_for_readback(&pbo) {
             let src_buffer = &bound_pbo.data;
             let src_stride = buffer_stride;
@@ -367,9 +361,6 @@ impl<B: hal::Backend> AsyncScreenshotGrabber<B> {
             false
         };
 
-        #[cfg(not(feature = "gl"))]
-        let success = false;
-
         match self.mode {
             AsyncScreenshotGrabberMode::ProfilerScreenshots => self.available_pbos.push(pbo),
             AsyncScreenshotGrabberMode::CompositionRecorder => device.delete_pbo(pbo),
@@ -378,6 +369,19 @@ impl<B: hal::Backend> AsyncScreenshotGrabber<B> {
         success
     }
 
+    #[cfg(not(feature = "gl"))]
+    pub fn map_and_recycle_screenshot(
+        &mut self,
+        _device: &mut Device<B>,
+        _handle: AsyncScreenshotHandle,
+        _dst_buffer: &mut [u8],
+        _dst_stride: usize,
+    ) -> bool {
+        warn!("map_and_recycle_screenshot not implemented");
+        false
+    }
+
+    #[cfg(feature = "gl")]
     fn iter_src_buffer_chunked<'a>(
         &self,
         gl_type: GlType,
@@ -385,12 +389,7 @@ impl<B: hal::Backend> AsyncScreenshotGrabber<B> {
         src_stride: usize,
     ) -> Box<dyn Iterator<Item = &'a [u8]> + 'a> {
         use AsyncScreenshotGrabberMode::*;
-
-        #[cfg(feature = "gl")]
         let is_angle = cfg!(windows) && gl_type == GlType::Gles;
-
-        #[cfg(not(feature = "gl"))]
-        let is_angle = false;
 
         if self.mode == CompositionRecorder && !is_angle {
             // This is a non-ANGLE configuration. in this case, the recorded frames were captured

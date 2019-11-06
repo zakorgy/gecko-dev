@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use api::ImageFormat;
-use hal::Device;
+use hal::device::Device;
 
 pub(super) struct HalRenderPasses<B: hal::Backend> {
     pub(super) r8: B::RenderPass,

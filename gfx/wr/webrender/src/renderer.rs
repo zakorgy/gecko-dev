@@ -63,7 +63,9 @@ use crate::glyph_rasterizer::{GlyphFormat, GlyphRasterizer};
 use crate::gpu_cache::{GpuBlockData, GpuCacheUpdate, GpuCacheUpdateList};
 use crate::gpu_cache::{GpuCacheDebugChunk, GpuCacheDebugCmd};
 use crate::gpu_types::{PrimitiveHeaderI, PrimitiveHeaderF, ScalingInstance, SvgFilterInstance, TransformData};
-use crate::gpu_types::{CompositeInstance, ResolveInstanceData};
+use crate::gpu_types::CompositeInstance;
+#[cfg(feature = "gl")]
+use crate::gpu_types::ResolveInstanceData;
 use crate::internal_types::{TextureSource, ResourceCacheError};
 use crate::internal_types::{CacheTextureId, DebugOutput, FastHashMap, FastHashSet, LayerIndex, RenderedDocument, ResultMsg};
 use crate::internal_types::{TextureCacheAllocationKind, TextureCacheUpdate, TextureUpdateList, TextureUpdateSource};
@@ -1421,15 +1423,6 @@ impl<B: hal::Backend> GpuCacheTexture<B> {
             }
         };
 
-        #[cfg(not(feature = "gl"))]
-        let bus = {
-            let buffer = device.create_pbo();
-            GpuCacheBus::PixelBuffer {
-                buffer,
-                rows: Vec::new(),
-            }
-        };
-
         Ok(GpuCacheTexture {
             texture: None,
             bus,
@@ -1464,7 +1457,7 @@ impl<B: hal::Backend> GpuCacheTexture<B> {
     fn prepare_for_updates(
         &mut self,
         device: &mut Device<B>,
-        total_block_count: usize,
+        _total_block_count: usize,
         max_height: i32,
     ) {
         self.ensure_texture(device, max_height);
@@ -1480,15 +1473,15 @@ impl<B: hal::Backend> GpuCacheTexture<B> {
                 ..
             } => {
                 *count = 0;
-                if total_block_count > buf_value.allocated_count() {
-                    device.allocate_vbo(buf_position, total_block_count, VertexUsageHint::Stream);
-                    device.allocate_vbo(buf_value,    total_block_count, VertexUsageHint::Stream);
+                if _total_block_count > buf_value.allocated_count() {
+                    device.allocate_vbo(buf_position, _total_block_count, VertexUsageHint::Stream);
+                    device.allocate_vbo(buf_value,    _total_block_count, VertexUsageHint::Stream);
                 }
             }
         }
     }
 
-    fn update(&mut self, device: &mut Device<B>, updates: &GpuCacheUpdateList) {
+    fn update(&mut self, _device: &mut Device<B>, updates: &GpuCacheUpdateList) {
         match self.bus {
             #[cfg(not(feature = "gl"))]
             GpuCacheBus::PersistentlyMappedBuffer { ref mut slice } => {
@@ -1568,8 +1561,8 @@ impl<B: hal::Backend> GpuCacheTexture<B> {
                     }
                 }
 
-                device.fill_vbo(buf_value, &updates.blocks, *count);
-                device.fill_vbo(buf_position, &position_data, *count);
+                _device.fill_vbo(buf_value, &updates.blocks, *count);
+                _device.fill_vbo(buf_position, &position_data, *count);
                 *count += position_data.len();
             }
         }
@@ -1839,7 +1832,7 @@ pub struct Renderer<B: hal::Backend> {
     max_recorded_profiles: usize,
 
     clear_color: Option<ColorF>,
-    enable_clear_scissor: bool,
+    _enable_clear_scissor: bool,
     enable_picture_caching: bool,
     enable_advanced_blend_barriers: bool,
 
@@ -2429,7 +2422,7 @@ impl<B: hal::Backend> Renderer<B> {
             slow_frame_indicator: ChangeIndicator::new(),
             max_recorded_profiles: options.max_recorded_profiles,
             clear_color: options.clear_color,
-            enable_clear_scissor: options.enable_clear_scissor,
+            _enable_clear_scissor: options.enable_clear_scissor,
             enable_advanced_blend_barriers: !ext_blend_equation_advanced_coherent,
             enable_picture_caching: options.enable_picture_caching,
             last_time: 0,
@@ -4377,7 +4370,7 @@ impl<B: hal::Backend> Renderer<B> {
                 DrawTarget::Default { rect, .. } => {
                     Some(rect)
                 }
-                DrawTarget::Texture { .. } if self.enable_clear_scissor => {
+                DrawTarget::Texture { .. } if self._enable_clear_scissor => {
                     // TODO(gw): Applying a scissor rect and minimal clear here
                     // is a very large performance win on the Intel and nVidia
                     // GPUs that I have tested with. It's possible it may be a
@@ -5166,9 +5159,12 @@ impl<B: hal::Backend> Renderer<B> {
                         );
 
                         let fb_scale = Scale::<_, _, FramebufferPixel>::new(1i32);
+                        #[cfg(feature = "gl")]
                         let mut fb_rect = frame.device_rect * fb_scale;
                         #[cfg(feature = "gl")]
                         { fb_rect.origin.y = device_size.height - fb_rect.origin.y - fb_rect.size.height; }
+                        #[cfg(not(feature = "gl"))]
+                        let fb_rect = frame.device_rect * fb_scale;
 
                         let draw_target = DrawTarget::Default {
                             rect: fb_rect,

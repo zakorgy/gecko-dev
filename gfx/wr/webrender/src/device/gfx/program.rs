@@ -3,8 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use api::{ColorF, ImageFormat, units::FramebufferIntRect};
-use hal::{self, Device as BackendDevice};
-use hal::command::RawCommandBuffer;
+use hal::{self, device::Device as BackendDevice};
+use hal::command::CommandBuffer;
 use crate::internal_types::FastHashMap;
 use smallvec::SmallVec;
 use rendy_memory::Heaps;
@@ -19,7 +19,7 @@ use super::super::super::shader_source;
 
 const ENTRY_NAME: &str = "main";
 // The size of the push constant block is 68 bytes, and we upload it with u32 data (4 bytes).
-pub(super) const PUSH_CONSTANT_BLOCK_SIZE: usize = 17; // 68 / 4
+pub(super) const PUSH_CONSTANT_BLOCK_SIZE: usize = 68; // 68 / 4
 // The number of specialization constants in each shader.
 const SPECIALIZATION_CONSTANT_COUNT: usize = 8;
 // Size of a specialization constant variable in bytes.
@@ -48,7 +48,7 @@ pub(crate) struct Program<B: hal::Backend> {
     pub(super) index_buffer: Option<SmallVec<[VertexBufferHandler<B>; 1]>>,
     pub(super) shader_name: String,
     pub(super) shader_kind: ShaderKind,
-    pub(super) constants: [u32; PUSH_CONSTANT_BLOCK_SIZE],
+    pub(super) constants: [u32; PUSH_CONSTANT_BLOCK_SIZE / 4],
 }
 
 impl<B: hal::Backend> Program<B> {
@@ -265,7 +265,7 @@ impl<B: hal::Backend> Program<B> {
                 };
                 let mut pipeline_descriptor = hal::pso::GraphicsPipelineDesc::new(
                     shader_entries.clone(),
-                    hal::Primitive::TriangleList,
+                    hal::pso::Primitive::TriangleList,
                     hal::pso::Rasterizer::FILL,
                     &pipeline_layout,
                     subpass,
@@ -352,7 +352,7 @@ impl<B: hal::Backend> Program<B> {
             index_buffer,
             shader_name: String::from(shader_name),
             shader_kind,
-            constants: [0; PUSH_CONSTANT_BLOCK_SIZE],
+            constants: [0; PUSH_CONSTANT_BLOCK_SIZE / 4],
         }
     }
 
@@ -385,7 +385,7 @@ impl<B: hal::Backend> Program<B> {
             if use_push_consts {
                 cmd_buffer.push_graphics_constants(
                     pipeline_layout,
-                    hal::pso::ShaderStageFlags::VERTEX,
+                    hal::pso::ShaderStageFlags::VERTEX | hal::pso::ShaderStageFlags::FRAGMENT,
                     0,
                     &self.constants,
                 );

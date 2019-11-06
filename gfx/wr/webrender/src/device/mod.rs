@@ -191,8 +191,11 @@ impl Drop for PBO {
 }
 
 pub struct BoundPBO<'a, B: hal::Backend> {
+    #[cfg(feature = "gl")]
     device: &'a mut Device<B>,
-    pub data: &'a [u8]
+    pub data: &'a [u8],
+    #[cfg(not(feature = "gl"))]
+    phantom_data: std::marker::PhantomData<B>,
 }
 
 /// Returns the size in bytes of a depth target with the given dimensions.
@@ -476,6 +479,7 @@ struct ProgramCacheEntry {
     /// The binary.
     binary: Arc<ProgramBinary>,
     /// True if the binary has been linked, i.e. used for rendering.
+    #[cfg(feature = "gl")]
     linked: bool,
 }
 
@@ -493,14 +497,14 @@ pub struct ProgramCache {
 }
 
 impl ProgramCache {
-    pub fn new(program_cache_observer: Option<Box<dyn ProgramCacheObserver>>) -> Rc<Self> {
+    pub fn new(_program_cache_observer: Option<Box<dyn ProgramCacheObserver>>) -> Rc<Self> {
         Rc::new(
             ProgramCache {
                 entries: RefCell::new(FastHashMap::default()),
                 #[cfg(feature = "gl")]
                 updated_disk_cache: Cell::new(false),
                 #[cfg(feature = "gl")]
-                program_cache_handler: program_cache_observer,
+                program_cache_handler: _program_cache_observer,
             }
         )
     }

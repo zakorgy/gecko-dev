@@ -3,8 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use api::{units::DeviceIntRect, ImageFormat};
-use hal::{self, Device as BackendDevice};
-use hal::command::RawCommandBuffer;
+use hal::{self, device::Device as BackendDevice};
+use hal::command::CommandBuffer;
 use hal::image::{Layout, Access};
 use hal::pso::PipelineStage;
 use rendy_memory::{Block, Heaps, MemoryBlock, MemoryUsageValue};
@@ -220,8 +220,8 @@ impl<B: hal::Backend> Image<B> {
         image_data: &[u8],
         format_override: Option<ImageFormat>,
     ) {
-        if let Some(format_override) = format_override {
-            //panic!("We should use format override {:?}", format_override);
+        if format_override.is_some() {
+            warn!("Format override not implemented");
         }
         let pos = rect.origin;
         let size = rect.size;

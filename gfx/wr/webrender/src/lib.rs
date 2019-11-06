@@ -64,7 +64,7 @@ extern crate lazy_static;
 extern crate log;
 #[macro_use]
 extern crate malloc_size_of_derive;
-#[cfg_attr(any(any(feature = "capture", feature = "replay"), not(feature = "gl")), macro_use)]
+#[cfg_attr(any(any(feature = "capture", feature = "replay", feature = "serialize_program"), not(feature = "gl")), macro_use)]
 extern crate serde;
 #[macro_use]
 extern crate thread_profiler;

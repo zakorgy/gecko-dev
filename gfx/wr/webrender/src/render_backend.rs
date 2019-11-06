@@ -1706,7 +1706,7 @@ impl<B: hal::Backend> RenderBackend<B> {
         }
     }
 
-    #[cfg(all(not(feature = "gl"), any(feature = "capture", feature = "replay")))]
+    #[cfg(all(not(feature = "gl"), feature = "replay"))]
     fn ensure_buffer(&mut self) -> Option<PersistentlyMappedBuffer<B>> {
         let clear = self.gpu_cache.pending_clear;
         let resize = self.gpu_cache.height() > self.gpu_cache_buffer.height;

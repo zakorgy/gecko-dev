@@ -50,14 +50,18 @@ use super::super::{depth_target_size_in_bytes, record_gpu_alloc, record_gpu_free
 use super::super::super::shader_source;
 
 use hal;
+use hal::adapter::PhysicalDevice;
 use hal::pso::{BlendState, DepthTest};
-use hal::{Device as BackendDevice, PhysicalDevice, Surface, Swapchain};
-use hal::{SwapchainConfig, AcquireError};
+use hal::device::Device as _;
+use hal::window::{Surface, Swapchain, SwapchainConfig, AcquireError};
 use hal::pso::PipelineStage;
-use hal::queue::RawCommandQueue;
+use hal::queue::CommandQueue;
 use hal::window::PresentError;
-use hal::command::{CommandBufferFlags, CommandBufferInheritanceInfo, RawCommandBuffer, RawLevel};
-use hal::pool::{RawCommandPool};
+use hal::command::{
+    ClearColor, ClearDepthStencil, ClearValue,
+    CommandBufferFlags, CommandBufferInheritanceInfo, CommandBuffer, Level
+};
+use hal::pool::{CommandPool as HalCommandPool};
 use hal::queue::{QueueFamilyId};
 
 pub const INVALID_TEXTURE_ID: TextureId = 0;
@@ -116,8 +120,8 @@ const QUAD: [vertex_types::Vertex; 6] = [
 ];
 
 pub struct DeviceInit<B: hal::Backend> {
-    pub instance: Box<dyn hal::Instance<Backend = B>>,
-    pub adapter: hal::Adapter<B>,
+    pub instance: B::Instance,
+    pub adapter: hal::adapter::Adapter<B>,
     pub surface: Option<B::Surface>,
     pub window_size: (i32, i32),
     pub descriptor_count: Option<u32>,
@@ -188,9 +192,9 @@ pub struct Device<B: hal::Backend> {
     pub device: Arc<B::Device>,
     pub heaps: Arc<Mutex<Heaps<B>>>,
     pub limits: hal::Limits,
-    adapter: hal::Adapter<B>,
+    adapter: hal::adapter::Adapter<B>,
     surface: Option<B::Surface>,
-    _instance: Box<dyn hal::Instance<Backend = B>>,
+    _instance: B::Instance,
     pub surface_format: ImageFormat,
     pub depth_format: hal::format::Format,
     pub queue_group_family: QueueFamilyId,
@@ -305,10 +309,10 @@ impl<B: hal::Backend> Device<B> {
         resource_override_path: Option<PathBuf>,
         upload_method: UploadMethod,
         _cached_programs: Option<Rc<ProgramCache>>,
-        allow_pixel_local_storage_support: bool,
-        allow_texture_storage_support: bool,
-        allow_texture_swizzling: bool,
-        dump_shader_source: Option<String>,
+        _allow_pixel_local_storage_support: bool,
+        _allow_texture_storage_support: bool,
+        _allow_texture_swizzling: bool,
+        _dump_shader_source: Option<String>,
         heaps_config: HeapsConfig,
         instance_buffer_size: usize,
         texture_cache_size: usize,
@@ -366,14 +370,13 @@ impl<B: hal::Backend> Device<B> {
         let max_texture_size = limits.max_image_2d_size as i32;
 
         let (device, queue_group_family, queue_group_queues) = {
-            use hal::Capability;
             use hal::queue::QueueFamily;
 
             let family = adapter
                 .queue_families
                 .iter()
                 .find(|family| {
-                    hal::Graphics::supported_by(family.queue_type())
+                    family.queue_type().supports_graphics()
                         && match &surface {
                             Some(surface) => surface.supports_queue_family(family),
                             None => true,
@@ -383,7 +386,7 @@ impl<B: hal::Backend> Device<B> {
 
             let priorities = vec![1.0];
             let (id, families) = (family.id(), [(family, priorities.as_slice())]);
-            let hal::Gpu { device, mut queues } = unsafe {
+            let hal::adapter::Gpu { device, mut queue_groups } = unsafe {
                 adapter
                     .physical_device
                     .open(&families, hal::Features::DUAL_SRC_BLENDING)
@@ -394,7 +397,7 @@ impl<B: hal::Backend> Device<B> {
                             .unwrap()
                     })
             };
-            (device, id, queues.take_raw(id).unwrap())
+            (device, id, queue_groups.remove(id.0 as _).queues)
         };
 
         let render_passes = HalRenderPasses::create_render_passes(&device, SURFACE_FORMAT, DEPTH_FORMAT);
@@ -465,7 +468,7 @@ impl<B: hal::Backend> Device<B> {
 
         // Samplers
         let sampler_linear = unsafe {
-            device.create_sampler(hal::image::SamplerInfo::new(
+            device.create_sampler(&hal::image::SamplerDesc::new(
                 hal::image::Filter::Linear,
                 hal::image::WrapMode::Clamp,
             ))
@@ -473,7 +476,7 @@ impl<B: hal::Backend> Device<B> {
         .expect("sampler_linear failed");
 
         let sampler_nearest = unsafe {
-            device.create_sampler(hal::image::SamplerInfo::new(
+            device.create_sampler(&hal::image::SamplerDesc::new(
                 hal::image::Filter::Nearest,
                 hal::image::WrapMode::Clamp,
             ))
@@ -601,7 +604,7 @@ impl<B: hal::Backend> Device<B> {
                 let pipeline_layout = unsafe {
                     device.create_pipeline_layout(
                         &set_layouts,
-                        Some((hal::pso::ShaderStageFlags::VERTEX, 0..PUSH_CONSTANT_BLOCK_SIZE as u32)),
+                        Some((hal::pso::ShaderStageFlags::VERTEX | hal::pso::ShaderStageFlags::FRAGMENT, 0..PUSH_CONSTANT_BLOCK_SIZE as u32)),
                     )
                 }
                 .expect("create_pipeline_layout failed");
@@ -766,7 +769,7 @@ impl<B: hal::Backend> Device<B> {
         false
     }
 
-    pub fn enable_pixel_local_storage(&mut self, enable: bool) {
+    pub fn enable_pixel_local_storage(&mut self, _enable: bool) {
         warn!("Pixel local storage not supported");
     }
 
@@ -786,18 +789,19 @@ impl<B: hal::Backend> Device<B> {
         self.optimal_pbo_stride
     }
 
-    pub fn map_pbo_for_readback<'a>(&'a mut self, pbo: &'a PBO) -> Option<BoundPBO<'a, B>> {
+    pub fn map_pbo_for_readback<'a>(&'a mut self, _pbo: &'a PBO) -> Option<BoundPBO<'a, B>> {
+        warn!("map_pbo_for_readback is not implemented");
         None
     }
 
     pub fn read_pixels_into_pbo(
         &mut self,
-        read_target: ReadTarget,
-        rect: DeviceIntRect,
-        format: ImageFormat,
-        pbo: &PBO,
+        _read_target: ReadTarget,
+        _rect: DeviceIntRect,
+        _format: ImageFormat,
+        _pbo: &PBO,
     ) {
-        panic!("read_pixels_into_pbo not implemented");
+        warn!("read_pixels_into_pbo not implemented");
     }
 
     fn load_pipeline_cache(
@@ -943,7 +947,7 @@ impl<B: hal::Backend> Device<B> {
     fn init_frames_with_surface(
         device: &B::Device,
         heaps: &mut Heaps<B>,
-        adapter: &hal::Adapter<B>,
+        adapter: &hal::adapter::Adapter<B>,
         surface: &mut B::Surface,
         window_size: Option<(i32, i32)>,
         old_swap_chain: Option<B::Swapchain>,
@@ -955,20 +959,8 @@ impl<B: hal::Backend> Device<B> {
         hal::pso::Viewport,
         usize,
     ) {
-        let (caps, formats, present_modes) = surface.compatibility(&adapter.physical_device);
-        let present_mode = {
-            use hal::window::PresentMode::*;
-            [Mailbox, Fifo, Relaxed, Immediate]
-                .iter()
-                .cloned()
-                .find(|pm| present_modes.contains(pm))
-                .expect("No PresentMode values specified!")
-        };
-        let frame_count = if present_mode == hal::window::PresentMode::Mailbox {
-            *caps.image_count.end().min(&(FRAME_COUNT_MAILBOX as u32)) as usize
-        } else {
-            *caps.image_count.end().min(&(FRAME_COUNT_NOT_MAILBOX as u32)) as usize
-        };
+        let caps = surface.capabilities(&adapter.physical_device);
+        let formats = surface.supported_formats(&adapter.physical_device);
         let available_surface_format = formats.map_or(SURFACE_FORMAT, |formats| {
             formats
                 .into_iter()
@@ -995,23 +987,18 @@ impl<B: hal::Backend> Device<B> {
                         .max(1),
             };
 
-        let mut swap_config = SwapchainConfig::new(
-            window_extent.width,
-            window_extent.height,
+        let swap_config = SwapchainConfig::from_caps(
+            &caps,
             available_surface_format,
-            frame_count as _,
+            window_extent,
         )
         .with_image_usage(
             hal::image::Usage::TRANSFER_SRC
                 | hal::image::Usage::TRANSFER_DST
                 | hal::image::Usage::COLOR_ATTACHMENT,
-        )
-        .with_mode(present_mode);
-        if caps.composite_alpha.contains(hal::CompositeAlpha::INHERIT) {
-            swap_config.composite_alpha =  hal::CompositeAlpha::INHERIT;
-        } else if caps.composite_alpha.contains(hal::CompositeAlpha::OPAQUE) {
-            swap_config.composite_alpha = hal::CompositeAlpha::OPAQUE;
-        }
+        );
+
+        let frame_count = swap_config.image_count as usize;
 
         let (swap_chain, images) =
             unsafe { device.create_swapchain(surface, swap_config, old_swap_chain) }
@@ -1531,7 +1518,7 @@ impl<B: hal::Backend> Device<B> {
         self.frame_id
     }
 
-    fn bind_texture_impl(&mut self, slot: TextureSlot, id: TextureId, sampler: TextureFilter, set_swizzle: Option<Swizzle>) {
+    fn bind_texture_impl(&mut self, slot: TextureSlot, id: TextureId, sampler: TextureFilter, _set_swizzle: Option<Swizzle>) {
         debug_assert!(self.inside_frame);
 
         if self.bound_textures[slot.0] != id {
@@ -1572,7 +1559,7 @@ impl<B: hal::Backend> Device<B> {
         let fbo_id = match read_target {
             ReadTarget::Default => DEFAULT_READ_FBO,
             ReadTarget::Texture { fbo_id } => fbo_id,
-            ReadTarget::External { fbo } => unimplemented!("Extrenal FBO id not supported"),
+            ReadTarget::External { .. } => unimplemented!("Extrenal FBO id not supported"),
         };
         self.bind_read_target_impl(fbo_id)
     }
@@ -1622,7 +1609,7 @@ impl<B: hal::Backend> Device<B> {
 
     pub fn bind_draw_target(&mut self, texture_target: DrawTarget, usage: DrawTargetUsage) {
         let (fbo_id, rect, depth_available) = match texture_target {
-            DrawTarget::Default{ rect, total_size } => {
+            DrawTarget::Default{ rect, .. } => {
                 if let DrawTargetUsage::CopyOnly = usage {
                     //panic!("We should not have default target with CopyOnly usage!");
                 }
@@ -1632,7 +1619,6 @@ impl<B: hal::Backend> Device<B> {
                 dimensions,
                 layer,
                 with_depth,
-                blit_workaround_buffer,
                 fbo_id,
                 id,
                 ..
@@ -2632,7 +2618,7 @@ impl<B: hal::Backend> Device<B> {
         .expect("create_command_pool failed");
         unsafe { command_pool.reset(false) };
 
-        let mut cmd_buffer = command_pool.allocate_one(RawLevel::Primary);
+        let mut cmd_buffer = unsafe { command_pool.allocate_one(Level::Primary) };
         unsafe {
             Self::begin_cmd_buffer(&mut cmd_buffer);
 
@@ -2966,7 +2952,7 @@ impl<B: hal::Backend> Device<B> {
 
         let color_clear = color.map(|c| hal::command::AttachmentClear::Color {
             index: 0,
-            value: hal::command::ClearColor::Sfloat(c),
+            value: ClearColor { float32: c },
         });
 
         let depth_clear = depth.map(|d| hal::command::AttachmentClear::DepthStencil {
@@ -3021,11 +3007,7 @@ impl<B: hal::Backend> Device<B> {
                 self.command_buffer.clear_image(
                     &img.image,
                     hal::image::Layout::TransferDstOptimal,
-                    hal::command::ClearColorRaw { float32: [color[0], color[1], color[2], color[3]] },
-                    hal::command::ClearDepthStencilRaw {
-                        depth: 0.0,
-                        stencil: 0,
-                    },
+                    ClearValue { color: ClearColor { float32: color } },
                     Some(hal::image::SubresourceRange {
                         aspects: hal::format::Aspects::COLOR,
                         levels: 0 .. 1,
@@ -3061,8 +3043,7 @@ impl<B: hal::Backend> Device<B> {
                 self.command_buffer.clear_image(
                     &dimg.image,
                     hal::image::Layout::TransferDstOptimal,
-                    hal::command::ClearColorRaw { float32: [0.0; 4] },
-                    hal::command::ClearDepthStencilRaw { depth, stencil: 0 },
+                    ClearValue { depth_stencil: ClearDepthStencil { depth, stencil: 0 } },
                     Some(dimg.subresource_range.clone()),
                 );
                 if let Some((barrier, pipeline_stages)) = dimg.transit(
@@ -3225,8 +3206,8 @@ impl<B: hal::Backend> Device<B> {
         self.current_blend_state.set(Some(OVERDRAW));
     }
 
-    pub fn set_blend_mode_advanced(&self, mode: MixBlendMode) {
-        panic!("Missing set_blend_mode_advanced");
+    pub fn set_blend_mode_advanced(&self, _mode: MixBlendMode) {
+        panic!("set_blend_mode_advanced is unimplemented");
     }
 
     pub fn supports_features(&self, features: hal::Features) -> bool {
