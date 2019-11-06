@@ -61,8 +61,8 @@ codegen-units = 1
 libudev-sys = { path = "dom/webauthn/libudev-sys" }
 winapi = { git = "https://github.com/froydnj/winapi-rs", branch = "aarch64" }
 packed_simd = { git = "https://github.com/hsivonen/packed_simd", branch = "rust_1_32" }
-spirv_cross = { git = "https://github.com/zakorgy/spirv_cross", branch = "gecko" }
-metal = { git = "https://github.com/zakorgy/metal-rs", branch = "0.16" }
+spirv_cross = { git = "https://github.com/zakorgy/spirv_cross", branch = "0.16" }
+metal = { git = "https://github.com/zakorgy/metal-rs", branch = "0.17" }
 
 [patch.crates-io.cranelift-codegen]
 git = "https://github.com/CraneStation/Cranelift"
