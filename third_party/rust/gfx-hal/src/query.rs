@@ -10,20 +10,27 @@ use crate::Backend;
 pub type Id = u32;
 
 /// Query creation error.
-#[derive(Clone, Copy, Debug, Fail, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum CreationError {
     /// Out of either host or device memory.
-    #[fail(display = "{}", _0)]
     OutOfMemory(OutOfMemory),
 
     /// Query type unsupported.
-    #[fail(display = "Query type ({:?}) unsupported", _0)]
     Unsupported(Type),
 }
 
 impl From<OutOfMemory> for CreationError {
     fn from(error: OutOfMemory) -> Self {
         CreationError::OutOfMemory(error)
+    }
+}
+
+impl std::fmt::Display for CreationError {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CreationError::OutOfMemory(err) => write!(fmt, "Failed to create query: {}", err),
+            CreationError::Unsupported(ty) => write!(fmt, "Failed to create query: Unsupported type: {:?}", ty),
+        }
     }
 }
 

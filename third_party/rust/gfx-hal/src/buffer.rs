@@ -15,16 +15,14 @@ pub type Offset = u64;
 pub type State = Access;
 
 /// Error creating a buffer.
-#[derive(Fail, Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum CreationError {
     /// Out of either host or device memory.
-    #[fail(display = "{}", _0)]
     OutOfMemory(device::OutOfMemory),
 
     /// Requested buffer usage is not supported.
     ///
     /// Older GL version don't support constant buffers or multiple usage flags.
-    #[fail(display = "Buffer usage unsupported ({:?}).", usage)]
     UnsupportedUsage {
         /// Unsupported usage passed on buffer creation.
         usage: Usage,
@@ -37,15 +35,31 @@ impl From<device::OutOfMemory> for CreationError {
     }
 }
 
+impl std::fmt::Display for CreationError {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CreationError::OutOfMemory(err) => write!(fmt, "Failed to create buffer: {}", err),
+            CreationError::UnsupportedUsage { usage } => write!(fmt, "Failed to create buffer: Unsupported usage: {:?}", usage),
+        }
+    }
+}
+
+impl std::error::Error for CreationError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            CreationError::OutOfMemory(err) => Some(err),
+            _ => None,
+        }
+    }
+}
+
 /// Error creating a buffer view.
-#[derive(Fail, Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ViewCreationError {
     /// Out of either host or device memory.
-    #[fail(display = "{}", _0)]
     OutOfMemory(device::OutOfMemory),
 
     /// Buffer view format is not supported.
-    #[fail(display = "Buffer view format unsupported ({:?}).", format)]
     UnsupportedFormat {
         /// Unsupported format passed on view creation.
         format: Option<format::Format>,
@@ -55,6 +69,25 @@ pub enum ViewCreationError {
 impl From<device::OutOfMemory> for ViewCreationError {
     fn from(error: device::OutOfMemory) -> Self {
         ViewCreationError::OutOfMemory(error)
+    }
+}
+
+impl std::fmt::Display for ViewCreationError {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ViewCreationError::OutOfMemory(err) => write!(fmt, "Failed to create buffer view: {}", err),
+            ViewCreationError::UnsupportedFormat { format: Some(format) } => write!(fmt, "Failed to create buffer view: Unsupported format {:?}", format),
+            ViewCreationError::UnsupportedFormat { format: None } => write!(fmt, "Failed to create buffer view: Unspecified format"),
+        }
+    }
+}
+
+impl std::error::Error for ViewCreationError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            ViewCreationError::OutOfMemory(err) => Some(err),
+            _ => None,
+        }
     }
 }
 
@@ -107,7 +140,7 @@ bitflags!(
         /// ../pso/struct.PipelineStage.html#associatedconstant.VERTEX_INPUT) stage.
         const VERTEX_BUFFER_READ = 0x4;
         ///
-        const CONSTANT_BUFFER_READ = 0x8;
+        const UNIFORM_READ = 0x8;
         ///
         const SHADER_READ = 0x20;
         ///

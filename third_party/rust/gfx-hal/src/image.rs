@@ -8,10 +8,7 @@ use crate::{
     format,
     pso::{Comparison, Rect},
 };
-use std::{
-    i16,
-    ops::Range,
-};
+use std::{f32, hash, ops::Range};
 
 /// Dimension size.
 pub type Size = u32;
@@ -107,37 +104,21 @@ pub enum Tiling {
 }
 
 /// Pure image object creation error.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Fail)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum CreationError {
     /// Out of either host or device memory.
-    #[fail(display = "{}", _0)]
     OutOfMemory(device::OutOfMemory),
     /// The format is not supported by the device.
-    #[fail(display = "Failed to map a given format ({:?}) to the device", _0)]
     Format(format::Format),
     /// The kind doesn't support a particular operation.
-    #[fail(display = "The kind doesn't support a particular operation")]
     Kind,
     /// Failed to map a given multisampled kind to the device.
-    #[fail(
-        display = "Failed to map a given multisampled kind ({}) to the device",
-        _0
-    )]
     Samples(NumSamples),
     /// Unsupported size in one of the dimensions.
-    #[fail(display = "Unsupported size ({}) in one of the dimensions", _0)]
     Size(Size),
     /// The given data has a different size than the target image slice.
-    #[fail(
-        display = "The given data has a different size ({}) than the target image slice",
-        _0
-    )]
     Data(usize),
     /// The mentioned usage mode is not supported
-    #[fail(
-        display = "The expected image usage mode ({:?}) is not supported by a graphic API",
-        _0
-    )]
     Usage(Usage),
 }
 
@@ -147,35 +128,45 @@ impl From<device::OutOfMemory> for CreationError {
     }
 }
 
+impl std::fmt::Display for CreationError {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CreationError::OutOfMemory(err) => write!(fmt, "Failed to create image: {}", err),
+            CreationError::Format(format) => write!(fmt, "Failed to create image: Unsupported format: {:?}", format),
+            CreationError::Kind => write!(fmt, "Failed to create image: Specified kind doesn't support particular operation"), // Room for improvement.
+            CreationError::Samples(samples) => write!(fmt, "Failed to create image: Specified format doesn't support specified sampling {}", samples),
+            CreationError::Size(size) => write!(fmt, "Failed to create image: Unsupported size in one of the dimensions {}", size),
+            CreationError::Data(data) => write!(fmt, "Failed to create image: The given data has a different size {{{}}} than the target image slice", data), // Actually nothing emits this.
+            CreationError::Usage(usage) => write!(fmt, "Failed to create image: Unsupported usage: {:?}", usage),
+        }
+    }
+}
+
+impl std::error::Error for CreationError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            CreationError::OutOfMemory(err) => Some(err),
+            _ => None,
+        }
+    }
+}
+
 /// Error creating an `ImageView`.
-#[derive(Clone, Debug, PartialEq, Eq, Fail)]
-pub enum ViewError {
+#[derive(Clone, Debug, PartialEq)]
+pub enum ViewError { // TODO: Rename this or `buffer::ViewCreationError`
     /// The required usage flag is not present in the image.
-    #[fail(
-        display = "The required usage flag ({:?}) is not present in the image",
-        _0
-    )]
     Usage(Usage),
-    /// Selected mip levels doesn't exist.
-    #[fail(display = "Selected mip level ({}) doesn't exist", _0)]
+    /// Selected mip level doesn't exist.
     Level(Level),
     /// Selected array layer doesn't exist.
-    #[fail(display = "Selected mip layer ({}) doesn't exist", _0)]
     Layer(LayerError),
     /// An incompatible format was requested for the view.
-    #[fail(
-        display = "An incompatible format ({:?}) was requested for the view",
-        _0
-    )]
     BadFormat(format::Format),
-    /// Unsupported view kind.
-    #[fail(display = "An incompatible kind ({:?}) was requested for the view", _0)]
+    /// An incompatible view kind was requested for the view.
     BadKind(ViewKind),
     /// Out of either Host or Device memory
-    #[fail(display = "{}", _0)]
     OutOfMemory(device::OutOfMemory),
     /// The backend refused for some reason.
-    #[fail(display = "The backend refused for some reason")]
     Unsupported,
 }
 
@@ -185,21 +176,45 @@ impl From<device::OutOfMemory> for ViewError {
     }
 }
 
+impl std::fmt::Display for ViewError {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ViewError::Usage(usage) => write!(fmt, "Failed to create image view: Specified usage flags are not present in the image {:?}", usage),
+            ViewError::Level(level) => write!(fmt, "Failed to create image view: Selected level doesn't exist in the image {}", level),
+            ViewError::Layer(err) => write!(fmt, "Failed to create image view: {}", err),
+            ViewError::BadFormat(format) => write!(fmt, "Failed to create image view: Incompatible format {:?}", format),
+            ViewError::BadKind(kind) => write!(fmt, "Failed to create image view: Incompatible kind {:?}", kind),
+            ViewError::OutOfMemory(err) => write!(fmt, "Failed to create image view: {}", err),
+            ViewError::Unsupported => write!(fmt, "Failed to create image view: Implementation specific error occurred"),
+        }
+    }
+}
+
+impl std::error::Error for ViewError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            ViewError::OutOfMemory(err) => Some(err),
+            _ => None,
+        }
+    }
+}
+
 /// An error associated with selected image layer.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Fail)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum LayerError {
     /// The source image kind doesn't support array slices.
-    #[fail(
-        display = "The source image kind ({:?}) doesn't support array slices",
-        _0
-    )]
     NotExpected(Kind),
-    /// Selected layer is outside of the provided range.
-    #[fail(
-        display = "Selected layers ({:?}) are outside of the provided range",
-        _0
-    )]
+    /// Selected layers are outside of the provided range.
     OutOfBounds(Range<Layer>),
+}
+
+impl std::fmt::Display for LayerError {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LayerError::NotExpected(kind) => write!(fmt, "Kind {{{:?}}} does not support arrays", kind),
+            LayerError::OutOfBounds(layers) => write!(fmt, "Out of bounds layers {} .. {}", layers.start, layers.end),
+        }
+    }
 }
 
 /// How to [filter](https://en.wikipedia.org/wiki/Texture_filtering) the
@@ -439,29 +454,21 @@ pub enum WrapMode {
     Border,
 }
 
-/// A wrapper for the LOD level of an image.
-/// The LOD is stored in base-16 fixed point format. That allows
-/// deriving Hash and Eq for it safely.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd)]
+/// A wrapper for the LOD level of an image. Needed so that we can
+/// implement Eq and Hash for it.
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct Lod(i16);
+pub struct Lod(pub f32);
 
 impl Lod {
-    /// Zero LOD.
-    pub const ZERO: Self = Lod(0);
-    /// Maximum LOD.
-    pub const MAX: Self = Lod(i16::MAX);
+    /// Possible LOD range.
+    pub const RANGE: Range<Self> = Lod(f32::MIN) .. Lod(f32::MAX);
 }
 
-impl From<f32> for Lod {
-    fn from(v: f32) -> Lod {
-        Lod((v * 16.0).max(0.0).min(i16::MAX as f32) as i16)
-    }
-}
-
-impl Into<f32> for Lod {
-    fn into(self) -> f32 {
-        self.0 as f32 / 16.0
+impl Eq for Lod {}
+impl hash::Hash for Lod {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        self.0.to_bits().hash(state)
     }
 }
 
@@ -498,7 +505,7 @@ impl Into<[f32; 4]> for PackedColor {
 // TODO: document the details of sampling.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct SamplerInfo {
+pub struct SamplerDesc {
     /// Minification filter method to use.
     pub min_filter: Filter,
     /// Magnification filter method to use.
@@ -524,17 +531,17 @@ pub struct SamplerInfo {
     pub anisotropic: Anisotropic,
 }
 
-impl SamplerInfo {
+impl SamplerDesc {
     /// Create a new sampler description with a given filter method for all filtering operations
     /// and a wrapping mode, using no LOD modifications.
     pub fn new(filter: Filter, wrap: WrapMode) -> Self {
-        SamplerInfo {
+        SamplerDesc {
             min_filter: filter,
             mag_filter: filter,
             mip_filter: filter,
             wrap_mode: (wrap, wrap, wrap),
-            lod_bias: Lod::ZERO,
-            lod_range: Lod::ZERO .. Lod::MAX,
+            lod_bias: Lod(0.0),
+            lod_range: Lod::RANGE.clone(),
             comparison: None,
             border: PackedColor(0),
             normalized: true,

@@ -25,12 +25,11 @@
 //! # extern crate gfx_backend_empty as empty;
 //! # extern crate gfx_hal;
 //! # fn main() {
-//! use gfx_hal::Device;
-//! # use gfx_hal::{CommandQueue, Graphics, Swapchain};
+//! # use gfx_hal::prelude::*;
 //!
 //! # let mut swapchain: empty::Swapchain = return;
 //! # let device: empty::Device = return;
-//! # let mut present_queue: CommandQueue<empty::Backend, Graphics> = return;
+//! # let mut present_queue: empty::CommandQueue = return;
 //! # unsafe {
 //! let acquisition_semaphore = device.create_semaphore().unwrap();
 //! let render_semaphore = device.create_semaphore().unwrap();
@@ -53,7 +52,7 @@
 use crate::device;
 use crate::format::Format;
 use crate::image;
-use crate::queue::{Capability, CommandQueue};
+use crate::queue::CommandQueue;
 use crate::Backend;
 
 use std::any::Any;
@@ -64,19 +63,15 @@ use std::iter;
 use std::ops::RangeInclusive;
 
 /// Error occurred during swapchain creation.
-#[derive(Clone, Copy, Debug, Fail, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum CreationError {
     /// Out of either host or device memory.
-    #[fail(display = "{}", _0)]
     OutOfMemory(device::OutOfMemory),
     /// Device is lost
-    #[fail(display = "{}", _0)]
     DeviceLost(device::DeviceLost),
     /// Surface is lost
-    #[fail(display = "{}", _0)]
     SurfaceLost(device::SurfaceLost),
     /// Window in use
-    #[fail(display = "{}", _0)]
     WindowInUse(device::WindowInUse),
 }
 
@@ -101,6 +96,28 @@ impl From<device::SurfaceLost> for CreationError {
 impl From<device::WindowInUse> for CreationError {
     fn from(error: device::WindowInUse) -> Self {
         CreationError::WindowInUse(error)
+    }
+}
+
+impl std::fmt::Display for CreationError {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CreationError::OutOfMemory(err) => write!(fmt, "Failed to create or configure swapchain: {}", err),
+            CreationError::DeviceLost(err) => write!(fmt, "Failed to create or configure swapchain: {}", err),
+            CreationError::SurfaceLost(err) => write!(fmt, "Failed to create or configure swapchain: {}", err),
+            CreationError::WindowInUse(err) => write!(fmt, "Failed to create or configure swapchain: {}", err),
+        }
+    }
+}
+
+impl std::error::Error for CreationError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            CreationError::OutOfMemory(err) => Some(err),
+            CreationError::DeviceLost(err) => Some(err),
+            CreationError::SurfaceLost(err) => Some(err),
+            CreationError::WindowInUse(err) => Some(err),
+        }
     }
 }
 
@@ -166,12 +183,33 @@ pub struct SurfaceCapabilities {
     /// Supported image usage flags.
     pub usage: image::Usage,
 
+    /// A bitmask of supported presentation modes.
+    pub present_modes: PresentMode,
+
     /// A bitmask of supported alpha composition modes.
-    pub composite_alpha: CompositeAlpha,
+    pub composite_alpha_modes: CompositeAlphaMode,
 }
 
-/// A `Surface` abstracts the surface of a native window, which will be presented
-/// on the display.
+impl SurfaceCapabilities {
+    fn clamped_extent(&self, default_extent: Extent2D) -> Extent2D {
+        match self.current_extent {
+            Some(current) => current,
+            None => {
+                let (min_width, max_width) = (self.extents.start().width, self.extents.end().width);
+                let (min_height, max_height) =
+                    (self.extents.start().height, self.extents.end().height);
+
+                // clamp the default_extent to within the allowed surface sizes
+                let width = min(max_width, max(default_extent.width, min_width));
+                let height = min(max_height, max(default_extent.height, min_height));
+
+                Extent2D { width, height }
+            }
+        }
+    }
+}
+
+/// A `Surface` abstracts the surface of a native window.
 pub trait Surface<B: Backend>: fmt::Debug + Any + Send + Sync {
     /// Check if the queue family supports presentation to this surface.
     ///
@@ -182,17 +220,59 @@ pub trait Surface<B: Backend>: fmt::Debug + Any + Send + Sync {
     /// ```
     fn supports_queue_family(&self, family: &B::QueueFamily) -> bool;
 
-    /// Query surface capabilities, formats, and present modes for this physical device.
+    /// Query surface capabilities for this physical device.
     ///
     /// Use this function for configuring swapchain creation.
+    fn capabilities(&self, physical_device: &B::PhysicalDevice) -> SurfaceCapabilities;
+
+    /// Query surface formats for this physical device.
     ///
-    /// Returns a tuple of surface capabilities and formats.
-    /// If formats are `None` then the surface has no preferred format and the
+    /// This function may be slow. It's typically used during the initialization only.
+    ///
+    /// Note: technically the surface support formats may change at the point
+    /// where an application needs to recreate the swapchain, e.g. when the window
+    /// is moved to a different monitor.
+    ///
+    /// If `None` is returned then the surface has no preferred format and the
     /// application may use any desired format.
-    fn compatibility(
-        &self,
-        physical_device: &B::PhysicalDevice,
-    ) -> (SurfaceCapabilities, Option<Vec<Format>>, Vec<PresentMode>);
+    fn supported_formats(&self, physical_device: &B::PhysicalDevice) -> Option<Vec<Format>>;
+}
+
+/// A surface trait that exposes the ability to present images on the
+/// associtated swap chain.
+pub trait PresentationSurface<B: Backend>: Surface<B> {
+    /// An opaque type wrapping the swapchain image.
+    type SwapchainImage: Borrow<B::ImageView> + fmt::Debug + Send + Sync;
+
+    /// Set up the swapchain associated with the surface to have the given format.
+    unsafe fn configure_swapchain(
+        &mut self,
+        device: &B::Device,
+        config: SwapchainConfig,
+    ) -> Result<(), CreationError>;
+
+    /// Remove the associated swapchain from this surface.
+    ///
+    /// This has to be done before the surface is dropped.
+    unsafe fn unconfigure_swapchain(&mut self, device: &B::Device);
+
+    /// Acquire a new swapchain image for rendering.
+    ///
+    /// May fail according to one of the reasons indicated in `AcquireError` enum.
+    ///
+    /// # Synchronization
+    ///
+    /// The acquired image is available to render. No synchronization is required.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    ///
+    /// ```
+    unsafe fn acquire_image(
+        &mut self,
+        timeout_ns: u64,
+    ) -> Result<(Self::SwapchainImage, Option<Suboptimal>), AcquireError>;
 }
 
 /// Index of an image in the swapchain.
@@ -203,25 +283,27 @@ pub trait Surface<B: Backend>: fmt::Debug + Any + Send + Sync {
 /// to a particular image in the swapchain.
 pub type SwapImageIndex = u32;
 
-/// Specifies the mode regulating how a swapchain presents frames.
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
-pub enum PresentMode {
-    /// Don't ever wait for v-sync.
-    Immediate = 0,
-    /// Wait for v-sync, overwrite the last rendered frame.
-    Mailbox = 1,
-    /// Present frames in the same order they are rendered.
-    Fifo = 2,
-    /// Don't wait for the next v-sync if we just missed it.
-    Relaxed = 3,
-}
+
+bitflags!(
+    /// Specifies the mode regulating how a swapchain presents frames.
+    #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+    pub struct PresentMode: u32 {
+        /// Don't ever wait for v-sync.
+        const IMMEDIATE = 0x1;
+        /// Wait for v-sync, overwrite the last rendered frame.
+        const MAILBOX = 0x2;
+        /// Present frames in the same order they are rendered.
+        const FIFO = 0x4;
+        /// Don't wait for the next v-sync if we just missed it.
+        const RELAXED = 0x8;
+    }
+);
 
 bitflags!(
     /// Specifies how the alpha channel of the images should be handled during
     /// compositing.
     #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-    pub struct CompositeAlpha: u32 {
+    pub struct CompositeAlphaMode: u32 {
         /// The alpha channel, if it exists, of the images is ignored in the
         /// compositing process. Instead, the image is treated as if it has a
         /// constant alpha of 1.0.
@@ -258,7 +340,7 @@ bitflags!(
 /// ```no_run
 /// # extern crate gfx_hal;
 /// # fn main() {
-/// # use gfx_hal::{SwapchainConfig};
+/// # use gfx_hal::window::SwapchainConfig;
 /// # use gfx_hal::format::Format;
 /// let config = SwapchainConfig::new(100, 100, Format::Bgra8Unorm, 2);
 /// # }
@@ -268,7 +350,7 @@ pub struct SwapchainConfig {
     /// Presentation mode.
     pub present_mode: PresentMode,
     /// Alpha composition mode.
-    pub composite_alpha: CompositeAlpha,
+    pub composite_alpha_mode: CompositeAlphaMode,
     /// Format of the backbuffer images.
     pub format: Format,
     /// Requested image extent. Must be in
@@ -294,8 +376,8 @@ impl SwapchainConfig {
     /// ```
     pub fn new(width: u32, height: u32, format: Format, image_count: SwapImageIndex) -> Self {
         SwapchainConfig {
-            present_mode: PresentMode::Fifo,
-            composite_alpha: CompositeAlpha::OPAQUE,
+            present_mode: PresentMode::FIFO,
+            composite_alpha_mode: CompositeAlphaMode::OPAQUE,
             format,
             extent: Extent2D { width, height },
             image_count,
@@ -308,33 +390,24 @@ impl SwapchainConfig {
     /// returned from a physical device query. If the surface does not
     /// specify a current size, default_extent is clamped and used instead.
     pub fn from_caps(caps: &SurfaceCapabilities, format: Format, default_extent: Extent2D) -> Self {
-        let clamped_extent = match caps.current_extent {
-            Some(current) => current,
-            None => {
-                let (min_width, max_width) = (caps.extents.start().width, caps.extents.end().width);
-                let (min_height, max_height) = (caps.extents.start().height, caps.extents.end().height);
-
-                // clamp the default_extent to within the allowed surface sizes
-                let width = min(max_width, max(default_extent.width, min_width));
-                let height = min(max_height, max(default_extent.height, min_height));
-
-                Extent2D { width, height }
-            }
-        };
-
-        let composite_alpha = if caps.composite_alpha.contains(CompositeAlpha::INHERIT) {
-            CompositeAlpha::INHERIT
-        } else if caps.composite_alpha.contains(CompositeAlpha::OPAQUE) {
-            CompositeAlpha::OPAQUE
+        let composite_alpha_mode = if caps.composite_alpha_modes.contains(CompositeAlphaMode::INHERIT) {
+            CompositeAlphaMode::INHERIT
+        } else if caps.composite_alpha_modes.contains(CompositeAlphaMode::OPAQUE) {
+            CompositeAlphaMode::OPAQUE
         } else {
-            unreachable!("neither INHERIT or OPAQUE CompositeAlpha modes are supported")
+            panic!("neither INHERIT or OPAQUE CompositeAlphaMode(s) are supported")
+        };
+        let present_mode = if caps.present_modes.contains(PresentMode::FIFO) {
+            PresentMode::FIFO
+        } else {
+            panic!("FIFO PresentMode is not supported")
         };
 
         SwapchainConfig {
-            present_mode: PresentMode::Fifo,
-            composite_alpha,
+            present_mode,
+            composite_alpha_mode,
             format,
-            extent: clamped_extent,
+            extent: caps.clamped_extent(default_extent),
             image_count: *caps.image_count.start(),
             image_layers: 1,
             image_usage: image::Usage::COLOR_ATTACHMENT,
@@ -348,7 +421,7 @@ impl SwapchainConfig {
     /// ```no_run
     ///
     /// ```
-    pub fn with_mode(mut self, mode: PresentMode) -> Self {
+    pub fn with_present_mode(mut self, mode: PresentMode) -> Self {
         self.present_mode = mode;
         self
     }
@@ -374,43 +447,79 @@ impl SwapchainConfig {
 pub struct Suboptimal;
 
 /// Error on acquiring the next image from a swapchain.
-#[derive(Clone, Copy, Debug, Fail, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum AcquireError {
     /// Out of either host or device memory.
-    #[fail(display = "{}", _0)]
     OutOfMemory(device::OutOfMemory),
     /// No image was ready and no timeout was specified.
-    #[fail(display = "No images ready")]
     NotReady,
     /// No image was ready after the specified timeout expired.
-    #[fail(display = "No images ready after the specified timeout expired")]
     Timeout,
     /// The swapchain is no longer in sync with the surface, needs to be re-created.
-    #[fail(display = "Swapchain is out of date")]
     OutOfDate,
     /// The surface was lost, and the swapchain is no longer usable.
-    #[fail(display = "{}", _0)]
     SurfaceLost(device::SurfaceLost),
     /// Device is lost
-    #[fail(display = "{}", _0)]
     DeviceLost(device::DeviceLost),
 }
 
+impl std::fmt::Display for AcquireError {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AcquireError::OutOfMemory(err) => write!(fmt, "Failed to acqure image: {}", err),
+            AcquireError::NotReady => write!(fmt, "Failed to acqure image: No image ready (timeout wasn't specified)"),
+            AcquireError::Timeout => write!(fmt, "Failed to acqure image: No image ready (timeout)"),
+            AcquireError::OutOfDate => write!(fmt, "Failed to acqure image: Swapchain is out of date and needs to be re-created"),
+            AcquireError::SurfaceLost(err) => write!(fmt, "Failed to acqure image: {}", err),
+            AcquireError::DeviceLost(err) => write!(fmt, "Failed to acqure image: {}", err),
+        }
+    }
+}
+
+impl std::error::Error for AcquireError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            AcquireError::OutOfMemory(err) => Some(err),
+            AcquireError::SurfaceLost(err) => Some(err),
+            AcquireError::DeviceLost(err) => Some(err),
+            _ => None,
+        }
+    }
+}
+
 /// Error on acquiring the next image from a swapchain.
-#[derive(Clone, Copy, Debug, Fail, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum PresentError {
     /// Out of either host or device memory.
-    #[fail(display = "{}", _0)]
     OutOfMemory(device::OutOfMemory),
     /// The swapchain is no longer in sync with the surface, needs to be re-created.
-    #[fail(display = "Swapchain is out of date")]
     OutOfDate,
     /// The surface was lost, and the swapchain is no longer usable.
-    #[fail(display = "{}", _0)]
     SurfaceLost(device::SurfaceLost),
     /// Device is lost
-    #[fail(display = "{}", _0)]
     DeviceLost(device::DeviceLost),
+}
+
+impl std::fmt::Display for PresentError {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PresentError::OutOfMemory(err) => write!(fmt, "Failed to present image: {}", err),
+            PresentError::OutOfDate => write!(fmt, "Failed to present image: Swapchain is out of date and needs to be re-created"),
+            PresentError::SurfaceLost(err) => write!(fmt, "Failed to present image: {}", err),
+            PresentError::DeviceLost(err) => write!(fmt, "Failed to present image: {}", err),
+        }
+    }
+}
+
+impl std::error::Error for PresentError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            PresentError::OutOfMemory(err) => Some(err),
+            PresentError::SurfaceLost(err) => Some(err),
+            PresentError::DeviceLost(err) => Some(err),
+            _ => None,
+        }
+    }
 }
 
 /// The `Swapchain` is the backend representation of the surface.
@@ -450,15 +559,14 @@ pub trait Swapchain<B: Backend>: fmt::Debug + Any + Send + Sync {
     /// ```no_run
     ///
     /// ```
-    unsafe fn present<'a, C, S, Iw>(
+    unsafe fn present<'a, S, Iw>(
         &'a self,
-        present_queue: &mut CommandQueue<B, C>,
+        present_queue: &mut B::CommandQueue,
         image_index: SwapImageIndex,
         wait_semaphores: Iw,
     ) -> Result<Option<Suboptimal>, PresentError>
     where
         Self: 'a + Sized + Borrow<B::Swapchain>,
-        C: Capability,
         S: 'a + Borrow<B::Semaphore>,
         Iw: IntoIterator<Item = &'a S>,
     {
@@ -466,23 +574,32 @@ pub trait Swapchain<B: Backend>: fmt::Debug + Any + Send + Sync {
     }
 
     /// Present one acquired image without any semaphore synchronization.
-    unsafe fn present_without_semaphores<'a, C>(
+    unsafe fn present_without_semaphores<'a>(
         &'a self,
-        present_queue: &mut CommandQueue<B, C>,
+        present_queue: &mut B::CommandQueue,
         image_index: SwapImageIndex,
     ) -> Result<Option<Suboptimal>, PresentError>
     where
         Self: 'a + Sized + Borrow<B::Swapchain>,
-        C: Capability,
     {
-        self.present::<_, B::Semaphore, _>(present_queue, image_index, iter::empty())
+        self.present::<B::Semaphore, _>(present_queue, image_index, iter::empty())
     }
 }
 
 /// Error occurred during surface creation.
-#[derive(Clone, Copy, Debug, Fail, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InitError {
     /// Window handle is not supported by the backend.
-    #[fail(display = "Backend does not support creating surfaces for this type of window handle")]
     UnsupportedWindowHandle,
 }
+
+
+impl std::fmt::Display for InitError {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InitError::UnsupportedWindowHandle => write!(fmt, "Failed to create surface: Specified window handle is unsupported"),
+        }
+    }
+}
+
+impl std::error::Error for InitError {}

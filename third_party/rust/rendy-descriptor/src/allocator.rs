@@ -1,9 +1,9 @@
 use {
     crate::ranges::*,
     gfx_hal::{
-        device::OutOfMemory,
+        device::{Device, OutOfMemory},
         pso::{AllocationError, DescriptorPool as _, DescriptorPoolCreateFlags},
-        Backend, Device,
+        Backend,
     },
     smallvec::{smallvec, SmallVec},
     std::{
@@ -52,14 +52,12 @@ where
 
 #[derive(Debug)]
 struct Allocation<B: Backend> {
-    sets: Vec<B::DescriptorSet>,
+    sets: SmallVec<[B::DescriptorSet; 1]>,
     pools: Vec<u64>,
 }
 
-#[derive(derivative::Derivative)]
-#[derivative(Debug)]
+#[derive(Debug)]
 struct DescriptorPool<B: Backend> {
-    #[derivative(Debug = "ignore")]
     raw: B::DescriptorPool,
     size: u32,
 
@@ -74,13 +72,13 @@ unsafe fn allocate_from_pool<B: Backend>(
     raw: &mut B::DescriptorPool,
     layout: &B::DescriptorSetLayout,
     count: u32,
-    allocation: &mut Vec<B::DescriptorSet>,
+    allocation: &mut SmallVec<[B::DescriptorSet; 1]>,
 ) -> Result<(), OutOfMemory> {
     let sets_were = allocation.len();
     raw.allocate_sets(std::iter::repeat(layout).take(count as usize), allocation)
         .map_err(|err| match err {
-            AllocationError::OutOfHostMemory => OutOfMemory::OutOfHostMemory,
-            AllocationError::OutOfDeviceMemory => OutOfMemory::OutOfDeviceMemory,
+            AllocationError::Host => OutOfMemory::Host,
+            AllocationError::Device => OutOfMemory::Device,
             err => {
                 // We check pool for free descriptors and sets before calling this function,
                 // so it can't be exhausted.
@@ -259,7 +257,7 @@ where
         DescriptorAllocator {
             buckets: HashMap::new(),
             allocation: Allocation {
-                sets: Vec::new(),
+                sets: SmallVec::new(),
                 pools: Vec::new(),
             },
             relevant: relevant::Relevant,
@@ -310,7 +308,7 @@ where
                 extend.extend(
                     Iterator::zip(
                         self.allocation.pools.drain(..),
-                        self.allocation.sets.drain(..),
+                        self.allocation.sets.drain(),
                     )
                     .map(|(pool, set)| DescriptorSet {
                         raw: set,
@@ -329,15 +327,16 @@ where
                             // same pool, continue
                         }
                         Some(last) => {
+                            let sets = &mut self.allocation.sets;
                             // Free contiguous range of sets from one pool in one go.
-                            bucket.free(self.allocation.sets.drain(index + 1..), last);
+                            bucket.free((index + 1..sets.len()).map(|_| sets.pop().unwrap()), last);
                         }
                         None => last = Some(pool),
                     }
                 }
 
                 if let Some(last) = last {
-                    bucket.free(self.allocation.sets.drain(0..), last);
+                    bucket.free(self.allocation.sets.drain(), last);
                 }
 
                 Err(err)

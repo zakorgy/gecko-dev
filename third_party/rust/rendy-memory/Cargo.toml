@@ -13,7 +13,7 @@
 [package]
 edition = "2018"
 name = "rendy-memory"
-version = "0.4.0"
+version = "0.5.1"
 authors = ["omni-viral <scareaangel@gmail.com>"]
 description = "Rendy's memory manager"
 documentation = "https://docs.rs/rendy-memory"
@@ -24,14 +24,8 @@ repository = "https://github.com/amethyst/rendy"
 [dependencies.colorful]
 version = "0.2"
 
-[dependencies.derivative]
-version = "1.0"
-
-[dependencies.failure]
-version = "0.1"
-
 [dependencies.gfx-hal]
-version = "0.3"
+version = "0.4"
 
 [dependencies.hibitset]
 version = "0.6"
@@ -42,7 +36,7 @@ version = "0.4"
 
 [dependencies.relevant]
 version = "0.4"
-features = ["log", "backtrace"]
+features = ["log"]
 
 [dependencies.serde]
 version = "1.0"
@@ -58,4 +52,4 @@ version = "0.6"
 version = "0.7"
 
 [features]
-serde-1 = ["serde"]
+serde-1 = ["serde", "gfx-hal/serde"]
