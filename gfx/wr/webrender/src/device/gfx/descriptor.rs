@@ -12,6 +12,7 @@ use smallvec::SmallVec;
 use std::clone::Clone;
 use std::cmp::Eq;
 use std::collections::hash_map::Entry;
+use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::marker::Copy;
 use super::buffer::UniformBufferHandler;
@@ -117,7 +118,7 @@ impl From<ShaderKind> for DescriptorGroup {
         match kind {
             ShaderKind::Cache(VertexArrayKind::Border) | ShaderKind::Cache(VertexArrayKind::LineDecoration)
                 | ShaderKind::Composite | ShaderKind::Cache(VertexArrayKind::Gradient)
-                | ShaderKind::DebugColor | ShaderKind::DebugFont
+                | ShaderKind::DebugColor | ShaderKind::DebugFont | ShaderKind::Service
                 | ShaderKind::VectorStencil | ShaderKind::VectorCover => DescriptorGroup::Default,
             ShaderKind::ClipCache => DescriptorGroup::Clip,
             ShaderKind::Brush | ShaderKind::Cache(VertexArrayKind::Blur)
@@ -273,7 +274,7 @@ pub(super) struct DescriptorSetHandler<K, B: hal::Backend, F> {
 
 impl<K, B, F> DescriptorSetHandler<K, B, F>
     where
-        K: Copy + Clone + Eq + Hash + DescGroupKey,
+        K: Copy + Clone + Debug + Eq + Hash + DescGroupKey,
         B: hal::Backend,
         F: FreeSets<B> + Extend<DescriptorSet<B>> {
     pub(super) fn new(
@@ -300,7 +301,7 @@ impl<K, B, F> DescriptorSetHandler<K, B, F>
 
 impl<K, B, F> DescriptorSetHandler<K, B, F>
     where
-        K: Copy + Clone + Eq + Hash + DescGroupKey,
+        K: Copy + Clone + Debug + Eq + Hash + DescGroupKey,
         B: hal::Backend,
         F: FreeSets<B> {
     pub(super) fn from_existing(free_sets: F) -> Self {
@@ -317,7 +318,7 @@ impl<K, B, F> DescriptorSetHandler<K, B, F>
     }
 
     pub(super) fn descriptor_set(&self, key: &K) -> &B::DescriptorSet {
-        self.descriptor_bindings[key].raw()
+        self.descriptor_bindings.get(&key).expect(&format!("Descriptor set not found for key {:?}", key)).raw()
     }
 
     pub(super) fn retain(&mut self, id: &TextureId) {

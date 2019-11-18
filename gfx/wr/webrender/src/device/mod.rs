@@ -612,10 +612,12 @@ pub enum ShaderKind {
     VectorCover,
     Resolve,
     Composite,
-    #[cfg(all(not(feature = "gl")))]
+    #[cfg(not(feature = "gl"))]
     DebugColor,
-    #[cfg(all(not(feature = "gl")))]
+    #[cfg(not(feature = "gl"))]
     DebugFont,
+    #[cfg(not(feature = "gleam"))]
+    Service,
 }
 
 #[derive(Eq, PartialEq, Hash, Debug, Copy, Clone)]
@@ -683,6 +685,14 @@ pub enum DrawTarget {
     External {
         fbo: FBOId,
         size: FramebufferIntSize,
+    },
+    /// Used for reading back for gfx-backends
+    #[cfg(not(feature = "gl"))]
+    ReadBack {
+        /// Target rectangle to draw.
+        rect: FramebufferIntRect,
+        /// Total size of the target.
+        total_size: FramebufferIntSize,
     },
 }
 
@@ -757,6 +767,8 @@ impl DrawTarget {
             DrawTarget::Default { total_size, .. } => DeviceIntSize::from_untyped(total_size.to_untyped()),
             DrawTarget::Texture { dimensions, .. } => dimensions,
             DrawTarget::External { size, .. } => DeviceIntSize::from_untyped(size.to_untyped()),
+            #[cfg(not(feature = "gl"))]
+            DrawTarget::ReadBack { total_size, .. } => DeviceIntSize::from_untyped(total_size.to_untyped()),
         }
     }
 
@@ -771,6 +783,10 @@ impl DrawTarget {
                 fb_rect.origin.x += rect.origin.x;
             }
             DrawTarget::Texture { .. } | DrawTarget::External { .. } => (),
+            #[cfg(not(feature = "gl"))]
+            DrawTarget::ReadBack { ref rect, .. } => {
+                fb_rect.origin.x += rect.origin.x;
+            }
         }
         fb_rect
     }
@@ -794,6 +810,12 @@ impl DrawTarget {
                 }
                 DrawTarget::Texture { .. } | DrawTarget::External { .. } => {
                     FramebufferIntRect::from_untyped(&scissor_rect.to_untyped())
+                }
+                #[cfg(not(feature = "gl"))]
+                DrawTarget::ReadBack { ref rect, .. } => {
+                    self.to_framebuffer_rect(scissor_rect.translate(-content_origin.to_vector()))
+                        .intersection(rect)
+                        .unwrap_or_else(FramebufferIntRect::zero)
                 }
             }
             None => {
@@ -841,6 +863,7 @@ impl From<DrawTarget> for ReadTarget {
                 ReadTarget::Texture { fbo_id },
             DrawTarget::External { fbo, .. } =>
                 ReadTarget::External { fbo },
+            _ => unimplemented!(),
         }
     }
 }

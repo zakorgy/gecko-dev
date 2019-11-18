@@ -25,8 +25,8 @@ cargo check --features dx12
 if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
 :: cargo test --features gl
 :: if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
-cargo run --release --features gl -- --angle reftest
-if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
+:: cargo run --release --features gl -- --angle reftest
+:: if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
 popd
 
 pushd examples
@@ -38,7 +38,7 @@ if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
 :: if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
 popd
 
-pushd direct-composition
-cargo check
-if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
-popd
+:: pushd direct-composition
+:: cargo check
+:: if %ERRORLEVEL% NEQ 0 EXIT /b %ERRORLEVEL%
+:: popd

@@ -161,6 +161,7 @@ impl<B: hal::Backend> ImageCore<B> {
 pub(super) struct Image<B: hal::Backend> {
     pub(super) core: ImageCore<B>,
     pub(super) kind: hal::image::Kind,
+    pub(super) view_kind: hal::image::ViewKind,
     pub(super) format: ImageFormat,
 }
 
@@ -206,6 +207,7 @@ impl<B: hal::Backend> Image<B> {
         Image {
             core,
             kind,
+            view_kind,
             format: image_format,
         }
     }
@@ -344,13 +346,13 @@ impl<B: hal::Backend> Framebuffer<B> {
         let fbo = unsafe {
             if rbo != RBOId(0) {
                 device.create_framebuffer(
-                    render_passes.get_render_pass(texture.format, true),
+                    render_passes.render_pass(texture.format, true, false),
                     Some(&image_view).into_iter().chain(depth.into_iter()),
                     extent,
                 )
             } else {
                 device.create_framebuffer(
-                    render_passes.get_render_pass(texture.format, false),
+                    render_passes.render_pass(texture.format, false, false),
                     Some(&image_view),
                     extent,
                 )

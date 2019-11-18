@@ -105,6 +105,15 @@ pub struct DebugFontVertex {
 
 #[derive(Debug, Clone, Copy)]
 #[allow(non_snake_case)]
+pub struct BlitInstance {
+    pub  aOffset: [f32; 2],
+    pub  aExtent: [f32; 2],
+    pub  aZ: f32,
+    pub  aLevel: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+#[allow(non_snake_case)]
 pub struct LineDecorationInstance {
     pub aTaskRect: [f32; 4],
     pub aLocalSize: [f32; 2],

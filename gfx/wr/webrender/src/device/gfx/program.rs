@@ -236,6 +236,10 @@ impl<B: hal::Backend> Program<B> {
                 ShaderKind::DebugColor | ShaderKind::DebugFont => vec![
                     (surface_format, Some(BlendState::PREMULTIPLIED_ALPHA), RPDS::Enabled, None),
                 ],
+                ShaderKind::Service => vec![
+                    (surface_format, None, RPDS::Enabled, None),
+                    (surface_format, None, RPDS::Disabled, None),
+                ],
                 _ => vec![
                     (surface_format, None, RPDS::Enabled, Some(LESS_EQUAL_WRITE)),
                     (surface_format, Some(ALPHA), RPDS::Enabled, None),
@@ -261,7 +265,7 @@ impl<B: hal::Backend> Program<B> {
                 let subpass = hal::pass::Subpass {
                     index: 0,
                     main_pass: render_passes
-                        .get_render_pass(format, depth_enabled),
+                        .render_pass(format, depth_enabled, false),
                 };
                 let mut pipeline_descriptor = hal::pso::GraphicsPipelineDesc::new(
                     shader_entries.clone(),
@@ -374,7 +378,7 @@ impl<B: hal::Backend> Program<B> {
         use_push_consts: bool,
         vertex_buffer: &VertexBufferHandler<B>,
         instance_buffer: &InstanceBufferHandler<B>,
-        instance_range: std::ops::Range<usize>,
+        instance_buffer_range: std::ops::Range<usize>,
         format: ImageFormat,
     ) {
         let vertex_buffer = match &self.vertex_buffer {
@@ -431,37 +435,46 @@ impl<B: hal::Backend> Program<B> {
                 cmd_buffer.set_blend_constants(blend_color.to_array());
             }
 
-            if let Some(ref index_buffer) = self.index_buffer {
-                cmd_buffer.bind_vertex_buffers(0, Some((&vertex_buffer.buffer().buffer, 0)));
-                cmd_buffer.bind_index_buffer(hal::buffer::IndexBufferView {
-                    buffer: &index_buffer[next_id].buffer().buffer,
-                    offset: 0,
-                    index_type: hal::IndexType::U32,
-                });
+            match &self.index_buffer {
+                // Debug shaders
+                Some(ref index_buffer) => {
+                    cmd_buffer.bind_vertex_buffers(0, Some((&vertex_buffer.buffer().buffer, 0)));
+                    cmd_buffer.bind_index_buffer(hal::buffer::IndexBufferView {
+                        buffer: &index_buffer[next_id].buffer().buffer,
+                        offset: 0,
+                        index_type: hal::IndexType::U32,
+                    });
 
 
-                cmd_buffer.draw_indexed(
-                    0 .. index_buffer[next_id].buffer().buffer_len as u32,
-                    0,
-                    0 .. 1,
-                );
-            } else {
-                for i in instance_range.into_iter() {
-                    cmd_buffer.bind_vertex_buffers(
+                    cmd_buffer.draw_indexed(
+                        0 .. index_buffer[next_id].buffer().buffer_len as u32,
                         0,
-                        Some((&vertex_buffer.buffer().buffer, 0))
-                            .into_iter()
-                            .chain(Some((&instance_buffer.buffers[i].buffer.buffer, 0))),
+                        0 .. 1,
                     );
+                },
+                // Default WR shaders
+                None => {
+                    let number_of_vertices = match self.shader_kind {
+                        ShaderKind::Service => 3,
+                        _ => vertex_buffer.buffer_len,
+                    };
+                    for i in instance_buffer_range.into_iter() {
+                        cmd_buffer.bind_vertex_buffers(
+                            0,
+                            Some((&vertex_buffer.buffer().buffer, 0))
+                                .into_iter()
+                                .chain(Some((&instance_buffer.buffers[i].buffer.buffer, 0))),
+                        );
 
-                    let data_stride = instance_buffer.buffers[i].last_data_stride;
-                    let end = instance_buffer.buffers[i].offset / data_stride;
-                    let start = end - instance_buffer.buffers[i].last_update_size / data_stride;
-                    cmd_buffer.draw(
-                        0 .. vertex_buffer.buffer_len as _,
-                        start as u32 .. end as u32,
-                    );
-                }
+                        let data_stride = instance_buffer.buffers[i].last_data_stride;
+                        let end = instance_buffer.buffers[i].offset / data_stride;
+                        let start = end - instance_buffer.buffers[i].last_update_size / data_stride;
+                        cmd_buffer.draw(
+                            0 .. number_of_vertices as u32,
+                            start as u32 .. end as u32,
+                        );
+                    }
+                },
             }
         }
     }

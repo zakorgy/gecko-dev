@@ -213,7 +213,7 @@ pub fn main_wrapper<E: Example>(
                 instance,
                 adapter,
                 surface,
-                window_size: (width as i32, height as i32),
+                dimensions: (width as i32, height as i32),
                 descriptor_count: None,
                 cache_path,
                 save_cache: true,

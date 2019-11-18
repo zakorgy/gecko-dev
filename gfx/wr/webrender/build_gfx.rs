@@ -601,6 +601,14 @@ fn create_vertex_buffer_descriptors(file_name: &str) -> Vec<VertexBufferDesc> {
                 rate: VertexInputRate::Vertex,
             },
         ];
+    } else if file_name.starts_with("blit") {
+        descriptors.push(
+            VertexBufferDesc {
+                binding: 1,
+                stride: mem::size_of::<BlitInstance>() as _,
+                rate: VertexInputRate::Instance(1),
+            },
+        );
         // Primitive and brush shaders
     } else {
         descriptors.push(

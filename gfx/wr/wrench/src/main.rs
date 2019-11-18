@@ -688,7 +688,7 @@ fn main() {
             instance,
             adapter,
             surface,
-            window_size: (dim.width, dim.height),
+            dimensions: (dim.width, dim.height),
             descriptor_count: args.value_of("descriptor_count").map(|d| d.parse::<u32>().unwrap()),
             cache_path,
             save_cache: true,
