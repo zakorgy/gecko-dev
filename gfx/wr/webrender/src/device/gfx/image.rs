@@ -17,8 +17,8 @@ use super::super::{RBOId, Texture};
 
 const DEPTH_RANGE: hal::image::SubresourceRange = hal::image::SubresourceRange {
     aspects: hal::format::Aspects::DEPTH,
-    levels: 0 .. 1,
-    layers: 0 .. 1,
+    levels: 0..1,
+    layers: 0..1,
 };
 
 /// The Vulkan spec states: bufferOffset must be a multiple of 4 for VkBufferImageCopy
@@ -111,8 +111,7 @@ impl<B: hal::Backend> ImageCore<B> {
     }
 
     fn _reset(&self) {
-        self.state
-            .set((Access::empty(), Layout::Undefined));
+        self.state.set((Access::empty(), Layout::Undefined));
     }
 
     pub(super) fn deinit(self, device: &B::Device, heaps: &mut Heaps<B>) {
@@ -130,9 +129,13 @@ impl<B: hal::Backend> ImageCore<B> {
             Layout::Undefined => PipelineStage::TOP_OF_PIPE,
             Layout::Present => PipelineStage::TRANSFER,
             Layout::ColorAttachmentOptimal => PipelineStage::COLOR_ATTACHMENT_OUTPUT,
-            Layout::ShaderReadOnlyOptimal => PipelineStage::VERTEX_SHADER | PipelineStage::FRAGMENT_SHADER,
+            Layout::ShaderReadOnlyOptimal => {
+                PipelineStage::VERTEX_SHADER | PipelineStage::FRAGMENT_SHADER
+            }
             Layout::TransferSrcOptimal | Layout::TransferDstOptimal => PipelineStage::TRANSFER,
-            Layout::DepthStencilAttachmentOptimal => PipelineStage::EARLY_FRAGMENT_TESTS | PipelineStage::LATE_FRAGMENT_TESTS,
+            Layout::DepthStencilAttachmentOptimal => {
+                PipelineStage::EARLY_FRAGMENT_TESTS | PipelineStage::LATE_FRAGMENT_TESTS
+            }
             state => unimplemented!("State not covered {:?}", state),
         }
     }
@@ -148,12 +151,16 @@ impl<B: hal::Backend> ImageCore<B> {
         } else {
             self.state.set(new_state);
             let barrier = hal::memory::Barrier::Image {
-                states: src_state .. new_state,
+                states: src_state..new_state,
                 target: &self.image,
                 families: None,
                 range,
             };
-            Some((barrier, Self::pick_stage_for_layout(src_state.1) .. Self::pick_stage_for_layout(self.state.get().1)))
+            Some((
+                barrier,
+                Self::pick_stage_for_layout(src_state.1)
+                    ..Self::pick_stage_for_layout(self.state.get().1),
+            ))
         }
     }
 }
@@ -199,8 +206,8 @@ impl<B: hal::Backend> Image<B> {
             usage,
             hal::image::SubresourceRange {
                 aspects: hal::format::Aspects::COLOR,
-                levels: 0 .. mip_levels,
-                layers: 0 .. image_depth as _,
+                levels: 0..mip_levels,
+                layers: 0..image_depth as _,
             },
         );
 
@@ -227,7 +234,11 @@ impl<B: hal::Backend> Image<B> {
         }
         let pos = rect.origin;
         let size = rect.size;
-        staging_buffer_pool.add(device, image_data, self.format.bytes_per_pixel().max(BUFFER_COPY_ALIGNMENT) as usize - 1);
+        staging_buffer_pool.add(
+            device,
+            image_data,
+            self.format.bytes_per_pixel().max(BUFFER_COPY_ALIGNMENT) as usize - 1,
+        );
         let buffer = staging_buffer_pool.buffer();
 
         unsafe {
@@ -246,13 +257,12 @@ impl<B: hal::Backend> Image<B> {
                 }
                 None => {
                     cmd_buffer.pipeline_barrier(
-                        PipelineStage::TRANSFER .. PipelineStage::TRANSFER,
+                        PipelineStage::TRANSFER..PipelineStage::TRANSFER,
                         hal::memory::Dependencies::empty(),
                         buffer_barrier.into_iter(),
                     );
-                },
+                }
             };
-
 
             cmd_buffer.copy_buffer_to_image(
                 &buffer.buffer,
@@ -265,7 +275,7 @@ impl<B: hal::Backend> Image<B> {
                     image_layers: hal::image::SubresourceLayers {
                         aspects: hal::format::Aspects::COLOR,
                         level: 0,
-                        layers: layer_index as _ .. (layer_index + 1) as _,
+                        layers: layer_index as _..(layer_index + 1) as _,
                     },
                     image_offset: hal::image::Offset {
                         x: pos.x as i32,
@@ -280,15 +290,11 @@ impl<B: hal::Backend> Image<B> {
                 }],
             );
 
-            if let Some((barrier, stages)) = self.core.transit(
-                prev_state,
-                self.core.subresource_range.clone(),
-            ) {
-                cmd_buffer.pipeline_barrier(
-                    stages,
-                    hal::memory::Dependencies::empty(),
-                    &[barrier],
-                );
+            if let Some((barrier, stages)) = self
+                .core
+                .transit(prev_state, self.core.subresource_range.clone())
+            {
+                cmd_buffer.pipeline_barrier(stages, hal::memory::Dependencies::empty(), &[barrier]);
             }
         }
     }
@@ -337,8 +343,8 @@ impl<B: hal::Backend> Framebuffer<B> {
                 hal::format::Swizzle::NO,
                 hal::image::SubresourceRange {
                     aspects: hal::format::Aspects::COLOR,
-                    levels: 0 .. 1,
-                    layers: layer_index .. layer_index + 1,
+                    levels: 0..1,
+                    layers: layer_index..layer_index + 1,
                 },
             )
         }

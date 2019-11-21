@@ -1054,7 +1054,11 @@ impl<B: hal::Backend> TextureResolver<B> {
                     return true;
                 }
             }
-            texture.used_recently(frame_id, 30)
+            #[cfg(not(feature = "gl"))]
+            let frame_treshold = 2;
+            #[cfg(feature = "gl")]
+            let frame_treshold = 30;
+            texture.used_recently(frame_id, frame_treshold)
         });
     }
 
@@ -3131,7 +3135,7 @@ impl<B: hal::Backend> Renderer<B> {
                 self.owned_external_images.iter().map(|(key, value)| (*key, value.clone()))
             );
 
-            let last_document_index = active_documents.len() - 1;
+            let last_document_index = active_documents.len().max(1) - 1;
             for (doc_index, (document_id, RenderedDocument { ref mut frame, .. })) in active_documents.iter_mut().enumerate() {
                 if self.shared_texture_cache_cleared {
                     assert!(self.documents_seen.contains(&document_id),
@@ -3176,6 +3180,7 @@ impl<B: hal::Backend> Renderer<B> {
                     cpu_frame_id,
                     &mut results,
                     doc_index == 0,
+                    doc_index == last_document_index,
                 );
 
                 if let Some(_) = device_size {
@@ -3924,7 +3929,7 @@ impl<B: hal::Backend> Renderer<B> {
         projection: &default::Transform3D<f32>,
         render_tasks: &RenderTaskGraph,
         stats: &mut RendererStats,
-        transit_to_present: bool,
+        _transit_to_present: bool,
     ) {
         let uses_scissor = alpha_batch_container.task_scissor_rect.is_some();
 
@@ -3937,6 +3942,7 @@ impl<B: hal::Backend> Renderer<B> {
             self.device.set_scissor_rect(scissor_rect)
         }
 
+        #[cfg(not(feature = "gl"))]
         let mut last_rp;
         if !alpha_batch_container.opaque_batches.is_empty()
             && !self.debug_flags.contains(DebugFlags::DISABLE_OPAQUE_PASS) {
@@ -3949,7 +3955,7 @@ impl<B: hal::Backend> Renderer<B> {
             self.device.enable_depth_write();
             #[cfg(not(feature = "gl"))]
             {
-                last_rp = transit_to_present && alpha_batch_container.alpha_batches.is_empty();
+                last_rp = _transit_to_present && alpha_batch_container.alpha_batches.is_empty();
                 self.device.begin_render_pass(last_rp);
             }
 
@@ -3986,8 +3992,6 @@ impl<B: hal::Backend> Renderer<B> {
                     self.device.end_render_pass();
                 }
             }
-            #[cfg(not(feature = "gl"))]
-            self.device.end_render_pass();
 
             self.device.disable_depth_write();
             self.gpu_profile.finish_sampler(opaque_sampler);
@@ -4018,21 +4022,22 @@ impl<B: hal::Backend> Renderer<B> {
                 );
             }
 
+            #[cfg(not(feature = "gl"))]
             let last_batch_idx = alpha_batch_container.alpha_batches.len().max(1) -1;
-            for (batch_idx, batch) in alpha_batch_container.alpha_batches.iter().enumerate() {
+            for (_batch_idx, batch) in alpha_batch_container.alpha_batches.iter().enumerate() {
                 if should_skip_batch(&batch.key.kind, &self.debug_flags) {
                     continue;
                 }
-                let mut blit_in_batch = false;
-                if let BatchKind::Brush(BrushBatchKind::MixBlend { .. }) = batch.key.kind {
-                    blit_in_batch = true;
-                }
-
                 #[cfg(not(feature = "gl"))]
-                let last_batch = batch_idx == last_batch_idx;
+                let mut blit_in_batch = false;
+                #[cfg(not(feature = "gl"))]
+                let last_batch = _batch_idx == last_batch_idx;
                 #[cfg(not(feature = "gl"))]
                 {
-                    last_rp = last_batch && transit_to_present && !blit_in_batch;
+                    if let BatchKind::Brush(BrushBatchKind::MixBlend { .. }) = batch.key.kind {
+                        blit_in_batch = true;
+                    }
+                    last_rp = last_batch && _transit_to_present && !blit_in_batch;
                     self.device.begin_render_pass(last_rp);
                 }
 
@@ -4103,8 +4108,8 @@ impl<B: hal::Backend> Renderer<B> {
                     );
                     #[cfg(not(feature = "gl"))]
                     {
-                        last_rp = last_batch && transit_to_present;
-                        self.device.begin_render_pass(last_batch && transit_to_present);
+                        last_rp = last_batch && _transit_to_present;
+                        self.device.begin_render_pass(last_batch && _transit_to_present);
                     }
                 }
 
@@ -4252,7 +4257,7 @@ impl<B: hal::Backend> Renderer<B> {
         draw_target: DrawTarget,
         projection: &default::Transform3D<f32>,
         results: &mut RenderResults,
-        transit_to_present: bool,
+        _transit_to_present: bool,
     ) {
         let _gm = self.gpu_profile.start_marker("framebuffer");
         let _timer = self.gpu_profile.start_timer(GPU_TAG_COMPOSITE);
@@ -4355,7 +4360,7 @@ impl<B: hal::Backend> Renderer<B> {
             }
         }
         #[cfg(not(feature = "gl"))]
-        self.device.begin_render_pass(transit_to_present);
+        self.device.begin_render_pass(_transit_to_present);
 
         self.shaders.borrow_mut().composite.bind(
             &mut self.device,
@@ -4405,7 +4410,7 @@ impl<B: hal::Backend> Renderer<B> {
         }
         #[cfg(not(feature = "gl"))]
         {
-            if !transit_to_present {
+            if !_transit_to_present {
                 self.device.end_render_pass();
             }
         }
@@ -4553,8 +4558,7 @@ impl<B: hal::Backend> Renderer<B> {
                 self.device.end_render_pass();
             }
         }
-
-        let last_alpha_batch_index = target.alpha_batch_containers.len() - 1;
+        let last_alpha_batch_index = target.alpha_batch_containers.len().max(1) - 1;
         for (batch_idx, alpha_batch_container) in target.alpha_batch_containers.iter().enumerate() {
             self.draw_alpha_batch_container(
                 alpha_batch_container,
@@ -5217,6 +5221,7 @@ impl<B: hal::Backend> Renderer<B> {
         frame_id: GpuFrameId,
         results: &mut RenderResults,
         clear_framebuffer: bool,
+        last_document: bool,
     ) {
         // These markers seem to crash a lot on Android, see bug 1559834
         #[cfg(not(target_os = "android"))]
@@ -5285,6 +5290,7 @@ impl<B: hal::Backend> Renderer<B> {
                         if self.enable_picture_caching {
                             #[cfg(not(feature = "gl"))] {
                                 if self.device.readback_supported {
+                                    let draw_calls = results.stats.total_draw_calls;
                                     self.composite(
                                         &frame.composite_state,
                                         clear_framebuffer,
@@ -5293,6 +5299,7 @@ impl<B: hal::Backend> Renderer<B> {
                                         results,
                                         false,
                                     );
+                                    results.stats.total_draw_calls = draw_calls;
                                 }
                             }
                             self.composite(
@@ -5301,7 +5308,7 @@ impl<B: hal::Backend> Renderer<B> {
                                 draw_target,
                                 &projection,
                                 results,
-                                true,
+                                last_document,
                             );
                         } else {
                             #[cfg(not(feature = "gl"))] {
@@ -5322,6 +5329,7 @@ impl<B: hal::Backend> Renderer<B> {
                                             true,
                                         );
                                     }
+                                    let draw_calls = results.stats.total_draw_calls;
                                     self.draw_color_target(
                                         draw_target_read_back,
                                         main_target,
@@ -5334,6 +5342,7 @@ impl<B: hal::Backend> Renderer<B> {
                                         &mut results.stats,
                                         false,
                                     );
+                                    results.stats.total_draw_calls = draw_calls;
                                 }
                             }
                             if clear_framebuffer {
@@ -5362,7 +5371,7 @@ impl<B: hal::Backend> Renderer<B> {
                                 &projection,
                                 frame_id,
                                 &mut results.stats,
-                                true,
+                                last_document,
                             );
                         }
                     }
@@ -6410,7 +6419,7 @@ impl Default for RendererOptions {
             #[cfg(not(feature = "gl"))]
             texture_cache_size: 16 << 20,
             #[cfg(not(feature = "gl"))]
-            readback_supported: true,
+            readback_supported: false,
         }
     }
 }

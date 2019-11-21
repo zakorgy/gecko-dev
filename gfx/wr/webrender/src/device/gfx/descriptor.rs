@@ -116,14 +116,22 @@ pub(super) enum DescriptorGroup {
 impl From<ShaderKind> for DescriptorGroup {
     fn from(kind: ShaderKind) -> Self {
         match kind {
-            ShaderKind::Cache(VertexArrayKind::Border) | ShaderKind::Cache(VertexArrayKind::LineDecoration)
-                | ShaderKind::Composite | ShaderKind::Cache(VertexArrayKind::Gradient)
-                | ShaderKind::DebugColor | ShaderKind::DebugFont | ShaderKind::Service
-                | ShaderKind::VectorStencil | ShaderKind::VectorCover => DescriptorGroup::Default,
+            ShaderKind::Cache(VertexArrayKind::Border)
+            | ShaderKind::Cache(VertexArrayKind::LineDecoration)
+            | ShaderKind::Composite
+            | ShaderKind::Cache(VertexArrayKind::Gradient)
+            | ShaderKind::DebugColor
+            | ShaderKind::DebugFont
+            | ShaderKind::Service
+            | ShaderKind::VectorStencil
+            | ShaderKind::VectorCover => DescriptorGroup::Default,
             ShaderKind::ClipCache => DescriptorGroup::Clip,
-            ShaderKind::Brush | ShaderKind::Cache(VertexArrayKind::Blur)
-                | ShaderKind::Cache(VertexArrayKind::Scale) | ShaderKind::Cache(VertexArrayKind::SvgFilter)
-                | ShaderKind::Primitive | ShaderKind::Text => DescriptorGroup::Primitive,
+            ShaderKind::Brush
+            | ShaderKind::Cache(VertexArrayKind::Blur)
+            | ShaderKind::Cache(VertexArrayKind::Scale)
+            | ShaderKind::Cache(VertexArrayKind::SvgFilter)
+            | ShaderKind::Primitive
+            | ShaderKind::Text => DescriptorGroup::Primitive,
             _ => unimplemented!("No descriptor group for kind {:?}", kind),
         }
     }
@@ -136,32 +144,32 @@ pub(super) struct Locals {
     pub(super) uMode: i32,
 }
 
- impl Locals {
+impl Locals {
     fn transform_as_u32_slice(&self) -> &[u32; 16] {
-        unsafe {
-            std::mem::transmute::<&[[f32; 4]; 4], &[u32; 16]>(&self.uTransform)
-        }
+        unsafe { std::mem::transmute::<&[[f32; 4]; 4], &[u32; 16]>(&self.uTransform) }
     }
 }
 
- impl Hash for Locals {
+impl Hash for Locals {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.transform_as_u32_slice().hash(state);
         self.uMode.hash(state);
     }
 }
 
- impl PartialEq for Locals {
+impl PartialEq for Locals {
     fn eq(&self, other: &Locals) -> bool {
-        self.uTransform == other.uTransform &&
-        self.uMode == other.uMode
+        self.uTransform == other.uTransform && self.uMode == other.uMode
     }
 }
 
 impl Eq for Locals {}
 
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Debug, Default)]
-pub(super) struct PerDrawBindings(pub [TextureId; PER_DRAW_TEXTURE_COUNT], pub [TextureFilter; PER_DRAW_TEXTURE_COUNT]);
+pub(super) struct PerDrawBindings(
+    pub [TextureId; PER_DRAW_TEXTURE_COUNT],
+    pub [TextureFilter; PER_DRAW_TEXTURE_COUNT],
+);
 
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Debug, Default)]
 pub(super) struct PerPassBindings(pub [TextureId; PER_PASS_TEXTURE_COUNT]);
@@ -175,10 +183,16 @@ pub(super) struct DescriptorGroupData<B: hal::Backend> {
     pub(super) pipeline_layout: B::PipelineLayout,
 }
 
-pub(super) struct DescriptorData<B: hal::Backend>(pub(super) FastHashMap<DescriptorGroup, DescriptorGroupData<B>>);
+pub(super) struct DescriptorData<B: hal::Backend>(
+    pub(super) FastHashMap<DescriptorGroup, DescriptorGroupData<B>>,
+);
 
 impl<B: hal::Backend> DescriptorData<B> {
-    fn descriptor_layout(&self, group: &DescriptorGroup, group_idx: usize) -> &B::DescriptorSetLayout {
+    fn descriptor_layout(
+        &self,
+        group: &DescriptorGroup,
+        group_idx: usize,
+    ) -> &B::DescriptorSetLayout {
         &self.0[group].set_layouts[group_idx]
     }
 
@@ -230,17 +244,20 @@ impl<B: hal::Backend> FreeSets<B> for FastHashMap<DescriptorGroup, Vec<Descripto
     }
 }
 
-
 // Trait for managing the key of the `descriptor_bindings` `FastHashMap` in the `DescriptorSetHandler` struct
 pub(super) trait DescGroupKey {
     // Get the corresponding `DescriptorGroup` of the key structure.
     // There are cases where we don't care the exact group that's the `DescriptorGroup::Default` for.
-    fn desc_group(&self) -> &DescriptorGroup { &DescriptorGroup::Default }
+    fn desc_group(&self) -> &DescriptorGroup {
+        &DescriptorGroup::Default
+    }
 
     // Check if the key contains the requested `TextureId`.
     // This is used to decide if we can recycle a `DescriptorSet` after a texture is freed.
     // There are keys which are not texture related, in this case we return false.
-    fn has_texture_id(&self, _id: &TextureId) -> bool { false }
+    fn has_texture_id(&self, _id: &TextureId) -> bool {
+        false
+    }
 }
 
 impl DescGroupKey for PerDrawBindings {
@@ -273,10 +290,11 @@ pub(super) struct DescriptorSetHandler<K, B: hal::Backend, F> {
 }
 
 impl<K, B, F> DescriptorSetHandler<K, B, F>
-    where
-        K: Copy + Clone + Debug + Eq + Hash + DescGroupKey,
-        B: hal::Backend,
-        F: FreeSets<B> + Extend<DescriptorSet<B>> {
+where
+    K: Copy + Clone + Debug + Eq + Hash + DescGroupKey,
+    B: hal::Backend,
+    F: FreeSets<B> + Extend<DescriptorSet<B>>,
+{
     pub(super) fn new(
         device: &B::Device,
         descriptor_allocator: &mut DescriptorAllocator<B>,
@@ -292,18 +310,20 @@ impl<K, B, F> DescriptorSetHandler<K, B, F>
                 group_data.descriptor_layout(group, set_index),
                 group_data.ranges(group, set_index),
                 descriptor_count,
-                &mut free_sets
+                &mut free_sets,
             )
-        }.expect("Allocate descriptor sets failed");
+        }
+        .expect("Allocate descriptor sets failed");
         Self::from_existing(free_sets)
     }
 }
 
 impl<K, B, F> DescriptorSetHandler<K, B, F>
-    where
-        K: Copy + Clone + Debug + Eq + Hash + DescGroupKey,
-        B: hal::Backend,
-        F: FreeSets<B> {
+where
+    K: Copy + Clone + Debug + Eq + Hash + DescGroupKey,
+    B: hal::Backend,
+    F: FreeSets<B>,
+{
     pub(super) fn from_existing(free_sets: F) -> Self {
         DescriptorSetHandler {
             free_sets,
@@ -318,15 +338,21 @@ impl<K, B, F> DescriptorSetHandler<K, B, F>
     }
 
     pub(super) fn descriptor_set(&self, key: &K) -> &B::DescriptorSet {
-        self.descriptor_bindings.get(&key).expect(&format!("Descriptor set not found for key {:?}", key)).raw()
+        self.descriptor_bindings
+            .get(&key)
+            .expect(&format!("Descriptor set not found for key {:?}", key))
+            .raw()
     }
 
     pub(super) fn retain(&mut self, id: &TextureId) {
-        let keys_to_remove: Vec<_> = self.descriptor_bindings
+        let keys_to_remove: Vec<_> = self
+            .descriptor_bindings
             .keys()
-            .filter(|res| res.has_texture_id(&id)).cloned().collect();
+            .filter(|res| res.has_texture_id(&id))
+            .cloned()
+            .collect();
         for key in keys_to_remove {
-            let desc_set =self.descriptor_bindings.remove(&key).unwrap();
+            let desc_set = self.descriptor_bindings.remove(&key).unwrap();
             self.free_sets.get_mut(key.desc_group()).push(desc_set);
         }
     }
@@ -367,24 +393,24 @@ impl<K, B, F> DescriptorSetHandler<K, B, F>
                                 DESCRIPTOR_COUNT,
                                 free_sets,
                             )
-                        }.expect("Allocate descriptor sets failed");
+                        }
+                        .expect("Allocate descriptor sets failed");
                         free_sets.pop().unwrap()
                     }
                 };
                 v.insert(desc_set)
             }
         };
-        let mut descriptor_writes: SmallVec<[hal::pso::DescriptorSetWrite<_, _>; RENDERER_TEXTURE_COUNT]> = SmallVec::new();
+        let mut descriptor_writes: SmallVec<
+            [hal::pso::DescriptorSetWrite<_, _>; RENDERER_TEXTURE_COUNT],
+        > = SmallVec::new();
         let set = new_set.raw();
         if let Some(buffer) = storage_buffer {
             descriptor_writes.push(hal::pso::DescriptorSetWrite {
                 set,
                 binding: GPU_CACHE_BINDING,
                 array_offset: 0,
-                descriptors: Some(hal::pso::Descriptor::Buffer(
-                    buffer,
-                    None .. None,
-                )),
+                descriptors: Some(hal::pso::Descriptor::Buffer(buffer, None..None)),
             });
         }
         for index in range {
@@ -431,12 +457,16 @@ impl<K, B, F> DescriptorSetHandler<K, B, F>
                     unsafe {
                         desc_allocator.allocate(
                             device,
-                            group_data.descriptor_layout(&DescriptorGroup::Default, DESCRIPTOR_SET_LOCALS),
+                            group_data.descriptor_layout(
+                                &DescriptorGroup::Default,
+                                DESCRIPTOR_SET_LOCALS,
+                            ),
                             group_data.ranges(&DescriptorGroup::Default, DESCRIPTOR_SET_LOCALS),
                             DESCRIPTOR_COUNT,
                             free_sets,
                         )
-                    }.expect("Allocate descriptor sets failed");
+                    }
+                    .expect("Allocate descriptor sets failed");
                     free_sets.pop().unwrap()
                 }
             };
@@ -448,7 +478,7 @@ impl<K, B, F> DescriptorSetHandler<K, B, F>
                     array_offset: 0,
                     descriptors: Some(hal::pso::Descriptor::Buffer(
                         &locals_buffer.buffer().buffer,
-                        Some(0) .. None,
+                        Some(0)..None,
                     )),
                 }));
             }

@@ -100,10 +100,7 @@ impl PrimitiveType for crate::gpu_types::ClipMaskInstance {
                 self.resource_address.u as i32,
                 self.resource_address.v as i32,
             ],
-            aClipLocalPos: [
-                self.local_pos.x,
-                self.local_pos.y,
-            ],
+            aClipLocalPos: [self.local_pos.x, self.local_pos.y],
             aClipTileRect: [
                 self.tile_rect.origin.x,
                 self.tile_rect.origin.y,

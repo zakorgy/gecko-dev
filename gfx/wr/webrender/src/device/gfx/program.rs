@@ -20,7 +20,7 @@ use super::super::super::shader_source;
 const ENTRY_NAME: &str = "main";
 // The size of the push constant block is 68 bytes, and we upload it with u32 data (4 bytes).
 pub(super) const PUSH_CONSTANT_BLOCK_SIZE: usize = 68; // 68 / 4
-// The number of specialization constants in each shader.
+                                                       // The number of specialization constants in each shader.
 const SPECIALIZATION_CONSTANT_COUNT: usize = 8;
 // Size of a specialization constant variable in bytes.
 const SPECIALIZATION_CONSTANT_SIZE: usize = 4;
@@ -31,7 +31,7 @@ const SPECIALIZATION_FEATURES: &'static [&'static str] = &[
     "DITHERING",
     "DEBUG_OVERDRAW",
     "REPETITION",
-    "ANTIALIASING"
+    "ANTIALIASING",
 ];
 
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
@@ -40,7 +40,12 @@ pub(super) enum RenderPassDepthState {
     Disabled,
 }
 
-type PipelineKey = (ImageFormat, Option<hal::pso::BlendState>, RenderPassDepthState, Option<hal::pso::DepthTest>);
+type PipelineKey = (
+    ImageFormat,
+    Option<hal::pso::BlendState>,
+    RenderPassDepthState,
+    Option<hal::pso::DepthTest>,
+);
 
 pub(crate) struct Program<B: hal::Backend> {
     pipelines: FastHashMap<PipelineKey, B::GraphicsPipeline>,
@@ -104,7 +109,7 @@ impl<B: hal::Backend> Program<B> {
                 hal::pso::SpecializationConstant {
                     id: i as _,
                     range: (SPECIALIZATION_CONSTANT_SIZE * i) as _
-                        .. (SPECIALIZATION_CONSTANT_SIZE * (i + 1)) as _,
+                        ..(SPECIALIZATION_CONSTANT_SIZE * (i + 1)) as _,
                 }
             })
             .collect::<Vec<_>>();
@@ -113,7 +118,7 @@ impl<B: hal::Backend> Program<B> {
             range: {
                 let from = (SPECIALIZATION_CONSTANT_COUNT - 1) * SPECIALIZATION_CONSTANT_SIZE;
                 let to = from + SPECIALIZATION_CONSTANT_SIZE;
-                from as _ .. to as _
+                from as _..to as _
             },
         });
         specialization_data.extend_from_slice(&[use_push_consts as u8, 0, 0, 0]);
@@ -152,9 +157,9 @@ impl<B: hal::Backend> Program<B> {
             use self::RenderPassDepthState as RPDS;
 
             let pipeline_states = match shader_kind {
-                ShaderKind::Cache(VertexArrayKind::Gradient) => vec![
-                    (surface_format, None, RPDS::Disabled, None)
-                ],
+                ShaderKind::Cache(VertexArrayKind::Gradient) => {
+                    vec![(surface_format, None, RPDS::Disabled, None)]
+                }
                 ShaderKind::Cache(VertexArrayKind::SvgFilter) => vec![
                     (surface_format, None, RPDS::Disabled, None),
                     (surface_format, None, RPDS::Enabled, Some(LESS_EQUAL_TEST)),
@@ -162,80 +167,283 @@ impl<B: hal::Backend> Program<B> {
                 ShaderKind::Cache(VertexArrayKind::Scale) => vec![
                     (ImageFormat::R8, None, RPDS::Enabled, None),
                     (ImageFormat::R8, None, RPDS::Disabled, None),
-                    (ImageFormat::R8, Some(BlendState::MULTIPLY), RPDS::Enabled, None),
-                    (ImageFormat::R8, Some(BlendState::MULTIPLY), RPDS::Disabled, None),
+                    (
+                        ImageFormat::R8,
+                        Some(BlendState::MULTIPLY),
+                        RPDS::Enabled,
+                        None,
+                    ),
+                    (
+                        ImageFormat::R8,
+                        Some(BlendState::MULTIPLY),
+                        RPDS::Disabled,
+                        None,
+                    ),
                     (surface_format, None, RPDS::Enabled, None),
                     (surface_format, None, RPDS::Disabled, None),
-                    (surface_format, Some(BlendState::MULTIPLY), RPDS::Enabled, None),
-                    (surface_format, Some(BlendState::MULTIPLY), RPDS::Disabled, None),
+                    (
+                        surface_format,
+                        Some(BlendState::MULTIPLY),
+                        RPDS::Enabled,
+                        None,
+                    ),
+                    (
+                        surface_format,
+                        Some(BlendState::MULTIPLY),
+                        RPDS::Disabled,
+                        None,
+                    ),
                 ],
-                ShaderKind::Cache(VertexArrayKind::Blur) => if features.contains(&"ALPHA_TARGET") {
-                    vec![
-                        (ImageFormat::R8, None, RPDS::Enabled, None),
-                        (ImageFormat::R8, None, RPDS::Disabled, None),
-                        (ImageFormat::R8, None, RPDS::Enabled, Some(LESS_EQUAL_TEST)),
-                    ]
-                } else {
-                    vec![
-                        (surface_format, None, RPDS::Enabled, None),
-                        (surface_format, None, RPDS::Disabled, None),
-                        (surface_format, None, RPDS::Enabled, Some(LESS_EQUAL_TEST)),
-                    ]
-                },
+                ShaderKind::Cache(VertexArrayKind::Blur) => {
+                    if features.contains(&"ALPHA_TARGET") {
+                        vec![
+                            (ImageFormat::R8, None, RPDS::Enabled, None),
+                            (ImageFormat::R8, None, RPDS::Disabled, None),
+                            (ImageFormat::R8, None, RPDS::Enabled, Some(LESS_EQUAL_TEST)),
+                        ]
+                    } else {
+                        vec![
+                            (surface_format, None, RPDS::Enabled, None),
+                            (surface_format, None, RPDS::Disabled, None),
+                            (surface_format, None, RPDS::Enabled, Some(LESS_EQUAL_TEST)),
+                        ]
+                    }
+                }
                 ShaderKind::Cache(VertexArrayKind::Border)
-                    | ShaderKind::Cache(VertexArrayKind::LineDecoration) => vec![
-                    (surface_format, Some(BlendState::PREMULTIPLIED_ALPHA), RPDS::Disabled, None),
-                ],
+                | ShaderKind::Cache(VertexArrayKind::LineDecoration) => vec![(
+                    surface_format,
+                    Some(BlendState::PREMULTIPLIED_ALPHA),
+                    RPDS::Disabled,
+                    None,
+                )],
                 ShaderKind::ClipCache => vec![
                     (ImageFormat::R8, None, RPDS::Disabled, None),
-                    (ImageFormat::R8, Some(BlendState::MULTIPLY), RPDS::Enabled, None),
-                    (ImageFormat::R8, Some(BlendState::MULTIPLY), RPDS::Disabled, None),
+                    (
+                        ImageFormat::R8,
+                        Some(BlendState::MULTIPLY),
+                        RPDS::Enabled,
+                        None,
+                    ),
+                    (
+                        ImageFormat::R8,
+                        Some(BlendState::MULTIPLY),
+                        RPDS::Disabled,
+                        None,
+                    ),
                 ],
                 ShaderKind::Text => {
                     if features.contains(&"DUAL_SOURCE_BLENDING") {
                         vec![
-                            (surface_format, Some(BlendState::PREMULTIPLIED_ALPHA), RPDS::Enabled, None),
-                            (surface_format, Some(BlendState::PREMULTIPLIED_ALPHA), RPDS::Disabled, None),
-                            (surface_format, Some(BlendState::PREMULTIPLIED_ALPHA), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
-                            (surface_format, Some(SUBPIXEL_CONSTANT_TEXT_COLOR), RPDS::Enabled, None),
-                            (surface_format, Some(SUBPIXEL_CONSTANT_TEXT_COLOR), RPDS::Disabled, None),
-                            (surface_format, Some(SUBPIXEL_CONSTANT_TEXT_COLOR), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
-                            (surface_format, Some(SUBPIXEL_WITH_BG_COLOR_PASS0), RPDS::Enabled, None),
-                            (surface_format, Some(SUBPIXEL_WITH_BG_COLOR_PASS0), RPDS::Disabled, None),
-                            (surface_format, Some(SUBPIXEL_WITH_BG_COLOR_PASS0), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
-                            (surface_format, Some(SUBPIXEL_WITH_BG_COLOR_PASS1), RPDS::Enabled, None),
-                            (surface_format, Some(SUBPIXEL_WITH_BG_COLOR_PASS1), RPDS::Disabled, None),
-                            (surface_format, Some(SUBPIXEL_WITH_BG_COLOR_PASS1), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
-                            (surface_format, Some(SUBPIXEL_WITH_BG_COLOR_PASS2), RPDS::Enabled, None),
-                            (surface_format, Some(SUBPIXEL_WITH_BG_COLOR_PASS2), RPDS::Disabled, None),
-                            (surface_format, Some(SUBPIXEL_WITH_BG_COLOR_PASS2), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
-                            (surface_format, Some(SUBPIXEL_DUAL_SOURCE), RPDS::Enabled, None),
-                            (surface_format, Some(SUBPIXEL_DUAL_SOURCE), RPDS::Disabled, None),
-                            (surface_format, Some(SUBPIXEL_DUAL_SOURCE), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
+                            (
+                                surface_format,
+                                Some(BlendState::PREMULTIPLIED_ALPHA),
+                                RPDS::Enabled,
+                                None,
+                            ),
+                            (
+                                surface_format,
+                                Some(BlendState::PREMULTIPLIED_ALPHA),
+                                RPDS::Disabled,
+                                None,
+                            ),
+                            (
+                                surface_format,
+                                Some(BlendState::PREMULTIPLIED_ALPHA),
+                                RPDS::Enabled,
+                                Some(LESS_EQUAL_TEST),
+                            ),
+                            (
+                                surface_format,
+                                Some(SUBPIXEL_CONSTANT_TEXT_COLOR),
+                                RPDS::Enabled,
+                                None,
+                            ),
+                            (
+                                surface_format,
+                                Some(SUBPIXEL_CONSTANT_TEXT_COLOR),
+                                RPDS::Disabled,
+                                None,
+                            ),
+                            (
+                                surface_format,
+                                Some(SUBPIXEL_CONSTANT_TEXT_COLOR),
+                                RPDS::Enabled,
+                                Some(LESS_EQUAL_TEST),
+                            ),
+                            (
+                                surface_format,
+                                Some(SUBPIXEL_WITH_BG_COLOR_PASS0),
+                                RPDS::Enabled,
+                                None,
+                            ),
+                            (
+                                surface_format,
+                                Some(SUBPIXEL_WITH_BG_COLOR_PASS0),
+                                RPDS::Disabled,
+                                None,
+                            ),
+                            (
+                                surface_format,
+                                Some(SUBPIXEL_WITH_BG_COLOR_PASS0),
+                                RPDS::Enabled,
+                                Some(LESS_EQUAL_TEST),
+                            ),
+                            (
+                                surface_format,
+                                Some(SUBPIXEL_WITH_BG_COLOR_PASS1),
+                                RPDS::Enabled,
+                                None,
+                            ),
+                            (
+                                surface_format,
+                                Some(SUBPIXEL_WITH_BG_COLOR_PASS1),
+                                RPDS::Disabled,
+                                None,
+                            ),
+                            (
+                                surface_format,
+                                Some(SUBPIXEL_WITH_BG_COLOR_PASS1),
+                                RPDS::Enabled,
+                                Some(LESS_EQUAL_TEST),
+                            ),
+                            (
+                                surface_format,
+                                Some(SUBPIXEL_WITH_BG_COLOR_PASS2),
+                                RPDS::Enabled,
+                                None,
+                            ),
+                            (
+                                surface_format,
+                                Some(SUBPIXEL_WITH_BG_COLOR_PASS2),
+                                RPDS::Disabled,
+                                None,
+                            ),
+                            (
+                                surface_format,
+                                Some(SUBPIXEL_WITH_BG_COLOR_PASS2),
+                                RPDS::Enabled,
+                                Some(LESS_EQUAL_TEST),
+                            ),
+                            (
+                                surface_format,
+                                Some(SUBPIXEL_DUAL_SOURCE),
+                                RPDS::Enabled,
+                                None,
+                            ),
+                            (
+                                surface_format,
+                                Some(SUBPIXEL_DUAL_SOURCE),
+                                RPDS::Disabled,
+                                None,
+                            ),
+                            (
+                                surface_format,
+                                Some(SUBPIXEL_DUAL_SOURCE),
+                                RPDS::Enabled,
+                                Some(LESS_EQUAL_TEST),
+                            ),
                         ]
                     } else {
                         vec![
-                            (surface_format, Some(BlendState::PREMULTIPLIED_ALPHA), RPDS::Enabled, None),
-                            (surface_format, Some(BlendState::PREMULTIPLIED_ALPHA), RPDS::Disabled, None),
-                            (surface_format, Some(BlendState::PREMULTIPLIED_ALPHA), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
-                            (surface_format, Some(SUBPIXEL_CONSTANT_TEXT_COLOR), RPDS::Enabled, None),
-                            (surface_format, Some(SUBPIXEL_CONSTANT_TEXT_COLOR), RPDS::Disabled, None),
-                            (surface_format, Some(SUBPIXEL_CONSTANT_TEXT_COLOR), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
-                            (surface_format, Some(SUBPIXEL_WITH_BG_COLOR_PASS0), RPDS::Enabled, None),
-                            (surface_format, Some(SUBPIXEL_WITH_BG_COLOR_PASS0), RPDS::Disabled, None),
-                            (surface_format, Some(SUBPIXEL_WITH_BG_COLOR_PASS0), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
-                            (surface_format, Some(SUBPIXEL_WITH_BG_COLOR_PASS1), RPDS::Enabled, None),
-                            (surface_format, Some(SUBPIXEL_WITH_BG_COLOR_PASS1), RPDS::Disabled, None),
-                            (surface_format, Some(SUBPIXEL_WITH_BG_COLOR_PASS1), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
-                            (surface_format, Some(SUBPIXEL_WITH_BG_COLOR_PASS2), RPDS::Enabled, None),
-                            (surface_format, Some(SUBPIXEL_WITH_BG_COLOR_PASS2), RPDS::Disabled, None),
-                            (surface_format, Some(SUBPIXEL_WITH_BG_COLOR_PASS2), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
+                            (
+                                surface_format,
+                                Some(BlendState::PREMULTIPLIED_ALPHA),
+                                RPDS::Enabled,
+                                None,
+                            ),
+                            (
+                                surface_format,
+                                Some(BlendState::PREMULTIPLIED_ALPHA),
+                                RPDS::Disabled,
+                                None,
+                            ),
+                            (
+                                surface_format,
+                                Some(BlendState::PREMULTIPLIED_ALPHA),
+                                RPDS::Enabled,
+                                Some(LESS_EQUAL_TEST),
+                            ),
+                            (
+                                surface_format,
+                                Some(SUBPIXEL_CONSTANT_TEXT_COLOR),
+                                RPDS::Enabled,
+                                None,
+                            ),
+                            (
+                                surface_format,
+                                Some(SUBPIXEL_CONSTANT_TEXT_COLOR),
+                                RPDS::Disabled,
+                                None,
+                            ),
+                            (
+                                surface_format,
+                                Some(SUBPIXEL_CONSTANT_TEXT_COLOR),
+                                RPDS::Enabled,
+                                Some(LESS_EQUAL_TEST),
+                            ),
+                            (
+                                surface_format,
+                                Some(SUBPIXEL_WITH_BG_COLOR_PASS0),
+                                RPDS::Enabled,
+                                None,
+                            ),
+                            (
+                                surface_format,
+                                Some(SUBPIXEL_WITH_BG_COLOR_PASS0),
+                                RPDS::Disabled,
+                                None,
+                            ),
+                            (
+                                surface_format,
+                                Some(SUBPIXEL_WITH_BG_COLOR_PASS0),
+                                RPDS::Enabled,
+                                Some(LESS_EQUAL_TEST),
+                            ),
+                            (
+                                surface_format,
+                                Some(SUBPIXEL_WITH_BG_COLOR_PASS1),
+                                RPDS::Enabled,
+                                None,
+                            ),
+                            (
+                                surface_format,
+                                Some(SUBPIXEL_WITH_BG_COLOR_PASS1),
+                                RPDS::Disabled,
+                                None,
+                            ),
+                            (
+                                surface_format,
+                                Some(SUBPIXEL_WITH_BG_COLOR_PASS1),
+                                RPDS::Enabled,
+                                Some(LESS_EQUAL_TEST),
+                            ),
+                            (
+                                surface_format,
+                                Some(SUBPIXEL_WITH_BG_COLOR_PASS2),
+                                RPDS::Enabled,
+                                None,
+                            ),
+                            (
+                                surface_format,
+                                Some(SUBPIXEL_WITH_BG_COLOR_PASS2),
+                                RPDS::Disabled,
+                                None,
+                            ),
+                            (
+                                surface_format,
+                                Some(SUBPIXEL_WITH_BG_COLOR_PASS2),
+                                RPDS::Enabled,
+                                Some(LESS_EQUAL_TEST),
+                            ),
                         ]
                     }
                 }
-                ShaderKind::DebugColor | ShaderKind::DebugFont => vec![
-                    (surface_format, Some(BlendState::PREMULTIPLIED_ALPHA), RPDS::Enabled, None),
-                ],
+                ShaderKind::DebugColor | ShaderKind::DebugFont => vec![(
+                    surface_format,
+                    Some(BlendState::PREMULTIPLIED_ALPHA),
+                    RPDS::Enabled,
+                    None,
+                )],
                 ShaderKind::Service => vec![
                     (surface_format, None, RPDS::Enabled, None),
                     (surface_format, None, RPDS::Disabled, None),
@@ -244,13 +452,48 @@ impl<B: hal::Backend> Program<B> {
                     (surface_format, None, RPDS::Enabled, Some(LESS_EQUAL_WRITE)),
                     (surface_format, Some(ALPHA), RPDS::Enabled, None),
                     (surface_format, Some(ALPHA), RPDS::Disabled, None),
-                    (surface_format, Some(ALPHA), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
-                    (surface_format, Some(BlendState::PREMULTIPLIED_ALPHA), RPDS::Enabled, None),
-                    (surface_format, Some(BlendState::PREMULTIPLIED_ALPHA), RPDS::Disabled, None),
-                    (surface_format, Some(BlendState::PREMULTIPLIED_ALPHA), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
-                    (surface_format, Some(PREMULTIPLIED_DEST_OUT), RPDS::Enabled, None),
-                    (surface_format, Some(PREMULTIPLIED_DEST_OUT), RPDS::Disabled, None),
-                    (surface_format, Some(PREMULTIPLIED_DEST_OUT), RPDS::Enabled, Some(LESS_EQUAL_TEST)),
+                    (
+                        surface_format,
+                        Some(ALPHA),
+                        RPDS::Enabled,
+                        Some(LESS_EQUAL_TEST),
+                    ),
+                    (
+                        surface_format,
+                        Some(BlendState::PREMULTIPLIED_ALPHA),
+                        RPDS::Enabled,
+                        None,
+                    ),
+                    (
+                        surface_format,
+                        Some(BlendState::PREMULTIPLIED_ALPHA),
+                        RPDS::Disabled,
+                        None,
+                    ),
+                    (
+                        surface_format,
+                        Some(BlendState::PREMULTIPLIED_ALPHA),
+                        RPDS::Enabled,
+                        Some(LESS_EQUAL_TEST),
+                    ),
+                    (
+                        surface_format,
+                        Some(PREMULTIPLIED_DEST_OUT),
+                        RPDS::Enabled,
+                        None,
+                    ),
+                    (
+                        surface_format,
+                        Some(PREMULTIPLIED_DEST_OUT),
+                        RPDS::Disabled,
+                        None,
+                    ),
+                    (
+                        surface_format,
+                        Some(PREMULTIPLIED_DEST_OUT),
+                        RPDS::Enabled,
+                        Some(LESS_EQUAL_TEST),
+                    ),
                 ],
             };
 
@@ -264,8 +507,7 @@ impl<B: hal::Backend> Program<B> {
                 };
                 let subpass = hal::pass::Subpass {
                     index: 0,
-                    main_pass: render_passes
-                        .render_pass(format, depth_enabled, false),
+                    main_pass: render_passes.render_pass(format, depth_enabled, false),
                 };
                 let mut pipeline_descriptor = hal::pso::GraphicsPipelineDesc::new(
                     shader_entries.clone(),
@@ -277,7 +519,7 @@ impl<B: hal::Backend> Program<B> {
                 pipeline_descriptor
                     .blender
                     .targets
-                    .push(hal::pso::ColorBlendDesc{
+                    .push(hal::pso::ColorBlendDesc {
                         mask: hal::pso::ColorMask::ALL,
                         blend: blend_state,
                     });
@@ -296,9 +538,7 @@ impl<B: hal::Backend> Program<B> {
             };
 
             let cloned_states = pipeline_states.clone();
-            let pipelines_descriptors = cloned_states
-                .into_iter()
-                .map(|ps| create_desc(ps));
+            let pipelines_descriptors = cloned_states.into_iter().map(|ps| create_desc(ps));
 
             let pipelines =
                 unsafe { device.create_graphics_pipelines(pipelines_descriptors, pipeline_cache) }
@@ -310,7 +550,12 @@ impl<B: hal::Backend> Program<B> {
                 .collect::<FastHashMap<PipelineKey, B::GraphicsPipeline>>();
 
             if features.contains(&"DEBUG_OVERDRAW") {
-                let pipeline_state = (surface_format, Some(OVERDRAW), RPDS::Enabled, Some(LESS_EQUAL_TEST));
+                let pipeline_state = (
+                    surface_format,
+                    Some(OVERDRAW),
+                    RPDS::Enabled,
+                    Some(LESS_EQUAL_TEST),
+                );
                 let pipeline_descriptor = create_desc(pipeline_state);
                 let pipeline = unsafe {
                     device.create_graphics_pipeline(&pipeline_descriptor, pipeline_cache)
@@ -327,7 +572,7 @@ impl<B: hal::Backend> Program<B> {
         } else {
             (None, None)
         };
-        for _ in 0 .. frame_count {
+        for _ in 0..frame_count {
             if let Some(ref mut vertex_buffer) = vertex_buffer {
                 vertex_buffer.push(VertexBufferHandler::new(
                     device,
@@ -383,7 +628,7 @@ impl<B: hal::Backend> Program<B> {
     ) {
         let vertex_buffer = match &self.vertex_buffer {
             Some(ref vb) => vb.get(next_id).unwrap(),
-            None => vertex_buffer
+            None => vertex_buffer,
         };
         unsafe {
             if use_push_consts {
@@ -424,7 +669,8 @@ impl<B: hal::Backend> Program<B> {
             cmd_buffer.bind_graphics_descriptor_sets(
                 pipeline_layout,
                 if desc_set_per_pass.is_some() { 0 } else { 1 },
-                desc_set_per_pass.into_iter()
+                desc_set_per_pass
+                    .into_iter()
                     .chain(iter::once(desc_set_per_frame))
                     .chain(iter::once(desc_set_per_draw))
                     .chain(desc_set_locals),
@@ -445,13 +691,12 @@ impl<B: hal::Backend> Program<B> {
                         index_type: hal::IndexType::U32,
                     });
 
-
                     cmd_buffer.draw_indexed(
-                        0 .. index_buffer[next_id].buffer().buffer_len as u32,
+                        0..index_buffer[next_id].buffer().buffer_len as u32,
                         0,
-                        0 .. 1,
+                        0..1,
                     );
-                },
+                }
                 // Default WR shaders
                 None => {
                     let number_of_vertices = match self.shader_kind {
@@ -469,12 +714,9 @@ impl<B: hal::Backend> Program<B> {
                         let data_stride = instance_buffer.buffers[i].last_data_stride;
                         let end = instance_buffer.buffers[i].offset / data_stride;
                         let start = end - instance_buffer.buffers[i].last_update_size / data_stride;
-                        cmd_buffer.draw(
-                            0 .. number_of_vertices as u32,
-                            start as u32 .. end as u32,
-                        );
+                        cmd_buffer.draw(0..number_of_vertices as u32, start as u32..end as u32);
                     }
-                },
+                }
             }
         }
     }

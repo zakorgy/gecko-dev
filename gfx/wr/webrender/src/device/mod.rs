@@ -863,6 +863,7 @@ impl From<DrawTarget> for ReadTarget {
                 ReadTarget::Texture { fbo_id },
             DrawTarget::External { fbo, .. } =>
                 ReadTarget::External { fbo },
+            #[cfg(not(feature = "gl"))]
             _ => unimplemented!(),
         }
     }

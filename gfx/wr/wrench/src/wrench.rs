@@ -240,6 +240,8 @@ impl Wrench {
             dump_shader_source,
             #[cfg(feature = "gfx")]
             heaps_config,
+            #[cfg(feature = "gfx")]
+            readback_supported: true,
             ..Default::default()
         };
 

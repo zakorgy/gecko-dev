@@ -24,10 +24,7 @@ unsafe impl Sync for BufferMemorySlice {}
 
 impl BufferMemorySlice {
     pub fn new(ptr: *mut u8, size: usize) -> Self {
-        BufferMemorySlice {
-            ptr,
-            size
-        }
+        BufferMemorySlice { ptr, size }
     }
 
     pub(crate) fn slice_mut<T>(&mut self) -> &mut [T] {
@@ -83,24 +80,31 @@ impl<B: hal::Backend> GpuCacheBuffer<B> {
         }
     }
 
-    pub fn transit(&self, access: hal::buffer::Access, with_range: bool) -> Option<hal::memory::Barrier<B>> {
+    pub fn transit(
+        &self,
+        access: hal::buffer::Access,
+        with_range: bool,
+    ) -> Option<hal::memory::Barrier<B>> {
         let src_state = self.state.get();
         if src_state == access {
             None
         } else {
             self.state.set(access);
             Some(hal::memory::Barrier::Buffer {
-                states: src_state .. access,
+                states: src_state..access,
                 target: &self.buffer,
                 families: None,
-                range: None .. if with_range { Some(self.transit_range_end) } else { None },
+                range: None..if with_range {
+                    Some(self.transit_range_end)
+                } else {
+                    None
+                },
             })
         }
     }
 }
 
-#[derive(Debug)]
-#[derive(MallocSizeOf)]
+#[derive(Debug, MallocSizeOf)]
 pub struct PersistentlyMappedBuffer<B: hal::Backend> {
     #[ignore_malloc_size_of = "buffer handle"]
     pub buffer: Arc<B::Buffer>,
@@ -132,7 +136,7 @@ impl<B: hal::Backend> PersistentlyMappedBuffer<B> {
             unsafe { device.create_buffer(buffer_len, hal::buffer::Usage::STORAGE) }.unwrap();
 
         let buffer_req = unsafe { device.get_buffer_requirements(&storage_buffer) };
-        let alignment = ((buffer_req.alignment - 1) | non_coherent_atom_size_mask) +1;
+        let alignment = ((buffer_req.alignment - 1) | non_coherent_atom_size_mask) + 1;
         let memory_block = heaps
             .allocate(
                 device,
@@ -143,8 +147,12 @@ impl<B: hal::Backend> PersistentlyMappedBuffer<B> {
             )
             .expect("Allocate memory failed");
 
-        assert!(memory_block.properties().contains(hal::memory::Properties::CPU_CACHED));
-        let coherent = memory_block.properties().contains(hal::memory::Properties::COHERENT);
+        assert!(memory_block
+            .properties()
+            .contains(hal::memory::Properties::CPU_CACHED));
+        let coherent = memory_block
+            .properties()
+            .contains(hal::memory::Properties::COHERENT);
 
         unsafe {
             device.bind_buffer_memory(
@@ -183,21 +191,29 @@ impl<B: hal::Backend> PersistentlyMappedBuffer<B> {
         self.unmap(device);
     }
 
-    pub fn buffer_memory_slice(
-        &mut self,
-        device: &B::Device,
-    ) -> BufferMemorySlice {
+    pub fn buffer_memory_slice(&mut self, device: &B::Device) -> BufferMemorySlice {
         let (mapped, size) = self.map(device, None);
-        BufferMemorySlice::new(
-            mapped.ptr().as_ptr(),
-            size as usize,
-        )
+        BufferMemorySlice::new(mapped.ptr().as_ptr(), size as usize)
     }
 
-    pub fn map<'a>(&'a mut self, device: &B::Device, size: Option<u64>) -> (MappedRange<'a, B>, u64) {
-        assert!(size.unwrap_or(0) <= self.size, "size {:?} <= self.size {:?}", size.unwrap_or(0), self.size);
+    pub fn map<'a>(
+        &'a mut self,
+        device: &B::Device,
+        size: Option<u64>,
+    ) -> (MappedRange<'a, B>, u64) {
+        assert!(
+            size.unwrap_or(0) <= self.size,
+            "size {:?} <= self.size {:?}",
+            size.unwrap_or(0),
+            self.size
+        );
         let size = size.unwrap_or(self.size);
-        (self.memory_block.map(&device, 0..size).expect("Mapping memory block failed"), size)
+        (
+            self.memory_block
+                .map(&device, 0..size)
+                .expect("Mapping memory block failed"),
+            size,
+        )
     }
 
     pub fn unmap(&mut self, device: &B::Device) {
@@ -283,14 +299,15 @@ impl<B: hal::Backend> Buffer<B> {
         non_coherent_atom_size_mask: u64,
     ) {
         let size = (data.len() * std::mem::size_of::<T>()) as u64;
-        let range = 0 .. ((size + non_coherent_atom_size_mask) & !non_coherent_atom_size_mask).min(self.buffer_size as u64);
+        let range = 0..((size + non_coherent_atom_size_mask) & !non_coherent_atom_size_mask)
+            .min(self.buffer_size as u64);
         unsafe {
             let mut mapped = self
                 .memory_block
                 .map(device, range.clone())
                 .expect("Mapping memory block failed");
             mapped
-                .write(device, 0 .. size)
+                .write(device, 0..size)
                 .expect("Writer creation failed")
                 .write(&data);
         }
@@ -306,15 +323,15 @@ impl<B: hal::Backend> Buffer<B> {
     ) -> usize {
         let offset = (offset * self.stride) as u64;
         let size = (data.len() * self.stride) as u64;
-        let range = offset
-            .. ((offset + size + non_coherent_atom_size_mask) & !non_coherent_atom_size_mask);
+        let range =
+            offset..((offset + size + non_coherent_atom_size_mask) & !non_coherent_atom_size_mask);
         unsafe {
             let mut mapped = self
                 .memory_block
                 .map(device, range)
                 .expect("Mapping memory block failed");
             mapped
-                .write(device, 0 .. size)
+                .write(device, 0..size)
                 .expect("Writer creation failed")
                 .write(&data);
         }
@@ -329,10 +346,10 @@ impl<B: hal::Backend> Buffer<B> {
         } else {
             self.state.set(access);
             Some(hal::memory::Barrier::Buffer {
-                states: src_state .. access,
+                states: src_state..access,
                 target: &self.buffer,
                 families: None,
-                range: None .. None,
+                range: None..None,
             })
         }
     }
@@ -549,8 +566,8 @@ impl<B: hal::Backend> InstanceBufferHandler<B> {
         let mut range = 0..0;
         let mut first_iteration = true;
         while !instance_data.is_empty() {
-            let need_new_buffer = self.buffers.is_empty()
-                || !self.current_buffer().can_store_data(data_stride);
+            let need_new_buffer =
+                self.buffers.is_empty() || !self.current_buffer().can_store_data(data_stride);
             if need_new_buffer {
                 let buffer = match free_buffers.pop() {
                     Some(b) => b,
@@ -572,9 +589,14 @@ impl<B: hal::Backend> InstanceBufferHandler<B> {
                 range.start = self.next_buffer_index - 1;
                 first_iteration = false;
             }
-            let update_size = (self.current_buffer().space_left() / data_stride).min(instance_data.len());
-            self.current_buffer_mut().update(device, instance_data_to_u8_slice(&instance_data[0 .. update_size]), data_stride);
-            instance_data = &instance_data[update_size ..];
+            let update_size =
+                (self.current_buffer().space_left() / data_stride).min(instance_data.len());
+            self.current_buffer_mut().update(
+                device,
+                instance_data_to_u8_slice(&instance_data[0..update_size]),
+                data_stride,
+            );
+            instance_data = &instance_data[update_size..];
         }
         range.end = self.next_buffer_index;
         range
@@ -591,7 +613,7 @@ impl<B: hal::Backend> InstanceBufferHandler<B> {
     pub(super) fn reset(&mut self, free_buffers: &mut Vec<InstancePoolBuffer<B>>) {
         if !self.buffers.is_empty() {
             // Keep one buffer and move the others back to the free set pool.
-            for mut buffer in self.buffers.drain(1 .. ) {
+            for mut buffer in self.buffers.drain(1..) {
                 buffer.reset();
                 free_buffers.push(buffer);
             }
@@ -734,4 +756,3 @@ impl<B: hal::Backend> UniformBufferHandler<B> {
         }
     }
 }
-

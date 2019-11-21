@@ -56,10 +56,12 @@ impl<B: hal::Backend> HalRenderPasses<B> {
         &self,
         old_layout: Layout,
         new_layout: Layout,
-        clear: bool
+        clear: bool,
     ) -> &B::RenderPass {
         match (old_layout, new_layout, clear) {
-            (Layout::ColorAttachmentOptimal, Layout::ColorAttachmentOptimal, false) => &self.bgra8_depth,
+            (Layout::ColorAttachmentOptimal, Layout::ColorAttachmentOptimal, false) => {
+                &self.bgra8_depth
+            }
             (Layout::ColorAttachmentOptimal, Layout::Present, false) => &self.cao_to_present,
             (Layout::Present, Layout::ColorAttachmentOptimal, true) => &self.undef_to_cao,
             (Layout::Present, Layout::Present, true) => &self.undef_to_present,
@@ -100,8 +102,7 @@ impl<B: hal::Backend> HalRenderPasses<B> {
                 hal::pass::AttachmentStoreOp::Store,
             ),
             stencil_ops: hal::pass::AttachmentOps::DONT_CARE,
-            layouts: Layout::ColorAttachmentOptimal
-                .. Layout::ColorAttachmentOptimal,
+            layouts: Layout::ColorAttachmentOptimal..Layout::ColorAttachmentOptimal,
         };
 
         let attachment_r8_clear = hal::pass::Attachment {
@@ -112,8 +113,7 @@ impl<B: hal::Backend> HalRenderPasses<B> {
                 hal::pass::AttachmentStoreOp::Store,
             ),
             stencil_ops: hal::pass::AttachmentOps::DONT_CARE,
-            layouts: Layout::ColorAttachmentOptimal
-                .. Layout::ColorAttachmentOptimal,
+            layouts: Layout::ColorAttachmentOptimal..Layout::ColorAttachmentOptimal,
         };
 
         let attachment_bgra8 = hal::pass::Attachment {
@@ -124,8 +124,7 @@ impl<B: hal::Backend> HalRenderPasses<B> {
                 hal::pass::AttachmentStoreOp::Store,
             ),
             stencil_ops: hal::pass::AttachmentOps::DONT_CARE,
-            layouts: Layout::ColorAttachmentOptimal
-                .. Layout::ColorAttachmentOptimal,
+            layouts: Layout::ColorAttachmentOptimal..Layout::ColorAttachmentOptimal,
         };
 
         let attachment_bgra8_clear = hal::pass::Attachment {
@@ -136,8 +135,7 @@ impl<B: hal::Backend> HalRenderPasses<B> {
                 hal::pass::AttachmentStoreOp::Store,
             ),
             stencil_ops: hal::pass::AttachmentOps::DONT_CARE,
-            layouts: Layout::ColorAttachmentOptimal
-                .. Layout::ColorAttachmentOptimal,
+            layouts: Layout::ColorAttachmentOptimal..Layout::ColorAttachmentOptimal,
         };
 
         let attachment_rgbaf32 = hal::pass::Attachment {
@@ -148,8 +146,7 @@ impl<B: hal::Backend> HalRenderPasses<B> {
                 hal::pass::AttachmentStoreOp::Store,
             ),
             stencil_ops: hal::pass::AttachmentOps::DONT_CARE,
-            layouts: Layout::ColorAttachmentOptimal
-                .. Layout::ColorAttachmentOptimal,
+            layouts: Layout::ColorAttachmentOptimal..Layout::ColorAttachmentOptimal,
         };
 
         let attachment_depth = hal::pass::Attachment {
@@ -160,8 +157,7 @@ impl<B: hal::Backend> HalRenderPasses<B> {
                 hal::pass::AttachmentStoreOp::Store,
             ),
             stencil_ops: hal::pass::AttachmentOps::DONT_CARE,
-            layouts: Layout::DepthStencilAttachmentOptimal
-                .. Layout::DepthStencilAttachmentOptimal,
+            layouts: Layout::DepthStencilAttachmentOptimal..Layout::DepthStencilAttachmentOptimal,
         };
 
         let attachment_depth_clear = hal::pass::Attachment {
@@ -172,8 +168,7 @@ impl<B: hal::Backend> HalRenderPasses<B> {
                 hal::pass::AttachmentStoreOp::Store,
             ),
             stencil_ops: hal::pass::AttachmentOps::DONT_CARE,
-            layouts: Layout::DepthStencilAttachmentOptimal
-                .. Layout::DepthStencilAttachmentOptimal,
+            layouts: Layout::DepthStencilAttachmentOptimal..Layout::DepthStencilAttachmentOptimal,
         };
 
         let attachment_cao_to_present = hal::pass::Attachment {
@@ -184,8 +179,7 @@ impl<B: hal::Backend> HalRenderPasses<B> {
                 hal::pass::AttachmentStoreOp::Store,
             ),
             stencil_ops: hal::pass::AttachmentOps::DONT_CARE,
-            layouts: Layout::ColorAttachmentOptimal
-                .. Layout::Present,
+            layouts: Layout::ColorAttachmentOptimal..Layout::Present,
         };
 
         let attachment_undef_to_cao = hal::pass::Attachment {
@@ -196,8 +190,7 @@ impl<B: hal::Backend> HalRenderPasses<B> {
                 hal::pass::AttachmentStoreOp::Store,
             ),
             stencil_ops: hal::pass::AttachmentOps::DONT_CARE,
-            layouts: Layout::Undefined
-                .. Layout::ColorAttachmentOptimal,
+            layouts: Layout::Undefined..Layout::ColorAttachmentOptimal,
         };
 
         let attachment_undef_to_present = hal::pass::Attachment {
@@ -208,8 +201,7 @@ impl<B: hal::Backend> HalRenderPasses<B> {
                 hal::pass::AttachmentStoreOp::Store,
             ),
             stencil_ops: hal::pass::AttachmentOps::DONT_CARE,
-            layouts: Layout::Undefined
-                .. Layout::Present,
+            layouts: Layout::Undefined..Layout::Present,
         };
 
         let subpass_r8 = hal::pass::SubpassDesc {
@@ -263,19 +255,11 @@ impl<B: hal::Backend> HalRenderPasses<B> {
         use std::iter;
         HalRenderPasses {
             r8: unsafe {
-                device.create_render_pass(
-                    iter::once(&attachment_r8),
-                    &[subpass_r8.clone()],
-                    &[],
-                )
+                device.create_render_pass(iter::once(&attachment_r8), &[subpass_r8.clone()], &[])
             }
             .expect("create_render_pass failed"),
             r8_clear: unsafe {
-                device.create_render_pass(
-                    iter::once(&attachment_r8_clear),
-                    &[subpass_r8],
-                    &[],
-                )
+                device.create_render_pass(iter::once(&attachment_r8_clear), &[subpass_r8], &[])
             }
             .expect("create_render_pass failed"),
             r8_depth: unsafe {
@@ -287,11 +271,7 @@ impl<B: hal::Backend> HalRenderPasses<B> {
             }
             .expect("create_render_pass failed"),
             rgbaf32: unsafe {
-                device.create_render_pass(
-                    iter::once(&attachment_rgbaf32),
-                    &[subpass_rgbaf32],
-                    &[],
-                )
+                device.create_render_pass(iter::once(&attachment_rgbaf32), &[subpass_rgbaf32], &[])
             }
             .expect("create_render_pass failed"),
             rgbaf32_depth: unsafe {

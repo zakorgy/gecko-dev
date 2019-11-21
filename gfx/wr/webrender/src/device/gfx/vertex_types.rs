@@ -19,14 +19,14 @@ pub struct BorderInstance {
 #[derive(Debug, Clone, Copy)]
 #[allow(non_snake_case)]
 pub struct GradientInstance {
-    pub aTaskRect: [f32 ;4],
+    pub aTaskRect: [f32; 4],
     pub aAxisSelect: f32,
-    pub aStops: [f32 ;4],
-    pub aColor0: [f32 ;4],
-    pub aColor1: [f32 ;4],
-    pub aColor2: [f32 ;4],
-    pub aColor3: [f32 ;4],
-    pub aStartStop: [f32 ;2],
+    pub aStops: [f32; 4],
+    pub aColor0: [f32; 4],
+    pub aColor1: [f32; 4],
+    pub aColor2: [f32; 4],
+    pub aColor3: [f32; 4],
+    pub aStartStop: [f32; 2],
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -106,10 +106,10 @@ pub struct DebugFontVertex {
 #[derive(Debug, Clone, Copy)]
 #[allow(non_snake_case)]
 pub struct BlitInstance {
-    pub  aOffset: [f32; 2],
-    pub  aExtent: [f32; 2],
-    pub  aZ: f32,
-    pub  aLevel: f32,
+    pub aOffset: [f32; 2],
+    pub aExtent: [f32; 2],
+    pub aZ: f32,
+    pub aLevel: f32,
 }
 
 #[derive(Debug, Clone, Copy)]

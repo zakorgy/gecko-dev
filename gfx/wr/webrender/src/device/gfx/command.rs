@@ -20,9 +20,8 @@ impl<B: hal::Backend> CommandPool<B> {
 
     pub(super) fn create_command_buffer(&mut self) {
         if self.command_buffers.is_empty() {
-            let command_buffer = unsafe {
-                self.command_pool.allocate_one(hal::command::Level::Primary)
-            };
+            let command_buffer =
+                unsafe { self.command_pool.allocate_one(hal::command::Level::Primary) };
             self.command_buffers.push(command_buffer);
         }
     }
