@@ -79,6 +79,7 @@ RendererOGL::~RendererOGL() {
     mNativeLayerForEntireWindow = nullptr;
     mNativeLayerRoot = nullptr;
   }
+  gfxCriticalNote << "##### Deleting Renderer";
   wr_renderer_delete(mRenderer);
 }
 

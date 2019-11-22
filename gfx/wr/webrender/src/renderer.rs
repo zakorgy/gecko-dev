@@ -2385,7 +2385,6 @@ impl<B: hal::Backend> Renderer<B> {
                 non_coherent_atom_size_mask,
             );
             backend.run(backend_profile_counters);
-            backend.deinit();
             if let Some(ref thread_listener) = *thread_listener_for_render_backend {
                 thread_listener.thread_stopped(&rb_thread_name);
             }

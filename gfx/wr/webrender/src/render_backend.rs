@@ -697,7 +697,7 @@ pub struct RenderBackend<B: hal::Backend> {
     #[cfg(not(feature = "gl"))]
     heaps: Weak<Mutex<Heaps<B>>>,
     #[cfg(not(feature = "gl"))]
-    gpu_cache_buffer: PersistentlyMappedBuffer<B>,
+    gpu_cache_buffer: Option<PersistentlyMappedBuffer<B>>,
     #[cfg(not(feature = "gl"))]
     send_buffer_handle_to_renderer: bool,
 
@@ -794,14 +794,14 @@ impl<B: hal::Backend> RenderBackend<B> {
         non_coherent_atom_size_mask: u64,
     ) -> RenderBackend<B> {
         let heaps_strong = heaps.upgrade().unwrap();
-        let gpu_cache_buffer = PersistentlyMappedBuffer::new::<GpuBlockData>(
+        let gpu_cache_buffer = Some(PersistentlyMappedBuffer::new::<GpuBlockData>(
             device.as_ref(),
             &mut heaps_strong.lock().unwrap(),
             non_coherent_atom_size_mask,
             MAX_VERTEX_TEXTURE_WIDTH as _,
             GPU_CACHE_INITIAL_HEIGHT as _,
             None,
-        );
+        ));
         RenderBackend {
             device,
             heaps,
@@ -830,10 +830,13 @@ impl<B: hal::Backend> RenderBackend<B> {
         }
     }
 
-    pub fn deinit(self) {
-        #[cfg(not(feature = "gl"))] {
-            let heaps_strong = self.heaps.upgrade().unwrap();
-            heaps_strong.lock().unwrap().free(self.device.as_ref(), self.gpu_cache_buffer.memory_block);
+    pub fn deinit(&mut self) {
+        #[cfg(not(feature = "gl"))]
+        {
+            if let Some(buffer) = self.gpu_cache_buffer.take() {
+                let heaps_strong = self.heaps.upgrade().unwrap();
+                heaps_strong.lock().unwrap().free(self.device.as_ref(), buffer.memory_block);
+            }
         }
     }
 
@@ -1054,7 +1057,10 @@ impl<B: hal::Backend> RenderBackend<B> {
                     }
                     self.process_api_msg(msg, &mut profile_counters, &mut frame_counter)
                 }
-                Err(..) => { RenderBackendStatus::ShutDown(None) }
+                Err(..) => {
+                    self.deinit();
+                    RenderBackendStatus::ShutDown(None)
+                }
             };
         }
 
@@ -1085,6 +1091,7 @@ impl<B: hal::Backend> RenderBackend<B> {
 
 
         if let RenderBackendStatus::ShutDown(Some(sender)) = status {
+            self.deinit();
             let _ = sender.send(());
         }
     }
@@ -1322,6 +1329,9 @@ impl<B: hal::Backend> RenderBackend<B> {
                     frame_counter,
                     profile_counters,
                 );
+            }
+            ApiMsg::Deinit => {
+                self.deinit();
             }
         }
 
@@ -1613,23 +1623,23 @@ impl<B: hal::Backend> RenderBackend<B> {
                 #[cfg(not(feature = "gl"))]
                 let msg = {
                     let clear = self.gpu_cache.pending_clear;
-                    let resize = self.gpu_cache.height() > self.gpu_cache_buffer.height;
+                    let resize = self.gpu_cache.height() > self.gpu_cache_buffer.as_ref().unwrap().height;
                     let old_buffer = if clear || resize {
                         let heaps_strong = self.heaps.upgrade().unwrap();
                         let new_buffer = PersistentlyMappedBuffer::new::<GpuBlockData>(
                             self.device.as_ref(),
                             &mut heaps_strong.lock().unwrap(),
-                            self.gpu_cache_buffer.non_coherent_atom_size_mask,
+                            self.gpu_cache_buffer.as_ref().unwrap().non_coherent_atom_size_mask,
                             MAX_VERTEX_TEXTURE_WIDTH as _,
                             self.gpu_cache.height(),
                             if resize {
-                                Some(&mut self.gpu_cache_buffer)
+                                Some(self.gpu_cache_buffer.as_mut().unwrap())
                             } else {
                                 None
                             },
                         );
 
-                        let old_buffer = std::mem::replace(&mut self.gpu_cache_buffer, new_buffer);
+                        let old_buffer = std::mem::replace(self.gpu_cache_buffer.as_mut().unwrap(), new_buffer);
                         self.send_buffer_handle_to_renderer = true;
                         if clear {
                             self.gpu_cache.pending_clear = false;
@@ -1640,7 +1650,7 @@ impl<B: hal::Backend> RenderBackend<B> {
                     };
 
                     let msg = ResultMsg::UpdateGpuCacheBuffer(self.gpu_cache.write_updates(
-                        &mut self.gpu_cache_buffer,
+                        self.gpu_cache_buffer.as_mut().unwrap(),
                         self.device.as_ref(),
                         old_buffer,
                         self.send_buffer_handle_to_renderer,
@@ -1709,23 +1719,23 @@ impl<B: hal::Backend> RenderBackend<B> {
     #[cfg(all(not(feature = "gl"), feature = "replay"))]
     fn ensure_buffer(&mut self) -> Option<PersistentlyMappedBuffer<B>> {
         let clear = self.gpu_cache.pending_clear;
-        let resize = self.gpu_cache.height() > self.gpu_cache_buffer.height;
+        let resize = self.gpu_cache.height() > self.gpu_cache_buffer.as_ref().unwrap().height;
         if clear || resize {
             let heaps_strong = self.heaps.upgrade().unwrap();
             let new_buffer = PersistentlyMappedBuffer::new::<GpuBlockData>(
                 self.device.as_ref(),
                 &mut heaps_strong.lock().unwrap(),
-                self.gpu_cache_buffer.non_coherent_atom_size_mask,
+                self.gpu_cache_buffer.as_ref().unwrap().non_coherent_atom_size_mask,
                 MAX_VERTEX_TEXTURE_WIDTH as _,
                 self.gpu_cache.height(),
                 if resize {
-                    Some(&mut self.gpu_cache_buffer)
+                    Some(self.gpu_cache_buffer.as_mut().unwrap())
                 } else {
                     None
                 },
             );
 
-            let old_buffer = std::mem::replace(&mut self.gpu_cache_buffer, new_buffer);
+            let old_buffer = std::mem::replace(self.gpu_cache_buffer.as_mut().unwrap(), new_buffer);
             self.send_buffer_handle_to_renderer = true;
             if clear {
                 self.gpu_cache.pending_clear = false;
@@ -1911,23 +1921,23 @@ impl<B: hal::Backend> RenderBackend<B> {
                 let msg_update_gpu_cache = {
                     let old_buffer = {
                         let clear = self.gpu_cache.pending_clear;
-                        let resize = self.gpu_cache.height() > self.gpu_cache_buffer.height;
+                        let resize = self.gpu_cache.height() > self.gpu_cache_buffer.as_ref().unwrap().height;
                         if clear || resize {
                             let heaps_strong = self.heaps.upgrade().unwrap();
                             let new_buffer = PersistentlyMappedBuffer::new::<GpuBlockData>(
                                 self.device.as_ref(),
                                 &mut heaps_strong.lock().unwrap(),
-                                self.gpu_cache_buffer.non_coherent_atom_size_mask,
+                                self.gpu_cache_buffer.as_ref().unwrap().non_coherent_atom_size_mask,
                                 MAX_VERTEX_TEXTURE_WIDTH as _,
                                 self.gpu_cache.height(),
                                 if resize {
-                                    Some(&mut self.gpu_cache_buffer)
+                                    Some(self.gpu_cache_buffer.as_mut().unwrap())
                                 } else {
                                     None
                                 },
                             );
 
-                            let old_buffer = std::mem::replace(&mut self.gpu_cache_buffer, new_buffer);
+                            let old_buffer = std::mem::replace(self.gpu_cache_buffer.as_mut().unwrap(), new_buffer);
                             self.send_buffer_handle_to_renderer = true;
                             if clear {
                                 self.gpu_cache.pending_clear = false;
@@ -1938,7 +1948,7 @@ impl<B: hal::Backend> RenderBackend<B> {
                         }
                     };
                     let msg = ResultMsg::UpdateGpuCacheBuffer(self.gpu_cache.write_updates(
-                        &mut self.gpu_cache_buffer,
+                        self.gpu_cache_buffer.as_mut().unwrap(),
                         self.device.as_ref(),
                         old_buffer,
                         self.send_buffer_handle_to_renderer,
@@ -2105,7 +2115,7 @@ impl<B: hal::Backend> RenderBackend<B> {
                     let msg_update = {
                         let old_buffer = self.ensure_buffer();
                         let msg = ResultMsg::UpdateGpuCacheBuffer(self.gpu_cache.write_updates(
-                            &mut self.gpu_cache_buffer,
+                            self.gpu_cache_buffer.as_mut().unwrap(),
                             self.device.as_ref(),
                             old_buffer,
                             self.send_buffer_handle_to_renderer,

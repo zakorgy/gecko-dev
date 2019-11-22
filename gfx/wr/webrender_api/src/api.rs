@@ -819,6 +819,7 @@ pub enum ApiMsg {
     WakeSceneBuilder,
     FlushSceneBuilder(MsgSender<()>),
     ShutDown(Option<MsgSender<()>>),
+    Deinit,
 }
 
 impl fmt::Debug for ApiMsg {
@@ -841,6 +842,7 @@ impl fmt::Debug for ApiMsg {
             ApiMsg::WakeUp => "ApiMsg::WakeUp",
             ApiMsg::WakeSceneBuilder => "ApiMsg::WakeSceneBuilder",
             ApiMsg::FlushSceneBuilder(..) => "ApiMsg::FlushSceneBuilder",
+            ApiMsg::Deinit => "ApiMsg::Deinit",
         })
     }
 }
@@ -1257,6 +1259,10 @@ impl RenderApi {
     pub fn set_debug_flags(&self, flags: DebugFlags) {
         let cmd = DebugCommand::SetFlags(flags);
         self.api_sender.send(ApiMsg::DebugCommand(cmd)).unwrap();
+    }
+
+    pub fn deinit(&self) {
+        self.api_sender.send(ApiMsg::Deinit).unwrap();
     }
 
     pub fn shut_down(&self, synchronously: bool) {

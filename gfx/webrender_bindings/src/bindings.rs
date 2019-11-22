@@ -1264,6 +1264,7 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
         allow_pixel_local_storage_support: false,
         start_debug_server,
         heaps_config,
+        texture_cache_size: 30 << 20,
         ..Default::default()
     };
 
@@ -1379,6 +1380,11 @@ pub unsafe extern "C" fn wr_api_delete(dh: *mut DocumentHandle) {
 #[no_mangle]
 pub unsafe extern "C" fn wr_api_shut_down(dh: &mut DocumentHandle) {
     dh.api.shut_down(true);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn wr_api_deinit(dh: &mut DocumentHandle) {
+    dh.api.deinit();
 }
 
 #[no_mangle]

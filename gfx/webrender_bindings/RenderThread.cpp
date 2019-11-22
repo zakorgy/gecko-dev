@@ -200,6 +200,7 @@ void RenderThread::RemoveRenderer(wr::WindowId aWindowId) {
   MOZ_ASSERT(IsInRenderThread());
 
   if (mHasShutdown) {
+    gfxCriticalNote << "##### RemoveRenderer early return";
     return;
   }
 

@@ -381,14 +381,18 @@ WebRenderAPI::~WebRenderAPI() {
   if (!mRootApi) {
     RenderThread::Get()->SetDestroyed(GetId());
 
+    gfxCriticalNote << "##### Deinit WR API";
+    wr_api_deinit(mDocHandle);
     layers::SynchronousTask task("Destroy WebRenderAPI");
     auto event = MakeUnique<RemoveRenderer>(&task);
+    gfxCriticalNote << "##### Sending event";
     RunOnRenderThread(std::move(event));
     task.Wait();
-
+    gfxCriticalNote << "##### Task ended";
+    gfxCriticalNote << "##### Deleting WR API";
     wr_api_shut_down(mDocHandle);
   }
-
+  gfxCriticalNote << "##### Not deleting WR API";
   wr_api_delete(mDocHandle);
 }
 
