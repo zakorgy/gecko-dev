@@ -63,6 +63,10 @@ winapi = { git = "https://github.com/froydnj/winapi-rs", branch = "aarch64" }
 packed_simd = { git = "https://github.com/hsivonen/packed_simd", branch = "rust_1_32" }
 spirv_cross = { git = "https://github.com/zakorgy/spirv_cross", branch = "0.16" }
 metal = { git = "https://github.com/zakorgy/metal-rs", branch = "0.17" }
+gfx-hal = { path = "../gfx/src/hal" }
+gfx-backend-metal = { path = "../gfx/src/backend/metal" }
+#rendy-memory = { path = "../rendy/memory"}
+#rendy-descriptor = { path = "../rendy/descriptor"}
 
 [patch.crates-io.cranelift-codegen]
 git = "https://github.com/CraneStation/Cranelift"

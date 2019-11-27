@@ -13,7 +13,7 @@
 [package]
 edition = "2018"
 name = "rendy-memory"
-version = "0.5.1"
+version = "0.5.2"
 authors = ["omni-viral <scareaangel@gmail.com>"]
 description = "Rendy's memory manager"
 documentation = "https://docs.rs/rendy-memory"
@@ -25,7 +25,7 @@ repository = "https://github.com/amethyst/rendy"
 version = "0.2"
 
 [dependencies.gfx-hal]
-version = "0.4"
+version = "0.4.1"
 
 [dependencies.hibitset]
 version = "0.6"
