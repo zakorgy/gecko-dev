@@ -65,8 +65,8 @@ spirv_cross = { git = "https://github.com/zakorgy/spirv_cross", branch = "0.16" 
 metal = { git = "https://github.com/zakorgy/metal-rs", branch = "0.17" }
 gfx-hal = { path = "../gfx/src/hal" }
 gfx-backend-metal = { path = "../gfx/src/backend/metal" }
-#rendy-memory = { path = "../rendy/memory"}
-#rendy-descriptor = { path = "../rendy/descriptor"}
+rendy-memory = { git = "https://github.com/amethyst/rendy", branch = "release-0.5.1"}
+rendy-descriptor = { git = "https://github.com/amethyst/rendy", branch = "release-0.5.1"}
 
 [patch.crates-io.cranelift-codegen]
 git = "https://github.com/CraneStation/Cranelift"

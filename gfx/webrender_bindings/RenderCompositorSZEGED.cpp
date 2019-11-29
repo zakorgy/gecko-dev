@@ -29,7 +29,7 @@ RenderCompositorSZEGED::Create(RefPtr<widget::CompositorWidget>&& aWidget)
     gfxCriticalNote << "Failed RenderCompositorSZEGED creation";
     return nullptr;
   }
-  gfxCriticalNote << "RenderCompositorSZEGED creation completed!";
+  // gfxCriticalNote << "RenderCompositorSZEGED creation completed!";
   return compositor;
 }
 

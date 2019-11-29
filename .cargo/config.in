@@ -22,6 +22,11 @@ branch = "aarch64"
 git = "https://github.com/froydnj/winapi-rs"
 replace-with = "vendored-sources"
 
+[source."https://github.com/amethyst/rendy"]
+branch = "release-0.5.1"
+git = "https://github.com/amethyst/rendy"
+replace-with = "vendored-sources"
+
 [source."https://github.com/alexcrichton/mio-named-pipes"]
 branch = "master"
 git = "https://github.com/alexcrichton/mio-named-pipes"

@@ -2655,7 +2655,7 @@ dependencies = [
 [[package]]
 name = "rendy-descriptor"
 version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
+source = "git+https://github.com/amethyst/rendy?branch=release-0.5.1#ae6e0a9089bb6ed5f8f7820ec23f5c8e344e7d95"
 dependencies = [
  "gfx-hal 0.4.1",
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2665,8 +2665,8 @@ dependencies = [
 
 [[package]]
 name = "rendy-memory"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
+version = "0.5.3"
+source = "git+https://github.com/amethyst/rendy?branch=release-0.5.1#ae6e0a9089bb6ed5f8f7820ec23f5c8e344e7d95"
 dependencies = [
  "colorful 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "gfx-hal 0.4.1",
@@ -3796,8 +3796,8 @@ dependencies = [
  "rand 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "rayon 1.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "relevant 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "rendy-descriptor 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "rendy-memory 0.5.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rendy-descriptor 0.5.1 (git+https://github.com/amethyst/rendy?branch=release-0.5.1)",
+ "rendy-memory 0.5.3 (git+https://github.com/amethyst/rendy?branch=release-0.5.1)",
  "ron 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.88 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json 1.0.26 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -4272,8 +4272,8 @@ dependencies = [
 "checksum regex-syntax 0.6.12 (registry+https://github.com/rust-lang/crates.io-index)" = "11a7e20d1cce64ef2fed88b66d347f88bd9babb82845b2b858f3edbf59a4f716"
 "checksum relevant 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)" = "245816a76742b391111580d7e4b68cda1095597fdd8b2a294e0779e85e6d17fa"
 "checksum remove_dir_all 0.5.2 (registry+https://github.com/rust-lang/crates.io-index)" = "4a83fa3702a688b9359eccba92d153ac33fd2e8462f9e0e3fdf155239ea7792e"
-"checksum rendy-descriptor 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)" = "f475bcc0505946e998590f1f0545c52ef4b559174a1b353a7ce6638def8b621e"
-"checksum rendy-memory 0.5.2 (registry+https://github.com/rust-lang/crates.io-index)" = "ed492161a819feae7f27f418bb16035276ac20649c60d756699152cb5c1960ec"
+"checksum rendy-descriptor 0.5.1 (git+https://github.com/amethyst/rendy?branch=release-0.5.1)" = "<none>"
+"checksum rendy-memory 0.5.3 (git+https://github.com/amethyst/rendy?branch=release-0.5.1)" = "<none>"
 "checksum ringbuf 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)" = "588456c74d5ff0a5806bc084818e043e767533f743c11ee6f3ccf298599c6847"
 "checksum rkv 0.10.2 (registry+https://github.com/rust-lang/crates.io-index)" = "9aab7c645d32e977e186448b0a5c2c3139a91a7f630cfd8a8c314d1d145e78bf"
 "checksum ron 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)" = "da06feaa07f69125ab9ddc769b11de29090122170b402547f64b86fe16ebc399"
