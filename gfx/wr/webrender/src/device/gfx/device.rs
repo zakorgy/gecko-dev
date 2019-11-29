@@ -1025,8 +1025,9 @@ impl<B: hal::Backend> Device<B> {
                         .max(1),
                 };
 
-                let swap_config =
+                let mut swap_config =
                     SwapchainConfig::from_caps(&caps, available_surface_format, window_extent);
+                swap_config.image_count = 3;
 
                 let frame_cunt = swap_config.image_count as usize;
                 unsafe {
@@ -2607,13 +2608,9 @@ impl<B: hal::Backend> Device<B> {
     }
 
     fn free_texture(&mut self, mut texture: Texture) {
-        if texture.bound_in_frame.get() == self.frame_id {
+        if texture.still_in_flight(self.frame_id, self.frame_count) {
             self.retained_textures.push(texture);
             return;
-        }
-
-        if texture.still_in_flight(self.frame_id, self.frame_count) {
-            self.wait_for_resources();
         }
 
         if texture.supports_depth() {
