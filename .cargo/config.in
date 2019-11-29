@@ -12,6 +12,11 @@ branch = "0.17"
 git = "https://github.com/zakorgy/metal-rs"
 replace-with = "vendored-sources"
 
+[source."https://github.com/zakorgy/gfx"]
+branch = "hal-0.4-kvark-patch"
+git = "https://github.com/zakorgy/gfx"
+replace-with = "vendored-sources"
+
 [source."https://github.com/hsivonen/packed_simd"]
 branch = "rust_1_32"
 git = "https://github.com/hsivonen/packed_simd"
