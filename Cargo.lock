@@ -1220,13 +1220,13 @@ dependencies = [
 [[package]]
 name = "gfx-backend-vulkan"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
+source = "git+https://github.com/zakorgy/gfx?branch=hal-0.4-kvark-patch#9729a93b00022834f6b3a008d28a0c1d44698f55"
 dependencies = [
  "arrayvec 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "ash 0.29.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "byteorder 1.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "core-graphics 0.17.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "gfx-hal 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "gfx-hal 0.4.1 (git+https://github.com/zakorgy/gfx?branch=hal-0.4-kvark-patch)",
  "lazy_static 1.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "objc 0.2.7 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1239,7 +1239,7 @@ dependencies = [
 [[package]]
 name = "gfx-hal"
 version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
+source = "git+https://github.com/zakorgy/gfx?branch=hal-0.4-kvark-patch#9729a93b00022834f6b3a008d28a0c1d44698f55"
 dependencies = [
  "bitflags 1.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "raw-window-handle 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2594,9 +2594,9 @@ dependencies = [
 [[package]]
 name = "rendy-descriptor"
 version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
+source = "git+https://github.com/amethyst/rendy?branch=release-0.5.1#ae6e0a9089bb6ed5f8f7820ec23f5c8e344e7d95"
 dependencies = [
- "gfx-hal 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "gfx-hal 0.4.1 (git+https://github.com/zakorgy/gfx?branch=hal-0.4-kvark-patch)",
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "relevant 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "smallvec 0.6.10 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2604,11 +2604,11 @@ dependencies = [
 
 [[package]]
 name = "rendy-memory"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
+version = "0.5.3"
+source = "git+https://github.com/amethyst/rendy?branch=release-0.5.1#ae6e0a9089bb6ed5f8f7820ec23f5c8e344e7d95"
 dependencies = [
  "colorful 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "gfx-hal 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "gfx-hal 0.4.1 (git+https://github.com/zakorgy/gfx?branch=hal-0.4-kvark-patch)",
  "hibitset 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "relevant 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -3667,7 +3667,7 @@ dependencies = [
  "euclid 0.20.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "freetype 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "fxhash 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "gfx-hal 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "gfx-hal 0.4.1 (git+https://github.com/zakorgy/gfx?branch=hal-0.4-kvark-patch)",
  "image 0.22.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static 1.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.60 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -3678,8 +3678,8 @@ dependencies = [
  "rand 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "rayon 1.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "relevant 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "rendy-descriptor 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "rendy-memory 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rendy-descriptor 0.5.1 (git+https://github.com/amethyst/rendy?branch=release-0.5.1)",
+ "rendy-memory 0.5.3 (git+https://github.com/amethyst/rendy?branch=release-0.5.1)",
  "ron 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.88 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json 1.0.26 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -3727,7 +3727,7 @@ dependencies = [
  "euclid 0.20.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "foreign-types 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "fxhash 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "gfx-backend-vulkan 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "gfx-backend-vulkan 0.4.0 (git+https://github.com/zakorgy/gfx?branch=hal-0.4-kvark-patch)",
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "nsstring 0.1.0",
  "num_cpus 1.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -4054,8 +4054,8 @@ source = "git+https://github.com/kvark/spirv_cross?branch=wgpu#636677bad72479778
 "checksum futures-cpupool 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)" = "ab90cde24b3319636588d0c35fe03b1333857621051837ed769faefb4c2162e4"
 "checksum fxhash 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)" = "c31b6d751ae2c7f11320402d34e41349dd1016f8d5d45e48c4312bc8625af50c"
 "checksum generic-array 0.12.0 (registry+https://github.com/rust-lang/crates.io-index)" = "3c0f28c2f5bfb5960175af447a2da7c18900693738343dc896ffbcabd9839592"
-"checksum gfx-backend-vulkan 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)" = "62538fedd66a78968a162e8e1a29d085ffbc97f8782634684b2f7da7aea59207"
-"checksum gfx-hal 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)" = "7c88981665c780447bb08eb099e1ded330754a7246719bab927ee4a949c0ba7f"
+"checksum gfx-backend-vulkan 0.4.0 (git+https://github.com/zakorgy/gfx?branch=hal-0.4-kvark-patch)" = "<none>"
+"checksum gfx-hal 0.4.1 (git+https://github.com/zakorgy/gfx?branch=hal-0.4-kvark-patch)" = "<none>"
 "checksum glob 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)" = "9b919933a397b79c37e33b77bb2aa3dc8eb6e165ad809e58ff75bc7db2e34574"
 "checksum goblin 0.0.24 (registry+https://github.com/rust-lang/crates.io-index)" = "e3fa261d919c1ae9d1e4533c4a2f99e10938603c4208d56c05bec7a872b661b0"
 "checksum guid_win 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "87261686cc5e35b6584f4c2a430c2b153d8a92ab1ef820c16be34c1df8f5f58b"
@@ -4170,8 +4170,8 @@ source = "git+https://github.com/kvark/spirv_cross?branch=wgpu#636677bad72479778
 "checksum regex-syntax 0.6.12 (registry+https://github.com/rust-lang/crates.io-index)" = "11a7e20d1cce64ef2fed88b66d347f88bd9babb82845b2b858f3edbf59a4f716"
 "checksum relevant 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)" = "245816a76742b391111580d7e4b68cda1095597fdd8b2a294e0779e85e6d17fa"
 "checksum remove_dir_all 0.5.2 (registry+https://github.com/rust-lang/crates.io-index)" = "4a83fa3702a688b9359eccba92d153ac33fd2e8462f9e0e3fdf155239ea7792e"
-"checksum rendy-descriptor 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)" = "f475bcc0505946e998590f1f0545c52ef4b559174a1b353a7ce6638def8b621e"
-"checksum rendy-memory 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)" = "08f99de535d9e48d9cfab780b521702cc0d7183d354872d223967b75abae1199"
+"checksum rendy-descriptor 0.5.1 (git+https://github.com/amethyst/rendy?branch=release-0.5.1)" = "<none>"
+"checksum rendy-memory 0.5.3 (git+https://github.com/amethyst/rendy?branch=release-0.5.1)" = "<none>"
 "checksum ringbuf 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)" = "588456c74d5ff0a5806bc084818e043e767533f743c11ee6f3ccf298599c6847"
 "checksum rkv 0.10.2 (registry+https://github.com/rust-lang/crates.io-index)" = "9aab7c645d32e977e186448b0a5c2c3139a91a7f630cfd8a8c314d1d145e78bf"
 "checksum ron 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)" = "da06feaa07f69125ab9ddc769b11de29090122170b402547f64b86fe16ebc399"
