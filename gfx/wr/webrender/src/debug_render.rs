@@ -387,6 +387,10 @@ impl DebugRenderer {
                 true,
             );
 
+            #[cfg(not(feature = "gl"))]
+            {
+                device.reset_draw_target(Some(&projection));
+            }
             // Triangles
             if !self.tri_vertices.is_empty() {
                 device.bind_program(&self.color_program);
@@ -426,6 +430,10 @@ impl DebugRenderer {
                     &self.font_vertices,
                     VertexUsageHint::Dynamic,
                 );
+                #[cfg(not(feature = "gl"))]
+                {
+                    device.bind_per_draw_textures(false);
+                }
                 device.draw_triangles_u32(0, self.font_indices.len() as i32);
             }
         }

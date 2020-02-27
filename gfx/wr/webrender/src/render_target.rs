@@ -307,6 +307,16 @@ pub struct ColorRenderTarget {
     pub used_rect: DeviceIntRect,
 }
 
+#[cfg(not(feature = "gl"))]
+impl ColorRenderTarget {
+    pub fn empty_without_batches(&self) -> bool {
+        self.vertical_blurs.is_empty()
+        && self.horizontal_blurs.is_empty()
+        && self.scalings.is_empty()
+        && self.svg_filters.is_empty()
+    }
+}
+
 impl RenderTarget for ColorRenderTarget {
     fn new(
         screen_size: DeviceIntSize,
@@ -588,6 +598,16 @@ pub struct AlphaRenderTarget {
     pub used_rect: DeviceIntRect,
 }
 
+#[cfg(not(feature = "gl"))]
+impl AlphaRenderTarget {
+    pub fn is_empty(&self) -> bool {
+        self.clip_batcher.is_empty()
+            && self.vertical_blurs.is_empty()
+            && self.horizontal_blurs.is_empty()
+            && self.scalings.is_empty()
+    }
+}
+
 impl RenderTarget for AlphaRenderTarget {
     fn new(
         _: DeviceIntSize,
@@ -750,6 +770,17 @@ impl TextureCacheRenderTarget {
             line_decorations: vec![],
             gradients: vec![],
         }
+    }
+
+    #[cfg(not(feature = "gl"))]
+    pub fn is_empty(&self) -> bool {
+        self.horizontal_blurs.is_empty()
+        && self.border_segments_complex.is_empty()
+        && self.border_segments_solid.is_empty()
+        && self.line_decorations.is_empty()
+        && self.gradients.is_empty()
+        && self.clears.is_empty()
+        && self.blits.is_empty()
     }
 
     pub fn add_task(

@@ -1220,7 +1220,7 @@ dependencies = [
 [[package]]
 name = "gfx-backend-vulkan"
 version = "0.4.0"
-source = "git+https://github.com/zakorgy/gfx?branch=hal-0.4-kvark-patch#9729a93b00022834f6b3a008d28a0c1d44698f55"
+source = "git+https://github.com/zakorgy/gfx?branch=hal-0.4-kvark-patch#be400f2d401e7b4c233ef72e06805362778c2fcf"
 dependencies = [
  "arrayvec 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "ash 0.29.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1239,7 +1239,7 @@ dependencies = [
 [[package]]
 name = "gfx-hal"
 version = "0.4.1"
-source = "git+https://github.com/zakorgy/gfx?branch=hal-0.4-kvark-patch#9729a93b00022834f6b3a008d28a0c1d44698f55"
+source = "git+https://github.com/zakorgy/gfx?branch=hal-0.4-kvark-patch#be400f2d401e7b4c233ef72e06805362778c2fcf"
 dependencies = [
  "bitflags 1.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "raw-window-handle 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",

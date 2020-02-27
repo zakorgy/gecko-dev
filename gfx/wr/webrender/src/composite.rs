@@ -64,4 +64,11 @@ impl CompositeState {
             dirty_rects_are_valid: true,
         }
     }
+
+    #[cfg(not(feature = "gl"))]
+    pub fn is_empty(&self) -> bool {
+        self.opaque_tiles.is_empty()
+        && self.alpha_tiles.is_empty()
+        && self.clear_tiles.is_empty()
+    }
 }
