@@ -30,6 +30,8 @@ pub const LESS_EQUAL_WRITE: hal::pso::DepthTest = hal::pso::DepthTest {
     write: true,
 };
 
+pub const MAX_FRAME_COUNT: usize = 3;
+
 #[derive(Clone, Deserialize)]
 pub struct PipelineRequirements {
     pub attribute_descriptors: Vec<hal::pso::AttributeDesc>,

@@ -339,6 +339,12 @@ impl PrimitiveType for PackedVertex {
     fn to_primitive_type(&self) -> [f32; 2] { self.pos }
 }
 
+#[derive(Eq, PartialEq)]
+enum TargetKind {
+    Main,
+    OffScreen,
+}
+
 pub(crate) mod desc {
     #![cfg_attr(not(feature = "gl"), allow(dead_code))]
     use crate::device::{VertexAttribute, VertexAttributeKind, VertexDescriptor};
@@ -992,6 +998,7 @@ impl<B: hal::Backend> TextureResolver<B> {
                 None,
                 1,
             );
+
         device.upload_texture_immediate(
             &dummy_cache_texture,
             &[0xff, 0xff, 0xff, 0xff],
@@ -2156,7 +2163,7 @@ impl<B: hal::Backend> Renderer<B> {
                 1,
             );
             device.upload_texture_immediate(&texture, &dither_matrix);
-
+            device.bind_texture(TextureSampler::Dither, &texture, Swizzle::default());
             Some(texture)
         } else {
             None
@@ -2487,7 +2494,6 @@ impl<B: hal::Backend> Renderer<B> {
         // We initially set the flags to default and then now call set_debug_flags
         // to ensure any potential transition when enabling a flag is run.
         renderer.set_debug_flags(debug_flags);
-
         let sender = RenderApiSender::new(api_tx, payload_tx);
         Ok((renderer, sender))
     }
@@ -2740,7 +2746,6 @@ impl<B: hal::Backend> Renderer<B> {
 
     #[cfg(not(feature = "gl"))]
     pub fn resize(&mut self, window_size: Option<(i32, i32)>) -> DeviceIntSize {
-        self.shaders.borrow_mut().reset();
         let (resized, size) = self.device.recreate_swapchain(window_size);
         if resized {
             if let Some(debug_renderer) = self.debug.take() {
@@ -3568,6 +3573,8 @@ impl<B: hal::Backend> Renderer<B> {
                                 draw_target,
                                 #[cfg(not(feature="gl"))]
                                 DrawTargetUsage::Draw,
+                                #[cfg(not(feature="gl"))]
+                                None,
                             );
                             self.device.clear_target(
                                 Some(TEXTURE_CACHE_DBG_CLEAR_COLOR),
@@ -3619,10 +3626,19 @@ impl<B: hal::Backend> Renderer<B> {
                 }
             }
         }
+        #[cfg(not(feature = "gl"))]
+        {
+            let can_skip_bind = *textures == BatchTextures::no_texture()
+                && cfg!(not(debug_assertions));
+                self.device.bind_per_draw_textures(can_skip_bind);
+        }
 
-        // TODO: this probably isn't the best place for this.
-        if let Some(ref texture) = self.dither_matrix_texture {
-            self.device.bind_texture(TextureSampler::Dither, texture, Swizzle::default());
+        #[cfg(feature = "gl")]
+        {
+            // TODO: this probably isn't the best place for this.
+            if let Some(ref texture) = self.dither_matrix_texture {
+                self.device.bind_texture(TextureSampler::Dither, texture, Swizzle::default());
+            }
         }
 
         self.draw_instanced_batch_with_previously_bound_textures(data, vertex_array_kind, stats)
@@ -3737,6 +3753,8 @@ impl<B: hal::Backend> Renderer<B> {
             draw_target,
             #[cfg(not(feature="gl"))]
             DrawTargetUsage::Draw,
+            #[cfg(not(feature="gl"))]
+            None,
         );
         self.device.reset_read_target();
 
@@ -3874,12 +3892,16 @@ impl<B: hal::Backend> Renderer<B> {
         let _gm = self.gpu_profile.start_marker("picture cache target");
         let framebuffer_kind = FramebufferKind::Other;
 
+        let clear_rect;
+        let clear_color = target.clear_color.map(|c| c.to_array());
         {
             let _timer = self.gpu_profile.start_timer(GPU_TAG_SETUP_TARGET);
             self.device.bind_draw_target(
                 draw_target,
                 #[cfg(not(feature="gl"))]
                 DrawTargetUsage::Draw,
+                #[cfg(not(feature="gl"))]
+                Some(&projection),
             );
             self.device.disable_depth();
             self.device.enable_depth_write();
@@ -3894,14 +3916,21 @@ impl<B: hal::Backend> Renderer<B> {
                 )
             });
 
-            self.device.clear_target(
-                target.clear_color.map(|c| c.to_array()),
-                Some(1.0),
-                scissor_rect,
-                #[cfg(not(feature = "gl"))]
-                false,
-            );
-
+            #[cfg(feature = "gl")]
+            {
+                clear_rect = None;
+                self.device.clear_target(
+                    clear_color,
+                    Some(1.0),
+                    scissor_rect,
+                    #[cfg(not(feature = "gl"))]
+                    false,
+                );
+            }
+            #[cfg(not(feature = "gl"))]
+            {
+                clear_rect = scissor_rect;
+            }
             self.device.disable_depth_write();
         }
 
@@ -3914,6 +3943,8 @@ impl<B: hal::Backend> Renderer<B> {
             render_tasks,
             stats,
             false,
+            clear_rect,
+            clear_color,
         );
     }
 
@@ -3928,7 +3959,9 @@ impl<B: hal::Backend> Renderer<B> {
         projection: &default::Transform3D<f32>,
         render_tasks: &RenderTaskGraph,
         stats: &mut RendererStats,
-        _transit_to_present: bool,
+        transit_to_present: bool,
+        clear_rect: Option<FramebufferIntRect>,
+        clear_color: Option<[f32; 4]>,
     ) {
         let uses_scissor = alpha_batch_container.task_scissor_rect.is_some();
 
@@ -3943,7 +3976,7 @@ impl<B: hal::Backend> Renderer<B> {
 
         #[cfg(not(feature = "gl"))]
         let mut last_rp;
-        if !alpha_batch_container.opaque_batches.is_empty()
+        if !alpha_batch_container.opaque_batches.is_empty() || clear_rect.is_some()
             && !self.debug_flags.contains(DebugFlags::DISABLE_OPAQUE_PASS) {
             let _gl = self.gpu_profile.start_marker("opaque batches");
             let opaque_sampler = self.gpu_profile.start_sampler(GPU_SAMPLER_TAG_OPAQUE);
@@ -3954,8 +3987,20 @@ impl<B: hal::Backend> Renderer<B> {
             self.device.enable_depth_write();
             #[cfg(not(feature = "gl"))]
             {
-                last_rp = _transit_to_present && alpha_batch_container.alpha_batches.is_empty();
+                last_rp = transit_to_present && alpha_batch_container.alpha_batches.is_empty();
                 self.device.begin_render_pass(last_rp);
+                if clear_rect.is_some() {
+                    self.device.clear_target_rects(
+                        clear_color,
+                        Some(1.0),
+                        clear_rect,
+                    );
+                }
+            }
+            #[cfg(feature = "gl")]
+            {
+                let _ = transit_to_present;
+                let _ = clear_color;
             }
 
             // Draw opaque batches front-to-back for maximum
@@ -4001,7 +4046,9 @@ impl<B: hal::Backend> Renderer<B> {
             let _gl = self.gpu_profile.start_marker("alpha batches");
             let transparent_sampler = self.gpu_profile.start_sampler(GPU_SAMPLER_TAG_TRANSPARENT);
             self.set_blend(true, framebuffer_kind);
+
             let mut prev_blend_mode = BlendMode::None;
+            let shaders_rc = self.shaders.clone();
 
             // If the device supports pixel local storage, initialize the PLS buffer for
             // the transparent pass. This involves reading the current framebuffer value
@@ -4027,25 +4074,13 @@ impl<B: hal::Backend> Renderer<B> {
                 if should_skip_batch(&batch.key.kind, &self.debug_flags) {
                     continue;
                 }
-                #[cfg(not(feature = "gl"))]
-                let mut blit_in_batch = false;
-                #[cfg(not(feature = "gl"))]
-                let last_batch = _batch_idx == last_batch_idx;
-                #[cfg(not(feature = "gl"))]
-                {
-                    if let BatchKind::Brush(BrushBatchKind::MixBlend { .. }) = batch.key.kind {
-                        blit_in_batch = true;
-                    }
-                    last_rp = last_batch && _transit_to_present && !blit_in_batch;
-                    self.device.begin_render_pass(last_rp);
-                }
 
-                self.shaders.borrow_mut()
-                    .get(&batch.key, batch.features | BatchFeatures::ALPHA_PASS, self.debug_flags)
-                    .bind(
-                        &mut self.device, projection,
-                        &mut self.renderer_errors,
-                    );
+                let mut shaders = shaders_rc.borrow_mut();
+                let shader = shaders.get(
+                    &batch.key,
+                    batch.features | BatchFeatures::ALPHA_PASS,
+                    self.debug_flags,
+                );
 
                 if batch.key.blend_mode != prev_blend_mode {
                     match batch.key.blend_mode {
@@ -4078,6 +4113,12 @@ impl<B: hal::Backend> Renderer<B> {
                             // /webrender/doc/text-rendering.md
                             //
                             self.device.set_blend_mode_subpixel_with_bg_color_pass0();
+                            // need to make sure the shader is bound
+                            shader.bind(
+                                &mut self.device,
+                                projection,
+                                &mut self.renderer_errors,
+                            );
                             self.device.switch_mode(ShaderColorMode::SubpixelWithBgColorPass0 as _);
                         }
                         BlendMode::Advanced(mode) => {
@@ -4096,8 +4137,6 @@ impl<B: hal::Backend> Renderer<B> {
                     // composites can't be grouped together because
                     // they may overlap and affect each other.
                     debug_assert_eq!(batch.instances.len(), 1);
-                    #[cfg(not(feature = "gl"))]
-                    self.device.end_render_pass();
                     self.handle_readback_composite(
                         draw_target,
                         uses_scissor,
@@ -4105,15 +4144,21 @@ impl<B: hal::Backend> Renderer<B> {
                         &render_tasks[task_id],
                         &render_tasks[backdrop_id],
                     );
-                    #[cfg(not(feature = "gl"))]
-                    {
-                        last_rp = last_batch && _transit_to_present;
-                        self.device.begin_render_pass(last_batch && _transit_to_present);
-                    }
                 }
 
                 let _timer = self.gpu_profile.start_timer(batch.key.kind.sampler_tag());
+                shader.bind(
+                    &mut self.device,
+                    projection,
+                    &mut self.renderer_errors,
+                );
 
+                #[cfg(not(feature = "gl"))]
+                {
+                    let last_batch = _batch_idx == last_batch_idx;
+                    last_rp = last_batch && transit_to_present;
+                    self.device.begin_render_pass(last_batch && transit_to_present);
+                }
                 self.draw_instanced_batch(
                     &batch.instances,
                     VertexArrayKind::Primitive,
@@ -4123,6 +4168,12 @@ impl<B: hal::Backend> Renderer<B> {
 
                 if batch.key.blend_mode == BlendMode::SubpixelWithBgColor {
                     self.set_blend_mode_subpixel_with_bg_color_pass1(framebuffer_kind);
+                    // re-binding the shader after the blend mode change
+                    shader.bind(
+                        &mut self.device,
+                        projection,
+                        &mut self.renderer_errors,
+                    );
                     self.device.switch_mode(ShaderColorMode::SubpixelWithBgColorPass1 as _);
 
                     // When drawing the 2nd and 3rd passes, we know that the VAO, textures etc
@@ -4133,8 +4184,13 @@ impl<B: hal::Backend> Renderer<B> {
                         .draw_indexed_triangles_instanced_u16(6, batch.instances.len() as i32);
 
                     self.set_blend_mode_subpixel_with_bg_color_pass2(framebuffer_kind);
+                    // re-binding the shader after the blend mode change
+                    shader.bind(
+                        &mut self.device,
+                        projection,
+                        &mut self.renderer_errors,
+                    );
                     self.device.switch_mode(ShaderColorMode::SubpixelWithBgColorPass2 as _);
-
                     self.device
                         .draw_indexed_triangles_instanced_u16(6, batch.instances.len() as i32);
                 }
@@ -4177,9 +4233,16 @@ impl<B: hal::Backend> Renderer<B> {
     fn draw_tile_list<'a, I: Iterator<Item = &'a CompositeTile>>(
         &mut self,
         tiles_iter: I,
+        projection: &default::Transform3D<f32>,
         partial_present_mode: Option<PartialPresentMode>,
         stats: &mut RendererStats,
     ) {
+        self.shaders.borrow_mut().composite.bind(
+            &mut self.device,
+            projection,
+            &mut self.renderer_errors
+        );
+
         let mut current_textures = BatchTextures::no_texture();
         let mut instances = Vec::new();
 
@@ -4256,7 +4319,7 @@ impl<B: hal::Backend> Renderer<B> {
         draw_target: DrawTarget,
         projection: &default::Transform3D<f32>,
         results: &mut RenderResults,
-        _transit_to_present: bool,
+        transit_to_present: bool,
     ) {
         let _gm = self.gpu_profile.start_marker("framebuffer");
         let _timer = self.gpu_profile.start_timer(GPU_TAG_COMPOSITE);
@@ -4265,6 +4328,8 @@ impl<B: hal::Backend> Renderer<B> {
             draw_target,
             #[cfg(not(feature="gl"))]
             DrawTargetUsage::Draw,
+            #[cfg(not(feature="gl"))]
+            Some(&projection),
         );
         self.device.enable_depth();
         self.device.enable_depth_write();
@@ -4313,9 +4378,11 @@ impl<B: hal::Backend> Renderer<B> {
             self.force_redraw = false;
         }
 
+        #[cfg(not(feature = "gl"))]
+        let mut clear_rects: SmallVec<[FramebufferIntRect; 16]> = SmallVec::new();
+        let clear_color = self.clear_color.map(|color| color.to_array());
         // Clear the framebuffer, if required
         if clear_framebuffer {
-            let clear_color = self.clear_color.map(|color| color.to_array());
 
             match partial_present_mode {
                 Some(PartialPresentMode::Single { dirty_rect }) => {
@@ -4334,16 +4401,24 @@ impl<B: hal::Backend> Renderer<B> {
                     let clear_iter = composite_state.clear_tiles.iter();
                     let alpha_iter = composite_state.alpha_tiles.iter();
 
-                    for tile in opaque_iter.chain(clear_iter.chain(alpha_iter)) {
-                        if !tile.dirty_rect.is_empty() {
-                            self.device.clear_target(
-                                clear_color,
-                                Some(1.0),
-                                Some(draw_target.to_framebuffer_rect(tile.dirty_rect.to_i32())),
-                                #[cfg(not(feature = "gl"))]
-                                false,
-                            );
+                    #[cfg(feature = "gl")]
+                    {
+                        for tile in opaque_iter.chain(clear_iter.chain(alpha_iter)) {
+                            if !tile.dirty_rect.is_empty() {
+                                self.device.clear_target(
+                                    clear_color,
+                                    Some(1.0),
+                                    Some(draw_target.to_framebuffer_rect(tile.dirty_rect.to_i32())),
+                                );
+                            }
                         }
+                    }
+                    #[cfg(not(feature = "gl"))]
+                    {
+                        clear_rects = opaque_iter.chain(clear_iter.chain(alpha_iter))
+                            .filter(|tile| !tile.dirty_rect.is_empty())
+                            .map(|tile| draw_target.to_framebuffer_rect(tile.dirty_rect.to_i32()))
+                            .collect::<_>();
                     }
                 }
                 None => {
@@ -4359,13 +4434,23 @@ impl<B: hal::Backend> Renderer<B> {
             }
         }
         #[cfg(not(feature = "gl"))]
-        self.device.begin_render_pass(_transit_to_present);
-
-        self.shaders.borrow_mut().composite.bind(
-            &mut self.device,
-            &projection,
-            &mut self.renderer_errors
-        );
+        {
+            let has_clear_attachments = !clear_rects.is_empty();
+            if !composite_state.is_empty() || partial_present_mode.is_none() || has_clear_attachments {
+                self.device.begin_render_pass(transit_to_present);
+                if has_clear_attachments {
+                    self.device.clear_target_rects(
+                        clear_color,
+                        Some(1.0),
+                        clear_rects,
+                    )
+                }
+            }
+        }
+        #[cfg(feature = "gl")]
+        {
+            let _ = transit_to_present;
+        }
 
         // Draw opaque tiles first, front-to-back to get maxmum
         // z-reject efficiency.
@@ -4375,6 +4460,7 @@ impl<B: hal::Backend> Renderer<B> {
             self.set_blend(false, FramebufferKind::Main);
             self.draw_tile_list(
                 composite_state.opaque_tiles.iter().rev(),
+                projection,
                 partial_present_mode,
                 &mut results.stats,
             );
@@ -4388,6 +4474,7 @@ impl<B: hal::Backend> Renderer<B> {
             self.device.set_blend_mode_premultiplied_dest_out();
             self.draw_tile_list(
                 composite_state.clear_tiles.iter(),
+                projection,
                 partial_present_mode,
                 &mut results.stats,
             );
@@ -4402,6 +4489,7 @@ impl<B: hal::Backend> Renderer<B> {
             self.set_blend_mode_premultiplied_alpha(FramebufferKind::Main);
             self.draw_tile_list(
                 composite_state.alpha_tiles.iter(),
+                projection,
                 partial_present_mode,
                 &mut results.stats,
             );
@@ -4409,7 +4497,7 @@ impl<B: hal::Backend> Renderer<B> {
         }
         #[cfg(not(feature = "gl"))]
         {
-            if !_transit_to_present {
+            if !transit_to_present {
                 self.device.end_render_pass();
             }
         }
@@ -4427,6 +4515,7 @@ impl<B: hal::Backend> Renderer<B> {
         frame_id: GpuFrameId,
         stats: &mut RendererStats,
         transit_to_present: bool,
+        target_kind: TargetKind,
     ) {
         self.profile_counters.color_targets.inc();
         let _gm = self.gpu_profile.start_marker("color target");
@@ -4448,6 +4537,8 @@ impl<B: hal::Backend> Renderer<B> {
                 draw_target,
                 #[cfg(not(feature="gl"))]
                 DrawTargetUsage::Draw,
+                #[cfg(not(feature="gl"))]
+                Some(&projection),
             );
             self.device.disable_depth();
             self.set_blend(false, framebuffer_kind);
@@ -4503,7 +4594,17 @@ impl<B: hal::Backend> Renderer<B> {
             &target.blits, render_tasks, draw_target, &content_origin,
         );
         #[cfg(not(feature = "gl"))]
-        self.device.begin_render_pass(transit_to_present && target.alpha_batch_containers.is_empty());
+        {
+            if target_kind == TargetKind::Main || !target.empty_without_batches() {
+                self.device.begin_render_pass(transit_to_present && target.alpha_batch_containers.is_empty());
+            } else {
+                self.device.clear_rt_if_needed();
+            }
+        }
+        #[cfg(feature = "gl")]
+        {
+            let _ = target_kind;
+        }
 
         // Draw any blurs for this target.
         // Blurs are rendered as a standard 2-pass
@@ -4568,6 +4669,8 @@ impl<B: hal::Backend> Renderer<B> {
                 render_tasks,
                 stats,
                 transit_to_present && batch_idx == last_alpha_batch_index,
+                None,
+                None,
             );
         }
 
@@ -4645,6 +4748,14 @@ impl<B: hal::Backend> Renderer<B> {
                 stats,
             );
         }
+
+        #[cfg(not(feature = "gl"))]
+        {
+            if !list.box_shadows.is_empty() {
+                self.shaders.borrow_mut().cs_clip_box_shadow
+                    .bind(&mut self.device, projection, &mut self.renderer_errors);
+            }
+        }
         // draw box-shadow clips
         for (mask_texture_id, items) in list.box_shadows.iter() {
             let _gm2 = self.gpu_profile.start_marker("box-shadows");
@@ -4655,8 +4766,11 @@ impl<B: hal::Backend> Renderer<B> {
                     TextureSource::Invalid,
                 ],
             };
-            self.shaders.borrow_mut().cs_clip_box_shadow
-                .bind(&mut self.device, projection, &mut self.renderer_errors);
+            #[cfg(feature = "gl")]
+            {
+                self.shaders.borrow_mut().cs_clip_box_shadow
+                    .bind(&mut self.device, projection, &mut self.renderer_errors);
+            }
             self.draw_instanced_batch(
                 items,
                 VertexArrayKind::Clip,
@@ -4665,6 +4779,13 @@ impl<B: hal::Backend> Renderer<B> {
             );
         }
 
+        #[cfg(not(feature = "gl"))]
+        {
+            if !list.images.is_empty() {
+                self.shaders.borrow_mut().cs_clip_image
+                    .bind(&mut self.device, projection, &mut self.renderer_errors);
+            }
+        }
         // draw image masks
         for (mask_texture_id, items) in list.images.iter() {
             let _gm2 = self.gpu_profile.start_marker("clip images");
@@ -4675,8 +4796,11 @@ impl<B: hal::Backend> Renderer<B> {
                     TextureSource::Invalid,
                 ],
             };
-            self.shaders.borrow_mut().cs_clip_image
-                .bind(&mut self.device, projection, &mut self.renderer_errors);
+            #[cfg(feature = "gl")]
+            {
+                self.shaders.borrow_mut().cs_clip_image
+                    .bind(&mut self.device, projection, &mut self.renderer_errors);
+            }
             self.draw_instanced_batch(
                 items,
                 VertexArrayKind::Clip,
@@ -4704,13 +4828,21 @@ impl<B: hal::Backend> Renderer<B> {
                 draw_target,
                 #[cfg(not(feature="gl"))]
                 DrawTargetUsage::Draw,
+                #[cfg(not(feature="gl"))]
+                Some(&projection),
             );
             self.device.disable_depth();
             self.device.disable_depth_write();
             self.set_blend(false, FramebufferKind::Other);
 
             #[cfg(not(feature = "gl"))]
-            self.device.begin_render_pass(false);
+            {
+                if !target.is_empty() {
+                    self.device.begin_render_pass(false);
+                } else {
+                    self.device.clear_rt_if_needed();
+                }
+            }
 
             // TODO(gw): Applying a scissor rect and minimal clear here
             // is a very large performance win on the Intel and nVidia
@@ -4719,27 +4851,56 @@ impl<B: hal::Backend> Renderer<B> {
             // and consider different code paths.
 
             let zero_color = [0.0, 0.0, 0.0, 0.0];
-            for &task_id in &target.zero_clears {
-                let (rect, _) = render_tasks[task_id].get_target_rect();
-                self.device.clear_target(
-                    Some(zero_color),
-                    None,
-                    Some(draw_target.to_framebuffer_rect(rect)),
-                    #[cfg(not(feature = "gl"))]
-                    false,
-                );
+            #[cfg(feature = "gl")]
+            {
+                for &task_id in &target.zero_clears {
+                    let (rect, _) = render_tasks[task_id].get_target_rect();
+                    self.device.clear_target(
+                        Some(zero_color),
+                        None,
+                        Some(draw_target.to_framebuffer_rect(rect)),
+                    );
+                }
+            }
+            #[cfg(not(feature = "gl"))]
+            {
+                if !target.zero_clears.is_empty() {
+                    self.device.clear_target_rects(
+                        Some(zero_color),
+                        None,
+                        target.zero_clears.iter().map(|task_id| {
+                            let (rect, _) = render_tasks[*task_id].get_target_rect();
+                            draw_target.to_framebuffer_rect(rect)
+                        }),
+                    )
+                }
             }
 
             let one_color = [1.0, 1.0, 1.0, 1.0];
-            for &task_id in &target.one_clears {
-                let (rect, _) = render_tasks[task_id].get_target_rect();
-                self.device.clear_target(
-                    Some(one_color),
-                    None,
-                    Some(draw_target.to_framebuffer_rect(rect)),
-                    #[cfg(not(feature = "gl"))]
-                    false,
-                );
+            #[cfg(feature = "gl")]
+            {
+                for &task_id in &target.one_clears {
+                    let (rect, _) = render_tasks[task_id].get_target_rect();
+                    self.device.clear_target(
+                        Some(one_color),
+                        None,
+                        Some(draw_target.to_framebuffer_rect(rect)),
+                    );
+                }
+            }
+
+            #[cfg(not(feature = "gl"))]
+            {
+                if !target.one_clears.is_empty() {
+                    self.device.clear_target_rects(
+                        Some(one_color),
+                        None,
+                        target.one_clears.iter().map(|task_id| {
+                            let (rect, _) = render_tasks[*task_id].get_target_rect();
+                            draw_target.to_framebuffer_rect(rect)
+                        }),
+                    )
+                }
             }
         }
 
@@ -4858,20 +5019,41 @@ impl<B: hal::Backend> Renderer<B> {
                 draw_target,
                 #[cfg(not(feature="gl"))]
                 DrawTargetUsage::Draw,
+                #[cfg(not(feature="gl"))]
+                Some(&projection),
             );
 
             self.device.disable_depth();
             self.device.disable_depth_write();
             self.set_blend(false, FramebufferKind::Other);
 
-            for rect in &target.clears {
-                self.device.clear_target(
-                    Some([0.0, 0.0, 0.0, 0.0]),
-                    None,
-                    Some(draw_target.to_framebuffer_rect(*rect)),
-                    #[cfg(not(feature = "gl"))]
-                    false,
-                );
+            #[cfg(feature = "gl")]
+            {
+                for rect in &target.clears {
+                    self.device.clear_target(
+                        Some([0.0, 0.0, 0.0, 0.0]),
+                        None,
+                        Some(draw_target.to_framebuffer_rect(*rect)),
+                    );
+                }
+            }
+
+            #[cfg(not(feature = "gl"))]
+            {
+                if !target.is_empty() {
+                    self.device.begin_render_pass(false);
+                } else {
+                    self.device.clear_rt_if_needed();
+                }
+                if !target.clears.is_empty() {
+                    self.device.clear_target_rects(
+                        Some([0.0, 0.0, 0.0, 0.0]),
+                        None,
+                        target.clears.iter().map(|rect| {
+                            draw_target.to_framebuffer_rect(*rect)
+                        }),
+                    )
+                }
             }
 
             // Handle any blits to this texture from child tasks.
@@ -4879,10 +5061,6 @@ impl<B: hal::Backend> Renderer<B> {
                 &target.blits, render_tasks, draw_target, &DeviceIntPoint::zero(),
             );
         }
-
-        #[cfg(not(feature = "gl"))]
-        self.device.begin_render_pass(false);
-
         // Draw any borders for this target.
         if !target.border_segments_solid.is_empty() ||
            !target.border_segments_complex.is_empty()
@@ -5236,6 +5414,10 @@ impl<B: hal::Backend> Renderer<B> {
         self.device.disable_stencil();
 
         self.bind_frame_data(frame);
+        #[cfg(not(feature = "gl"))]
+        {
+            self.device.bind_per_group_textures();
+        }
 
         for (_pass_index, pass) in frame.passes.iter_mut().enumerate() {
             #[cfg(not(target_os = "android"))]
@@ -5251,6 +5433,10 @@ impl<B: hal::Backend> Renderer<B> {
                 TextureSampler::PrevPassColor,
                 &mut self.device,
             );
+            #[cfg(not(feature = "gl"))]
+            {
+                self.device.bind_per_pass_textures();
+            }
 
             match pass.kind {
                 RenderPassKind::MainFramebuffer { ref main_target, .. } => {
@@ -5316,8 +5502,8 @@ impl<B: hal::Backend> Renderer<B> {
                                         let clear_color = self.clear_color.map(|color| color.to_array());
                                         self.device.bind_draw_target(
                                             draw_target_read_back,
-                                            #[cfg(not(feature="gl"))]
                                             DrawTargetUsage::Draw,
+                                            Some(&projection),
                                         );
                                         self.device.enable_depth_write();
                                         self.device.clear_target(
@@ -5340,6 +5526,7 @@ impl<B: hal::Backend> Renderer<B> {
                                         frame_id,
                                         &mut results.stats,
                                         false,
+                                        TargetKind::OffScreen,
                                     );
                                     results.stats.total_draw_calls = draw_calls;
                                 }
@@ -5350,6 +5537,8 @@ impl<B: hal::Backend> Renderer<B> {
                                     draw_target,
                                     #[cfg(not(feature="gl"))]
                                     DrawTargetUsage::Draw,
+                                    #[cfg(not(feature="gl"))]
+                                    Some(&projection)
                                 );
                                 self.device.enable_depth_write();
                                 self.device.clear_target(
@@ -5371,6 +5560,7 @@ impl<B: hal::Backend> Renderer<B> {
                                 frame_id,
                                 &mut results.stats,
                                 last_document,
+                                TargetKind::Main,
                             );
                         }
                     }
@@ -5494,6 +5684,7 @@ impl<B: hal::Backend> Renderer<B> {
                             frame_id,
                             &mut results.stats,
                             false,
+                            TargetKind::OffScreen,
                         );
                     }
 
@@ -6118,7 +6309,7 @@ impl<B: hal::Backend> Renderer<B> {
 
     // Sets the blend mode. Blend is unconditionally set if the "show overdraw" debugging mode is
     // enabled.
-    fn set_blend(&self, mut blend: bool, framebuffer_kind: FramebufferKind) {
+    fn set_blend(&mut self, mut blend: bool, framebuffer_kind: FramebufferKind) {
         if framebuffer_kind == FramebufferKind::Main &&
                 self.debug_flags.contains(DebugFlags::SHOW_OVERDRAW) {
             blend = true
@@ -6126,7 +6317,7 @@ impl<B: hal::Backend> Renderer<B> {
         self.device.set_blend(blend)
     }
 
-    fn set_blend_mode_multiply(&self, framebuffer_kind: FramebufferKind) {
+    fn set_blend_mode_multiply(&mut self, framebuffer_kind: FramebufferKind) {
         if framebuffer_kind == FramebufferKind::Main &&
                 self.debug_flags.contains(DebugFlags::SHOW_OVERDRAW) {
             self.device.set_blend_mode_show_overdraw();
@@ -6135,7 +6326,7 @@ impl<B: hal::Backend> Renderer<B> {
         }
     }
 
-    fn set_blend_mode_premultiplied_alpha(&self, framebuffer_kind: FramebufferKind) {
+    fn set_blend_mode_premultiplied_alpha(&mut self, framebuffer_kind: FramebufferKind) {
         if framebuffer_kind == FramebufferKind::Main &&
                 self.debug_flags.contains(DebugFlags::SHOW_OVERDRAW) {
             self.device.set_blend_mode_show_overdraw();
@@ -6144,7 +6335,7 @@ impl<B: hal::Backend> Renderer<B> {
         }
     }
 
-    fn set_blend_mode_subpixel_with_bg_color_pass1(&self, framebuffer_kind: FramebufferKind) {
+    fn set_blend_mode_subpixel_with_bg_color_pass1(&mut self, framebuffer_kind: FramebufferKind) {
         if framebuffer_kind == FramebufferKind::Main &&
                 self.debug_flags.contains(DebugFlags::SHOW_OVERDRAW) {
             self.device.set_blend_mode_show_overdraw();
@@ -6153,7 +6344,7 @@ impl<B: hal::Backend> Renderer<B> {
         }
     }
 
-    fn set_blend_mode_subpixel_with_bg_color_pass2(&self, framebuffer_kind: FramebufferKind) {
+    fn set_blend_mode_subpixel_with_bg_color_pass2(&mut self, framebuffer_kind: FramebufferKind) {
         if framebuffer_kind == FramebufferKind::Main &&
                 self.debug_flags.contains(DebugFlags::SHOW_OVERDRAW) {
             self.device.set_blend_mode_show_overdraw();
@@ -6175,6 +6366,8 @@ impl<B: hal::Backend> Renderer<B> {
                 ),
                 #[cfg(not(feature="gl"))]
                 DrawTargetUsage::Draw,
+                #[cfg(not(feature="gl"))]
+                None,
             );
             self.device.clear_target(
                 Some(color),

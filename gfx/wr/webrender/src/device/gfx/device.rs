@@ -12,7 +12,7 @@ use api::TextureTarget;
 #[cfg(feature = "capture")]
 use api::ImageDescriptor;
 use arrayvec::ArrayVec;
-use euclid::Transform3D;
+use euclid::default;
 use crate::internal_types::{FastHashMap, RenderTargetInfo, Swizzle, SwizzleSettings};
 use rand::{self, Rng};
 use rendy_memory::{Block, DynamicConfig, Heaps, HeapsConfig, LinearConfig, MemoryUsageValue};
@@ -37,10 +37,10 @@ use super::buffer::*;
 use super::command::*;
 use super::descriptor::*;
 use super::image::*;
-use super::program::{Program, RenderPassDepthState, PUSH_CONSTANT_BLOCK_SIZE};
+use super::program::{Program, RenderPassDepthState};
 use super::render_pass::*;
 use super::{PipelineRequirements, PrimitiveType, TextureId};
-use super::{LESS_EQUAL_TEST, LESS_EQUAL_WRITE};
+use super::{LESS_EQUAL_TEST, LESS_EQUAL_WRITE, MAX_FRAME_COUNT};
 use super::vertex_types;
 
 use super::super::{BoundPBO, Capabilities};
@@ -68,16 +68,15 @@ use hal::pool::{CommandPool as HalCommandPool};
 use hal::queue::{QueueFamilyId};
 
 pub const INVALID_TEXTURE_ID: TextureId = 0;
-pub const INVALID_PROGRAM_ID: ProgramId = ProgramId(0);
+pub const INVALID_PROGRAM_ID: ProgramId = ProgramId(0, DescriptorGroup::Invalid);
 pub const DEFAULT_READ_FBO: FBOId = FBOId(0);
 pub const DEFAULT_DRAW_FBO: FBOId = FBOId(1);
 pub const DEBUG_READ_FBO: FBOId = FBOId(2);
 
-// Frame count if present mode is mailbox
-const MAX_FRAME_COUNT: usize = 3;
 const HEADLESS_FRAME_COUNT: usize = 1;
 const SURFACE_FORMAT: hal::format::Format = hal::format::Format::Bgra8Unorm;
 const DEPTH_FORMAT: hal::format::Format = hal::format::Format::D32Sfloat;
+const DITHER_BINDING: usize = 8;
 
 #[derive(PartialEq)]
 pub enum BackendApiType {
@@ -160,7 +159,7 @@ impl Texture {
 }
 
 #[derive(PartialEq, Eq, Hash, Debug, Copy, Clone)]
-pub struct ProgramId(u32);
+pub struct ProgramId(u32, DescriptorGroup);
 
 pub struct VAO;
 
@@ -244,20 +243,23 @@ pub struct Device<B: hal::Backend> {
     frame: Option<Frame<B>>,
     frame_depth: DepthBuffer<B>,
     swapchain_image_layouts: ArrayVec<[hal::image::Layout; MAX_FRAME_COUNT]>,
-    readback_textures: ArrayVec<[Texture; MAX_FRAME_COUNT]>,
+    readback_texture: Option<Texture>,
     render_passes: HalRenderPasses<B>,
     pub frame_count: usize,
     pub viewport: hal::pso::Viewport,
+    scissor_rect: hal::pso::Rect,
+    scissor_enabled: bool,
     pub dimensions: (i32, i32),
     pub sampler_linear: B::Sampler,
     pub sampler_nearest: B::Sampler,
-    current_blend_state: Cell<Option<BlendState>>,
-    blend_color: Cell<ColorF>,
+    current_blend_state: Option<BlendState>,
+    blend_color: ColorF,
     current_depth_test: Option<DepthTest>,
     clear_values: FastHashMap<FBOId, ClearValues>,
     // device state
     programs: FastHashMap<ProgramId, Program<B>>,
-    blit_programs: FastHashMap<hal::image::ViewKind, Program<B>>,
+    blit_programs: FastHashMap<hal::image::ViewKind, (ProgramId, Program<B>)>,
+    next_program_id: u32,
     shader_modules: FastHashMap<String, (B::ShaderModule, B::ShaderModule)>,
     images: FastHashMap<TextureId, Image<B>>,
     pub(crate) gpu_cache_buffer: Option<GpuCacheBuffer<B>>,
@@ -269,10 +271,12 @@ pub struct Device<B: hal::Backend> {
     desc_allocator: DescriptorAllocator<B>,
 
     per_draw_descriptors: DescriptorSetHandler<PerDrawBindings, B, Vec<DescriptorSet<B>>>,
-    bound_per_draw_bindings: PerDrawBindings,
+    bound_per_draw_textures: PerDrawBindings,
+    pub(crate) bound_per_draw_descriptor: Option<DescriptorSet<B>>,
 
     per_pass_descriptors: DescriptorSetHandler<PerPassBindings, B, Vec<DescriptorSet<B>>>,
     bound_per_pass_textures: PerPassBindings,
+    bound_per_pass_descriptor: Option<DescriptorSet<B>>,
 
     per_group_descriptors: DescriptorSetHandler<
         (DescriptorGroup, PerGroupBindings),
@@ -280,10 +284,11 @@ pub struct Device<B: hal::Backend> {
         FastHashMap<DescriptorGroup, Vec<DescriptorSet<B>>>,
     >,
     bound_per_group_textures: PerGroupBindings,
+    bound_per_group_descriptors: [Option<DescriptorSet<B>>; 3],
 
     // Locals related things
-    locals_descriptors: DescriptorSetHandler<Locals, B, Vec<DescriptorSet<B>>>,
-    bound_locals: Locals,
+    uniform_buffer_handler: UniformBufferHandler<B>,
+    bound_projection: default::Transform3D<f32>,
 
     descriptor_data: DescriptorData<B>,
     bound_textures: [u32; RENDERER_TEXTURE_COUNT],
@@ -293,13 +298,11 @@ pub struct Device<B: hal::Backend> {
     bound_read_fbo: FBOId,
     bound_draw_fbo: FBOId,
     draw_target_usage: DrawTargetUsage,
-    scissor_rect: Option<FramebufferIntRect>,
     //default_read_fbo: FBOId,
     //default_draw_fbo: FBOId,
     device_pixel_ratio: f32,
     depth_available: bool,
     upload_method: UploadMethod,
-    locals_buffer: UniformBufferHandler<B>,
     quad_buffer: VertexBufferHandler<B>,
     instance_buffers: ArrayVec<[InstanceBufferHandler<B>; MAX_FRAME_COUNT]>,
     free_instance_buffers: Vec<InstancePoolBuffer<B>>,
@@ -341,14 +344,14 @@ pub struct Device<B: hal::Backend> {
     cache_path: Option<PathBuf>,
     save_cache: bool,
 
-    // The device supports push constants
-    pub use_push_consts: bool,
     swizzle_settings: SwizzleSettings,
     color_formats: TextureFormatPair<ImageFormat>,
     optimal_pbo_stride: NonZeroUsize,
-    last_main_fbo_pass: bool,
     last_rp_in_frame_reached: bool,
     pub readback_supported: bool,
+    #[cfg(debug_assertions)]
+    shader_is_ready: bool,
+    rebind_descriptors: bool,
 }
 
 impl<B: hal::Backend> Device<B> {
@@ -374,7 +377,7 @@ impl<B: hal::Backend> Device<B> {
             descriptor_count,
             cache_path,
             save_cache,
-            backend_api,
+            backend_api: _backend_api,
         } = init;
         let renderer_name = "TODO renderer name".to_owned();
         let features = adapter.physical_device.features();
@@ -456,12 +459,6 @@ impl<B: hal::Backend> Device<B> {
 
         let render_passes =
             HalRenderPasses::create_render_passes(&device, SURFACE_FORMAT, DEPTH_FORMAT);
-
-        // Disable push constants for Intel's Vulkan driver on Windows
-        let has_broken_push_const_support = cfg!(target_os = "windows")
-            && backend_api == BackendApiType::Vulkan
-            && adapter.info.vendor == 0x8086;
-        let use_push_consts = !has_broken_push_const_support;
 
         let (frame_depth, surface_format, dimensions, frame_count) =
             Self::init_drawables(&device, &mut heaps, &adapter, surface.as_mut(), dimensions);
@@ -547,12 +544,6 @@ impl<B: hal::Backend> Device<B> {
         // Start recording for the 1st frame
         unsafe { Self::begin_cmd_buffer(&mut command_buffer) };
 
-        let locals_buffer = UniformBufferHandler::new(
-            hal::buffer::Usage::UNIFORM,
-            mem::size_of::<Locals>(),
-            (limits.min_uniform_buffer_offset_alignment - 1) as usize,
-        );
-
         let quad_buffer = VertexBufferHandler::new(
             &device,
             &mut heaps,
@@ -607,6 +598,7 @@ impl<B: hal::Backend> Device<B> {
                     (COMMON_SET_2, vec![]),
                     (COMMON_SET_3, vec![]),
                 ],
+                DescriptorGroup::Invalid => unimplemented!(),
             };
 
             let ranges = layouts_and_samplers
@@ -647,10 +639,7 @@ impl<B: hal::Backend> Device<B> {
             let pipeline_layout = unsafe {
                 device.create_pipeline_layout(
                     &set_layouts,
-                    Some((
-                        hal::pso::ShaderStageFlags::VERTEX | hal::pso::ShaderStageFlags::FRAGMENT,
-                        0..PUSH_CONSTANT_BLOCK_SIZE as u32,
-                    )),
+                    &[],
                 )
             }
             .expect("create_pipeline_layout failed");
@@ -687,18 +676,16 @@ impl<B: hal::Backend> Device<B> {
             Vec::new(),
         );
 
-        let locals_descriptors = DescriptorSetHandler::new(
+        let uniform_buffer_handler = UniformBufferHandler::new(
+            mem::size_of::<default::Transform3D<f32>>(),
+            (limits.min_uniform_buffer_offset_alignment - 1) as usize,
+            frame_count,
             &device,
+            &mut heaps,
             &mut desc_allocator,
             &descriptor_data,
             &DescriptorGroup::Default,
-            DESCRIPTOR_SET_LOCALS,
-            if use_push_consts {
-                1
-            } else {
-                descriptor_count.unwrap_or(DESCRIPTOR_COUNT)
-            },
-            Vec::new(),
+            DESCRIPTOR_SET_PER_TARGET,
         );
 
         let pipeline_cache = if let Some(ref path) = cache_path {
@@ -722,19 +709,21 @@ impl<B: hal::Backend> Device<B> {
             command_buffer,
             staging_buffer_pool,
             render_passes,
-            readback_textures: ArrayVec::new(),
+            readback_texture: None,
             frame: None,
             frame_depth,
             swapchain_image_layouts,
             frame_count,
+            scissor_rect: viewport.rect,
             viewport,
+            scissor_enabled: false,
             dimensions,
             sampler_linear,
             sampler_nearest,
-            current_blend_state: Cell::new(None),
+            current_blend_state: None,
             current_depth_test: None,
             clear_values: FastHashMap::default(),
-            blend_color: Cell::new(ColorF::new(0.0, 0.0, 0.0, 0.0)),
+            blend_color: ColorF::new(0.0, 0.0, 0.0, 0.0),
             _resource_override_path: resource_override_path,
             // This is initialized to 1 by default, but it is reset
             // at the beginning of each frame in `Renderer::bind_frame_data`.
@@ -758,6 +747,7 @@ impl<B: hal::Backend> Device<B> {
 
             programs: FastHashMap::default(),
             blit_programs: FastHashMap::default(),
+            next_program_id: INVALID_PROGRAM_ID.0 + 1,
             shader_modules: FastHashMap::default(),
             images: FastHashMap::default(),
             gpu_cache_buffer: None,
@@ -768,16 +758,18 @@ impl<B: hal::Backend> Device<B> {
             desc_allocator,
 
             per_draw_descriptors,
-            bound_per_draw_bindings: PerDrawBindings::default(),
+            bound_per_draw_textures: PerDrawBindings::default(),
+            bound_per_draw_descriptor: None,
 
             per_pass_descriptors,
             bound_per_pass_textures: PerPassBindings::default(),
+            bound_per_pass_descriptor: None,
 
             per_group_descriptors: DescriptorSetHandler::from_existing(per_group_descriptor_sets),
             bound_per_group_textures: PerGroupBindings::default(),
+            bound_per_group_descriptors: [None, None, None],
 
-            locals_descriptors,
-            bound_locals: Locals::default(),
+            bound_projection: Default::default(),
             descriptor_data,
 
             bound_textures: [0; RENDERER_TEXTURE_COUNT],
@@ -787,7 +779,6 @@ impl<B: hal::Backend> Device<B> {
             bound_read_texture: (INVALID_TEXTURE_ID, 0),
             bound_draw_fbo: DEFAULT_DRAW_FBO,
             draw_target_usage: DrawTargetUsage::Draw,
-            scissor_rect: None,
 
             max_texture_size,
             _renderer_name: renderer_name,
@@ -802,38 +793,38 @@ impl<B: hal::Backend> Device<B> {
             cache_path,
             save_cache,
 
-            locals_buffer,
+            uniform_buffer_handler,
             quad_buffer,
             instance_buffers,
             free_instance_buffers: Vec::new(),
             download_buffer: None,
             instance_buffer_range: 0..0,
 
-            use_push_consts,
             swizzle_settings: SwizzleSettings {
                 bgra8_sampling_swizzle: Swizzle::Rgba,
             },
             color_formats: TextureFormatPair::from(ImageFormat::BGRA8),
             optimal_pbo_stride: NonZeroUsize::new(4).unwrap(),
-            last_main_fbo_pass: false,
             last_rp_in_frame_reached: false,
             readback_supported,
+
+            #[cfg(debug_assertions)]
+            shader_is_ready: false,
+            rebind_descriptors: true,
         };
 
         if readback_supported || device.headless_mode() {
             device.inside_frame = true;
-            for _ in 0..device.frame_count {
-                let texture = device.create_texture(
-                    TextureTarget::Default,
-                    ImageFormat::BGRA8,
-                    device.dimensions.0 as i32,
-                    device.dimensions.1 as i32,
-                    TextureFilter::Nearest,
-                    Some(RenderTargetInfo { has_depth: true }),
-                    1,
-                );
-                device.readback_textures.push(texture);
-            }
+            let texture = device.create_texture(
+                TextureTarget::Default,
+                ImageFormat::BGRA8,
+                device.dimensions.0 as i32,
+                device.dimensions.1 as i32,
+                TextureFilter::Nearest,
+                Some(RenderTargetInfo { has_depth: true }),
+                1,
+            );
+            device.readback_texture = Some(texture);
             device.inside_frame = false;
         }
         device
@@ -889,7 +880,8 @@ impl<B: hal::Backend> Device<B> {
                     _ => unimplemented!(),
                 },
             );
-            self.blit_programs.insert(kind, program);
+            let id = self.generate_program_id(DescriptorGroup::from(ShaderKind::Service));
+            self.blit_programs.insert(kind, (id, program));
         }
     }
 
@@ -925,6 +917,50 @@ impl<B: hal::Backend> Device<B> {
         }
     }
 
+    fn replace_active_descriptor_set<K, F>(
+        descriptor: &mut Option<DescriptorSet<B>>,
+        new_descriptor: Option<DescriptorSet<B>>,
+        key: &K,
+        handler: &mut DescriptorSetHandler<K, B, F>,
+     ) where
+        K: Copy + Clone + std::fmt::Debug + Eq + std::hash::Hash + DescGroupKey,
+        F: FreeSets<B>,
+    {
+        let old_descriptor = match new_descriptor {
+            Some(desc) => descriptor.replace(desc),
+            None => descriptor.take(),
+        };
+
+        if let Some(descriptor) = old_descriptor {
+            handler.push_back_descriptor_set(*key, descriptor);
+        }
+    }
+
+    fn reset_descriptor_key_and_handler<D, K, F>(
+        key: &mut D,
+        handler: &mut DescriptorSetHandler<K, B, F>,
+    ) where
+        D: Default,
+        K: Copy + Clone + std::fmt::Debug + Eq + std::hash::Hash + DescGroupKey,
+        F: FreeSets<B>,
+    {
+        *key = D::default();
+        handler.reset();
+    }
+
+    fn replace_active_descriptor_set_and_reset_handler<K, F>(
+        descriptor: &mut Option<DescriptorSet<B>>,
+        new_descriptor: Option<DescriptorSet<B>>,
+        key: &mut K,
+        handler: &mut DescriptorSetHandler<K, B, F>,
+    ) where
+        K: Copy + Clone + std::fmt::Debug + Eq + std::hash::Hash + DescGroupKey + Default,
+        F: FreeSets<B>,
+    {
+        Self::replace_active_descriptor_set(descriptor, new_descriptor, key, handler);
+        Self::reset_descriptor_key_and_handler(key, handler);
+    }
+
     pub(crate) fn recreate_swapchain(
         &mut self,
         window_size: Option<(i32, i32)>,
@@ -937,55 +973,71 @@ impl<B: hal::Backend> Device<B> {
                 );
             }
         }
-        let ref mut heaps = *self.heaps.lock().unwrap();
+        {
+            let ref mut heaps = *self.heaps.lock().unwrap();
 
-        self.bound_per_draw_bindings = PerDrawBindings::default();
-        self.per_draw_descriptors.reset();
+            Self::replace_active_descriptor_set_and_reset_handler(
+                &mut self.bound_per_draw_descriptor,
+                None,
+                &mut self.bound_per_draw_textures,
+                &mut self.per_draw_descriptors
+            );
 
-        self.bound_per_pass_textures = PerPassBindings::default();
-        self.per_pass_descriptors.reset();
+            Self::replace_active_descriptor_set_and_reset_handler(
+                &mut self.bound_per_pass_descriptor,
+                None,
+                &mut self.bound_per_pass_textures,
+                &mut self.per_pass_descriptors
+            );
 
-        self.bound_per_group_textures = PerGroupBindings::default();
-        self.per_group_descriptors.reset();
+            for descriptor_group in [DescriptorGroup::Default, DescriptorGroup::Clip, DescriptorGroup::Primitive].iter() {
+                Self::replace_active_descriptor_set(
+                    &mut self.bound_per_group_descriptors[*descriptor_group as usize],
+                    None,
+                    &(*descriptor_group, self.bound_per_group_textures),
+                    &mut self.per_group_descriptors,
+                );
+            }
+            Self::reset_descriptor_key_and_handler(&mut self.bound_per_group_textures, &mut self.per_group_descriptors);
 
-        if !self.use_push_consts {
-            self.bound_locals = Locals::default();
-            self.locals_descriptors.reset();
+            self.uniform_buffer_handler.reset(self.next_id);
+
+            let (frame_depth, surface_format, dimensions, _frame_count) = Self::init_drawables(
+                self.device.as_ref(),
+                heaps,
+                &self.adapter,
+                self.surface.as_mut(),
+                window_size.unwrap_or(self.dimensions),
+            );
+
+            if let Some(old_frame) = self.frame.take() {
+                old_frame.deinit(self.device.as_ref());
+            }
+            let old_depth = mem::replace(&mut self.frame_depth, frame_depth);
+            old_depth.deinit(self.device.as_ref(), heaps);
+            self.dimensions = dimensions;
+            self.surface_format = surface_format;
         }
 
-        self.locals_buffer.reset();
-
-        let (frame_depth, surface_format, dimensions, _frame_count) = Self::init_drawables(
-            self.device.as_ref(),
-            heaps,
-            &self.adapter,
-            self.surface.as_mut(),
-            window_size.unwrap_or(self.dimensions),
-        );
-
-        if let Some(old_frame) = self.frame.take() {
-            old_frame.deinit(self.device.as_ref());
-        }
-        let old_depth = mem::replace(&mut self.frame_depth, frame_depth);
-        old_depth.deinit(self.device.as_ref(), heaps);
-        self.dimensions = dimensions;
-        self.surface_format = surface_format;
         for layout in self.swapchain_image_layouts.iter_mut() {
             *layout = hal::image::Layout::Undefined;
         }
 
-        let pipeline_cache = unsafe { self.device.create_pipeline_cache(None) }
-            .expect("Failed to create pipeline cache");
-        if let Some(ref cache) = self.pipeline_cache {
-            unsafe {
-                self.device
-                    .merge_pipeline_caches(&cache, Some(&pipeline_cache))
-                    .expect("merge_pipeline_caches failed");
-                self.device.destroy_pipeline_cache(pipeline_cache);
-            }
-        } else {
-            self.pipeline_cache = Some(pipeline_cache);
+        let old_readback_texture = self.readback_texture.take();
+        if let Some(texture) = old_readback_texture {
+            self.free_texture_unconditionaly(texture);
+            let texture = self.create_texture(
+                TextureTarget::Default,
+                ImageFormat::BGRA8,
+                self.dimensions.0 as i32,
+                self.dimensions.1 as i32,
+                TextureFilter::Nearest,
+                Some(RenderTargetInfo { has_depth: true }),
+                1,
+            );
+            self.readback_texture = Some(texture);
         }
+
         (
             true,
             DeviceIntSize::new(self.dimensions.0, self.dimensions.1),
@@ -1118,28 +1170,25 @@ impl<B: hal::Backend> Device<B> {
             }
             Self::begin_cmd_buffer(&mut self.command_buffer);
         }
+        self.bound_projection = Default::default();
+        self.uniform_buffer_handler.reset(self.next_id);
         self.staging_buffer_pool[self.next_id].reset();
-        self.reset_program_buffer_offsets();
         self.instance_buffers[self.next_id].reset(&mut self.free_instance_buffers);
         self.delete_retained_textures();
     }
 
     pub fn reset_state(&mut self) {
-        self.bound_textures = [INVALID_TEXTURE_ID; RENDERER_TEXTURE_COUNT];
-        self.bound_program = INVALID_PROGRAM_ID;
-        self.bound_sampler = [TextureFilter::Linear; RENDERER_TEXTURE_COUNT];
+        for i in 0..RENDERER_TEXTURE_COUNT {
+            // Don't reset the dither texture and sampler, those are set at the start only
+            if i != DITHER_BINDING {
+                self.bound_textures[i] = INVALID_TEXTURE_ID;
+                self.bound_sampler[i] = TextureFilter::Linear;
+            }
+        }
         self.bound_read_fbo = DEFAULT_READ_FBO;
         self.bound_draw_fbo = DEFAULT_DRAW_FBO;
         self.draw_target_usage = DrawTargetUsage::Draw;
-    }
-
-    fn reset_program_buffer_offsets(&mut self) {
-        for program in self.programs.values_mut() {
-            if let Some(ref mut index_buffer) = program.index_buffer {
-                index_buffer[self.next_id].reset();
-                program.vertex_buffer.as_mut().unwrap()[self.next_id].reset();
-            }
-        }
+        self.bound_program = INVALID_PROGRAM_ID;
     }
 
     pub fn delete_program(&mut self, mut _program: ProgramId) {
@@ -1201,7 +1250,6 @@ impl<B: hal::Backend> Device<B> {
             &mut self.shader_modules,
             self.pipeline_cache.as_ref(),
             self.surface_format,
-            self.use_push_consts,
         )
     }
 
@@ -1212,7 +1260,7 @@ impl<B: hal::Backend> Device<B> {
         features: &[&str],
     ) -> Result<ProgramId, ShaderError> {
         let program = self.create_program_inner(shader_name, shader_kind, features);
-        let id = self.generate_program_id();
+        let id = self.generate_program_id(DescriptorGroup::from(*shader_kind));
         self.programs.insert(id, program);
         Ok(id)
     }
@@ -1229,43 +1277,83 @@ impl<B: hal::Backend> Device<B> {
 
     pub fn bind_program(&mut self, program_id: &ProgramId) {
         debug_assert!(self.inside_frame);
+        let pipeline_layout_changed = self.bound_program.1 != program_id.1;
+        self.rebind_descriptors |= pipeline_layout_changed;
+        self.bound_program = *program_id;
+        let program = self.programs
+            .get(&self.bound_program)
+            .expect("Program not found");
 
-        if self.bound_program != *program_id {
-            self.bound_program = *program_id;
+        let format = self.fbos
+            .get(&self.bound_draw_fbo)
+            .map_or(self.surface_format, |fbo| fbo.format);
+
+        let blend_state = self.current_blend_state;
+        unsafe {
+            self.command_buffer.bind_graphics_pipeline(
+                &program
+                    .pipelines
+                    .get(&(format, blend_state, self.render_pass_depth_state, self.current_depth_test))
+                    .unwrap_or_else(|| panic!(
+                        "The blend state {:?} with depth test {:?} and render_pass_depth_state {:?} and format {:?} not found for {} program!",
+                            blend_state, self.current_depth_test, self.render_pass_depth_state, format, program.shader_name
+                    ))
+            );
+            if let Some(SUBPIXEL_CONSTANT_TEXT_COLOR) = blend_state  {
+                self.command_buffer.set_blend_constants(self.blend_color.to_array());
+            }
+            if self.rebind_descriptors {
+                use std::iter;
+                let descriptor_group = self.bound_program.1;
+
+                let desc_set_per_frame = self
+                    .bound_per_group_descriptors[descriptor_group as usize]
+                    .as_ref()
+                    .unwrap()
+                    .raw();
+                let (desc_set_per_pass, first_ds_slot) = match descriptor_group {
+                    DescriptorGroup::Primitive => (
+                        self.bound_per_pass_descriptor.as_ref().map(|d| d.raw()),
+                        DESCRIPTOR_SET_PER_PASS,
+                    ),
+                    _ => (None, DESCRIPTOR_SET_PER_GROUP),
+                };
+
+                let(desc_set_per_target, dynamic_offset) = self.uniform_buffer_handler.buffer_info(self.next_id);
+
+                self.command_buffer.bind_graphics_descriptor_sets(
+                    self.descriptor_data.pipeline_layout(&descriptor_group),
+                    first_ds_slot,
+                    desc_set_per_pass
+                        .into_iter()
+                        .chain(iter::once(desc_set_per_frame))
+                        .chain(iter::once(desc_set_per_target)),
+                    &[dynamic_offset],
+                );
+
+                // Force per draw descriptor rebind by resetting the bound descriptor
+                Self::replace_active_descriptor_set(
+                    &mut self.bound_per_draw_descriptor,
+                    None,
+                    &self.bound_per_draw_textures,
+                    &mut self.per_draw_descriptors,
+                );
+                self.bound_per_draw_textures = PerDrawBindings::default();
+                self.rebind_descriptors = false;
+            }
         }
-    }
-
-    fn bind_uniforms(&mut self) {
-        if self.use_push_consts {
-            self.programs
-                .get_mut(&self.bound_program)
-                .expect("Invalid bound program")
-                .constants[..]
-                .copy_from_slice(unsafe {
-                    std::mem::transmute::<_, &[u32; 17]>(&self.bound_locals)
-                });
+        #[cfg(debug_assertions)]
+        {
+            self.shader_is_ready = true;
         }
-
-        self.locals_descriptors.bind_locals(
-            if self.use_push_consts {
-                Locals::default()
-            } else {
-                self.bound_locals
-            },
-            self.device.as_ref(),
-            &mut self.desc_allocator,
-            &self.descriptor_data,
-            &mut self.locals_buffer,
-            &mut *self.heaps.lock().unwrap(),
-        );
     }
 
     pub fn set_uniforms(
         &mut self,
         _program_id: &ProgramId,
-        projection: &Transform3D<f32, euclid::UnknownUnit, euclid::UnknownUnit>,
+        projection: &default::Transform3D<f32>,
     ) {
-        self.bound_locals.uTransform = projection.to_row_arrays();
+        assert_eq!(self.bound_projection, *projection);
     }
 
     unsafe fn begin_cmd_buffer(cmd_buffer: &mut B::CommandBuffer) {
@@ -1273,35 +1361,21 @@ impl<B: hal::Backend> Device<B> {
         cmd_buffer.begin(flags, CommandBufferInheritanceInfo::default());
     }
 
-    fn bind_per_draw_textures(
+    fn bind_per_draw_textures_impl(
         &mut self,
         descriptor_group: DescriptorGroup,
-        per_draw_bindings: Option<PerDrawBindings>,
-        store: bool,
+        per_draw_bindings: PerDrawBindings,
     ) {
-        let per_draw_bindings = per_draw_bindings.unwrap_or(PerDrawBindings(
-            [
-                self.bound_textures[0],
-                self.bound_textures[1],
-                self.bound_textures[2],
-            ],
-            [
-                self.bound_sampler[0],
-                self.bound_sampler[1],
-                self.bound_sampler[2],
-            ],
-        ));
-
         let mut bound_textures = self.bound_textures;
         bound_textures[0] = per_draw_bindings.0[0];
         bound_textures[1] = per_draw_bindings.0[1];
         bound_textures[2] = per_draw_bindings.0[2];
         let mut bound_sampler = self.bound_sampler;
-        bound_sampler[0] = per_draw_bindings.1[0];
-        bound_sampler[1] = per_draw_bindings.1[1];
-        bound_sampler[2] = per_draw_bindings.1[2];
+        bound_sampler[0] = per_draw_bindings.1;
+        bound_sampler[1] = per_draw_bindings.1;
+        bound_sampler[2] = per_draw_bindings.1;
 
-        self.per_draw_descriptors.bind_textures(
+        let descriptor = self.per_draw_descriptors.bind_textures(
             &bound_textures,
             &bound_sampler,
             per_draw_bindings,
@@ -1316,15 +1390,21 @@ impl<B: hal::Backend> Device<B> {
             &self.sampler_linear,
             &self.sampler_nearest,
         );
-        if store {
-            self.bound_per_draw_bindings = per_draw_bindings;
-        }
+        Self::replace_active_descriptor_set(
+            &mut self.bound_per_draw_descriptor,
+            Some(descriptor),
+            &self.bound_per_draw_textures,
+            &mut self.per_draw_descriptors,
+        );
+        self.bound_per_draw_textures = per_draw_bindings;
     }
 
-    fn bind_per_pass_textures(&mut self) {
+    pub fn bind_per_pass_textures(&mut self) {
         let per_pass_bindings = PerPassBindings([self.bound_textures[3], self.bound_textures[4]]);
-
-        self.per_pass_descriptors.bind_textures(
+        if per_pass_bindings == self.bound_per_pass_textures {
+            return;
+        }
+        let descriptor = self.per_pass_descriptors.bind_textures(
             &self.bound_textures,
             &self.bound_sampler,
             per_pass_bindings,
@@ -1339,20 +1419,19 @@ impl<B: hal::Backend> Device<B> {
             &self.sampler_linear,
             &self.sampler_nearest,
         );
+
+        Self::replace_active_descriptor_set(
+            &mut self.bound_per_pass_descriptor,
+            Some(descriptor),
+            &self.bound_per_pass_textures,
+            &mut self.per_pass_descriptors,
+        );
         self.bound_per_pass_textures = per_pass_bindings;
+        self.rebind_descriptors = true;
     }
 
-    fn bind_per_group_textures(&mut self, descriptor_group: DescriptorGroup, store: bool) {
-        let per_group_bindings = PerGroupBindings([
-            self.bound_textures[5],
-            self.bound_textures[6],
-            self.bound_textures[7],
-            self.bound_textures[8],
-            self.bound_textures[9],
-            self.bound_textures[10],
-        ]);
-
-        self.per_group_descriptors.bind_textures(
+    fn bind_per_group_textures_impl(&mut self, descriptor_group: DescriptorGroup, per_group_bindings: PerGroupBindings) {
+        let descriptor = self.per_group_descriptors.bind_textures(
             &self.bound_textures,
             &self.bound_sampler,
             (descriptor_group, per_group_bindings),
@@ -1370,33 +1449,66 @@ impl<B: hal::Backend> Device<B> {
                 DescriptorGroup::Default => PER_GROUP_RANGE_DEFAULT,
                 DescriptorGroup::Clip => PER_GROUP_RANGE_CLIP,
                 DescriptorGroup::Primitive => PER_GROUP_RANGE_PRIMITIVE,
+                DescriptorGroup::Invalid => unimplemented!(),
             },
             &self.sampler_linear,
             &self.sampler_nearest,
         );
-        if store {
-            self.bound_per_group_textures = per_group_bindings;
+
+        Self::replace_active_descriptor_set(
+            &mut self.bound_per_group_descriptors[descriptor_group as usize],
+            Some(descriptor),
+            &(descriptor_group, self.bound_per_group_textures),
+            &mut self.per_group_descriptors,
+        );
+    }
+
+    pub fn bind_per_draw_textures(&mut self, can_skip_bind: bool) {
+        debug_assert!(self.inside_frame);
+        assert_ne!(self.bound_program, INVALID_PROGRAM_ID);
+        if can_skip_bind && self.bound_per_draw_descriptor.is_some() {
+            return;
+        }
+        let descriptor_group = self.bound_program.1;
+        let per_draw_bindings = PerDrawBindings(
+            [
+                self.bound_textures[0],
+                self.bound_textures[1],
+                self.bound_textures[2],
+            ],
+             self.bound_sampler[0],
+        );
+
+        if self.bound_per_draw_textures != per_draw_bindings {
+            self.bind_per_draw_textures_impl(descriptor_group, per_draw_bindings);
+        }
+        unsafe {
+            self.command_buffer.bind_graphics_descriptor_sets(
+                self.descriptor_data.pipeline_layout(&descriptor_group),
+                DESCRIPTOR_SET_PER_DRAW,
+                self.bound_per_draw_descriptor.as_ref().map(|descriptor| descriptor.raw()),
+                &[],
+            );
         }
     }
 
-    fn bind_textures(&mut self) {
-        debug_assert!(self.inside_frame);
-        assert_ne!(self.bound_program, INVALID_PROGRAM_ID);
-
-        let descriptor_group = {
-            let program = self
-                .programs
-                .get_mut(&self.bound_program)
-                .expect("Program not found.");
-            program.shader_kind.into()
-        };
-        self.bind_per_draw_textures(descriptor_group, None, true);
-
-        if descriptor_group == DescriptorGroup::Primitive {
-            self.bind_per_pass_textures();
+    pub fn bind_per_group_textures(&mut self) {
+        let per_group_bindings = PerGroupBindings([
+            self.bound_textures[5],
+            self.bound_textures[6],
+            self.bound_textures[7],
+            self.bound_textures[8],
+            self.bound_textures[9],
+            self.bound_textures[10],
+        ]);
+        if per_group_bindings == self.bound_per_group_textures {
+            return;
         }
-
-        self.bind_per_group_textures(descriptor_group, true);
+        for descriptor_group in [DescriptorGroup::Default, DescriptorGroup::Clip, DescriptorGroup::Primitive].iter() {
+            self.bind_per_group_textures_impl(*descriptor_group, per_group_bindings);
+        }
+        self.bound_per_group_textures = per_group_bindings;
+        self.rebind_descriptors = true;
     }
 
     pub fn update_indices<I: Copy>(&mut self, indices: &[I]) {
@@ -1447,77 +1559,29 @@ impl<B: hal::Backend> Device<B> {
     }
 
     fn draw(&mut self) {
-        if !self.inside_render_pass {
-            self.begin_render_pass_impl(self.last_main_fbo_pass);
-        }
-        self.bind_textures();
-        self.bind_uniforms();
+        assert!(self.inside_render_pass);
 
         assert_eq!(self.draw_target_usage, DrawTargetUsage::Draw);
-        let descriptor_group = self
-            .programs
-            .get(&self.bound_program)
-            .expect("Program not found")
-            .shader_kind
-            .into();
-
-        let ref desc_set_per_group = self
-            .per_group_descriptors
-            .descriptor_set(&(descriptor_group, self.bound_per_group_textures));
-        let desc_set_per_pass = match descriptor_group {
-            DescriptorGroup::Primitive => Some(
-                self.per_pass_descriptors
-                    .descriptor_set(&self.bound_per_pass_textures),
-            ),
-            _ => None,
-        };
-        let ref desc_set_per_draw = self
-            .per_draw_descriptors
-            .descriptor_set(&self.bound_per_draw_bindings);
-        let locals = if self.use_push_consts {
-            Locals::default()
-        } else {
-            self.bound_locals
-        };
-        let ref desc_set_locals = self.locals_descriptors.descriptor_set(&locals);
-
         self.programs
             .get_mut(&self.bound_program)
             .expect("Program not found")
             .submit(
                 &mut self.command_buffer,
-                self.viewport.clone(),
-                desc_set_per_draw,
-                desc_set_per_pass,
-                desc_set_per_group,
-                Some(*desc_set_locals),
-                self.current_blend_state.get(),
-                self.blend_color.get(),
-                self.current_depth_test,
-                self.render_pass_depth_state,
-                self.scissor_rect,
                 self.next_id,
-                self.descriptor_data.pipeline_layout(&descriptor_group),
-                self.use_push_consts,
                 &self.quad_buffer,
                 &self.instance_buffers[self.next_id],
                 self.instance_buffer_range.clone(),
-                self.fbos
-                    .get(&self.bound_draw_fbo)
-                    .map_or(self.surface_format, |fbo| fbo.format),
             );
     }
 
     pub fn begin_frame(&mut self) -> GpuFrameId {
         debug_assert!(!self.inside_frame);
         self.inside_frame = true;
-        self.bound_textures = [INVALID_TEXTURE_ID; RENDERER_TEXTURE_COUNT];
-        self.bound_sampler = [TextureFilter::Linear; RENDERER_TEXTURE_COUNT];
-        self.bound_read_fbo = DEFAULT_READ_FBO;
-        self.bound_draw_fbo = DEFAULT_DRAW_FBO;
-        self.draw_target_usage = DrawTargetUsage::Draw;
-        self.bound_locals.uMode = 0;
-
+        #[cfg(debug_assertions)]
+        {
+            self.shader_is_ready = false;
+        }
+        self.reset_state();
         self.frame_id
     }
 
@@ -1528,8 +1592,6 @@ impl<B: hal::Backend> Device<B> {
         sampler: TextureFilter,
         _set_swizzle: Option<Swizzle>,
     ) {
-        debug_assert!(self.inside_frame);
-
         if self.bound_textures[slot.0] != id {
             self.bound_textures[slot.0] = id;
             self.bound_sampler[slot.0] = sampler;
@@ -1583,11 +1645,29 @@ impl<B: hal::Backend> Device<B> {
         self.bound_read_texture = (texture_id, layer_id);
     }
 
-    fn bind_draw_target_impl(&mut self, fbo_id: FBOId, usage: DrawTargetUsage) {
+    fn bind_draw_target_impl(
+        &mut self,
+        fbo_id: FBOId,
+        usage: DrawTargetUsage,
+        projection: Option<&default::Transform3D<f32>>,
+    ) {
         debug_assert!(self.inside_frame);
 
+        if let Some(projection) = projection {
+            // This check here can save us a bunch of buffer update
+            if self.bound_projection != *projection {
+                self.bound_projection = *projection;
+                self.uniform_buffer_handler.add(
+                    self.device.as_ref(),
+                    &[self.bound_projection],
+                    self.next_id
+                );
+                self.rebind_descriptors = true;
+            }
+        }
+
         let fbo_id = if fbo_id == DEFAULT_DRAW_FBO && self.headless_mode() {
-            self.readback_textures[self.next_id].fbos_with_depth[0]
+            self.readback_texture.as_ref().unwrap().fbos_with_depth[0]
         } else {
             fbo_id
         };
@@ -1627,12 +1707,18 @@ impl<B: hal::Backend> Device<B> {
         self.bind_read_target_impl(DEFAULT_READ_FBO);
     }
 
-    pub fn reset_draw_target(&mut self) {
-        self.bind_draw_target_impl(DEFAULT_DRAW_FBO, DrawTargetUsage::Draw);
+    pub fn reset_draw_target(&mut self, projection: Option<&default::Transform3D<f32>>) {
+        self.bind_draw_target_impl(DEFAULT_DRAW_FBO, DrawTargetUsage::Draw, projection);
         self.depth_available = true;
+        self.render_pass_depth_state = RenderPassDepthState::Enabled;
     }
 
-    pub fn bind_draw_target(&mut self, texture_target: DrawTarget, usage: DrawTargetUsage) {
+    pub fn bind_draw_target(
+        &mut self,
+        texture_target: DrawTarget,
+        usage: DrawTargetUsage,
+        projection: Option<&default::Transform3D<f32>>,
+    ) {
         let (fbo_id, rect, depth_available) = match texture_target {
             DrawTarget::Default { rect, .. } => {
                 if let DrawTargetUsage::CopyOnly = usage {
@@ -1641,7 +1727,7 @@ impl<B: hal::Backend> Device<B> {
                 (DEFAULT_DRAW_FBO, rect, true)
             }
             DrawTarget::ReadBack { rect, .. } => {
-                let texture = &self.readback_textures[self.next_id];
+                let texture = &self.readback_texture.as_ref().unwrap();
                 let fbo_id = texture.fbos_with_depth[0];
                 if self.bound_draw_fbo != fbo_id {
                     let image = &self.images[&texture.id].core;
@@ -1715,7 +1801,11 @@ impl<B: hal::Backend> Device<B> {
         };
 
         self.depth_available = depth_available;
-        self.bind_draw_target_impl(fbo_id, usage);
+        self.render_pass_depth_state = match self.depth_available {
+            true => RenderPassDepthState::Enabled,
+            false => RenderPassDepthState::Disabled,
+        };
+        self.bind_draw_target_impl(fbo_id, usage, projection);
         self.viewport.rect = hal::pso::Rect {
             x: rect.origin.x as i16,
             y: rect.origin.y as i16,
@@ -1754,13 +1844,9 @@ impl<B: hal::Backend> Device<B> {
         texture_id
     }
 
-    fn generate_program_id(&self) -> ProgramId {
-        let mut rng = rand::thread_rng();
-        let mut program_id = ProgramId(INVALID_PROGRAM_ID.0 + 1);
-        while self.programs.contains_key(&program_id) {
-            program_id =
-                ProgramId(rng.gen_range::<u32>(INVALID_PROGRAM_ID.0 + 1, u32::max_value()));
-        }
+    fn generate_program_id(&mut self, descriptor_group: DescriptorGroup) -> ProgramId {
+        let program_id = ProgramId(self.next_program_id, descriptor_group);
+        self.next_program_id += 1;
         program_id
     }
 
@@ -2265,9 +2351,7 @@ impl<B: hal::Backend> Device<B> {
     }
 
     fn blit_with_shader(&mut self, src_rect: FramebufferIntRect, dest_rect: FramebufferIntRect) {
-        if !self.inside_render_pass {
-            self.begin_render_pass_impl(self.last_main_fbo_pass);
-        }
+        assert!(self.inside_render_pass);
         let (src_layer, view_kind, texture_id, width, height) =
             if self.bound_read_fbo != DEFAULT_READ_FBO {
                 let fbo = &self.fbos[&self.bound_read_fbo];
@@ -2283,25 +2367,10 @@ impl<B: hal::Backend> Device<B> {
         let descriptor_group = (ShaderKind::Service).into();
         let per_draw_bindings = PerDrawBindings(
             [texture_id, texture_id, texture_id],
-            [
-                TextureFilter::Nearest,
-                TextureFilter::Nearest,
-                TextureFilter::Nearest,
-            ],
+            TextureFilter::Nearest,
         );
 
-        let per_group_bindings = PerGroupBindings([
-            self.bound_textures[5],
-            self.bound_textures[6],
-            self.bound_textures[7],
-            self.bound_textures[8],
-            self.bound_textures[9],
-            self.bound_textures[10],
-        ]);
-
-        self.bind_per_draw_textures(descriptor_group, Some(per_draw_bindings), false);
-        self.bind_per_group_textures(descriptor_group, false);
-        self.bind_uniforms();
+        self.bind_per_draw_textures_impl(descriptor_group, per_draw_bindings);
 
         let src_bounds = hal::image::Offset {
             x: src_rect.origin.x as i32,
@@ -2353,40 +2422,50 @@ impl<B: hal::Backend> Device<B> {
             },
             depth: 0.0..1.0,
         };
+        unsafe { self.command_buffer.set_viewports(0, &[viewport.clone()]) };
         self.update_instances(&[data]);
 
         self.ensure_blit_program(view_kind);
-        let ref desc_set_per_draw = self.per_draw_descriptors.descriptor_set(&per_draw_bindings);
-        let locals = if self.use_push_consts {
-            Locals::default()
-        } else {
-            self.bound_locals
-        };
-        let ref desc_set_locals = self.locals_descriptors.descriptor_set(&locals);
-        let ref desc_set_per_group = self
-            .per_group_descriptors
-            .descriptor_set(&(descriptor_group, per_group_bindings));
+        let (_, program) = self.blit_programs.get_mut(&view_kind).unwrap();
+        unsafe {
+            self.command_buffer.bind_graphics_pipeline(
+                &program
+                    .pipelines
+                    .get(&(self.surface_format, None, self.render_pass_depth_state, None))
+                    .expect(&format!(
+                        "Can't find blit program with render_pass_depth_state {:?} and format {:?}",
+                        self.render_pass_depth_state, self.surface_format,
+                    )),
+            );
+        }
+        self.bound_program = INVALID_PROGRAM_ID;
 
-        self.blit_programs.get_mut(&view_kind).unwrap().submit(
+        unsafe {
+            self.command_buffer.bind_graphics_descriptor_sets(
+                self.descriptor_data.pipeline_layout(&descriptor_group),
+                DESCRIPTOR_SET_PER_DRAW,
+                self.bound_per_draw_descriptor.as_ref().map(|descriptor| descriptor.raw()),
+                &[],
+            );
+        }
+
+        program.submit(
             &mut self.command_buffer,
-            viewport,
-            desc_set_per_draw,
-            None,
-            desc_set_per_group,
-            Some(*desc_set_locals),
-            None,
-            self.blend_color.get(),
-            None,
-            self.render_pass_depth_state,
-            None,
             self.next_id,
-            self.descriptor_data.pipeline_layout(&descriptor_group),
-            self.use_push_consts,
             &self.quad_buffer,
             &self.instance_buffers[self.next_id],
             self.instance_buffer_range.clone(),
-            self.surface_format,
         );
+
+        // Reset states after the draw
+        unsafe { self.command_buffer.set_viewports(0, &[self.viewport.clone()]) };
+        Self::replace_active_descriptor_set(
+            &mut self.bound_per_draw_descriptor,
+            None,
+            &self.bound_per_draw_textures,
+            &mut self.per_draw_descriptors,
+        );
+        self.bound_per_draw_textures = PerDrawBindings::default();
     }
 
     /// Perform a blit between self.bound_read_fbo and self.bound_draw_fbo.
@@ -2397,6 +2476,9 @@ impl<B: hal::Backend> Device<B> {
         filter: TextureFilter,
     ) {
         debug_assert!(self.inside_frame);
+        if self.inside_render_pass {
+            return self.blit_with_shader(src_rect, dest_rect);
+        }
 
         let (src_format, src_img, src_layer) = if self.bound_read_fbo != DEFAULT_READ_FBO {
             let fbo = &self.fbos[&self.bound_read_fbo];
@@ -2407,15 +2489,12 @@ impl<B: hal::Backend> Device<B> {
         };
 
         let (dest_format, dst_img, dest_layer) = if self.bound_draw_fbo != DEFAULT_DRAW_FBO {
-            assert!(!self.inside_render_pass);
             let fbo = &self.fbos[&self.bound_draw_fbo];
             let img = &self.images[&fbo.texture_id];
             let layer = fbo.layer_index;
             (img.format, &img.core, layer)
         } else {
-            info!("Blitting to main target with shader.");
-            self.blit_with_shader(src_rect, dest_rect);
-            return;
+            panic!("Blitting to default draw fbo should be handled by now")
         };
 
         // let src_range = hal::image::SubresourceRange {
@@ -2556,7 +2635,9 @@ impl<B: hal::Backend> Device<B> {
     ) {
         debug_assert!(self.inside_frame);
         self.bind_read_target(src_target);
-        self.bind_draw_target(dest_target, DrawTargetUsage::Draw);
+        if !self.inside_render_pass {
+            self.bind_draw_target(dest_target, DrawTargetUsage::Draw, None);
+        }
         self.blit_render_target_impl(src_rect, dest_rect, filter);
     }
 
@@ -2607,12 +2688,7 @@ impl<B: hal::Backend> Device<B> {
         }
     }
 
-    fn free_texture(&mut self, mut texture: Texture) {
-        if texture.still_in_flight(self.frame_id, self.frame_count) {
-            self.retained_textures.push(texture);
-            return;
-        }
-
+    fn free_texture_unconditionaly(&mut self, mut texture: Texture) {
         if texture.supports_depth() {
             self.release_depth_target(texture.get_dimensions());
         }
@@ -2649,6 +2725,14 @@ impl<B: hal::Backend> Device<B> {
         texture.id = 0;
     }
 
+    fn free_texture(&mut self, texture: Texture) {
+        if texture.still_in_flight(self.frame_id, self.frame_count) {
+            self.retained_textures.push(texture);
+            return;
+        }
+        self.free_texture_unconditionaly(texture);
+    }
+
     fn delete_retained_textures(&mut self) {
         let textures: SmallVec<[Texture; 16]> = self.retained_textures.drain(..).collect();
         for texture in textures {
@@ -2656,9 +2740,9 @@ impl<B: hal::Backend> Device<B> {
         }
     }
 
-    pub fn delete_texture(&mut self, texture: Texture) {
-        //debug_assert!(self.inside_frame);
-        if texture.size.width + texture.size.height == 0 {
+    pub fn delete_texture(&mut self, mut texture: Texture) {
+        if texture.size_in_bytes() == 0 {
+            texture.id = 0;
             return;
         }
 
@@ -2675,9 +2759,8 @@ impl<B: hal::Backend> Device<B> {
         external.id = 0;
     }
 
-    pub fn switch_mode(&mut self, mode: i32) {
+    pub fn switch_mode(&mut self, _mode: i32) {
         debug_assert!(self.inside_frame);
-        self.bound_locals.uMode = mode;
     }
 
     pub fn create_pbo(&mut self) -> PBO {
@@ -2773,12 +2856,11 @@ impl<B: hal::Backend> Device<B> {
             let layer = fbo.layer_index;
             (&img.core, img.format, layer)
         } else {
-            if self.readback_textures.is_empty() {
+            if self.readback_texture.is_none() {
                 warn!("Readback mode disabled, can't read the content of the main FBO!");
                 return;
             }
-            let texture_id = (self.next_id + (self.frame_count - 1)) % self.frame_count;
-            let id = &self.readback_textures[texture_id].id;
+            let id = &self.readback_texture.as_ref().unwrap().id;
             (&self.images[&id].core, self.surface_format, 0)
         };
 
@@ -3063,16 +3145,22 @@ impl<B: hal::Backend> Device<B> {
 
     pub fn draw_triangles_u16(&mut self, _first_vertex: i32, _index_count: i32) {
         debug_assert!(self.inside_frame);
+        #[cfg(debug_assertions)]
+        debug_assert!(self.shader_is_ready);
         self.draw();
     }
 
     pub fn draw_triangles_u32(&mut self, _first_vertex: i32, _index_count: i32) {
         debug_assert!(self.inside_frame);
+        #[cfg(debug_assertions)]
+        debug_assert!(self.shader_is_ready);
         self.draw();
     }
 
     pub fn draw_nonindexed_lines(&mut self, _first_vertex: i32, _vertex_count: i32) {
         debug_assert!(self.inside_frame);
+        #[cfg(debug_assertions)]
+        debug_assert!(self.shader_is_ready);
         self.draw();
     }
 
@@ -3082,11 +3170,13 @@ impl<B: hal::Backend> Device<B> {
         _instance_count: i32,
     ) {
         debug_assert!(self.inside_frame);
+        #[cfg(debug_assertions)]
+        debug_assert!(self.shader_is_ready);
         self.draw();
     }
 
     pub fn end_frame(&mut self) {
-        self.reset_draw_target();
+        self.reset_draw_target(None);
         self.reset_read_target();
 
         debug_assert!(self.inside_frame);
@@ -3096,13 +3186,6 @@ impl<B: hal::Backend> Device<B> {
     }
 
     pub fn begin_render_pass(&mut self, last_main_fbo_pass: bool) {
-        self.last_main_fbo_pass = last_main_fbo_pass;
-        if last_main_fbo_pass || (self.clear_values.contains_key(&self.bound_draw_fbo) && self.bound_draw_fbo == DEFAULT_DRAW_FBO) {
-            self.begin_render_pass_impl(last_main_fbo_pass);
-        }
-    }
-
-    pub fn begin_render_pass_impl(&mut self, last_main_fbo_pass: bool) {
         assert!(!self.last_rp_in_frame_reached);
         assert!(!self.inside_render_pass);
         assert_eq!(self.draw_target_usage, DrawTargetUsage::Draw);
@@ -3161,47 +3244,43 @@ impl<B: hal::Backend> Device<B> {
                 color_clear.into_iter().chain(depth_clear.into_iter()),
                 hal::command::SubpassContents::Inline,
             );
+            self.command_buffer.set_viewports(0, &[self.viewport.clone()]);
+            let scissor_rect = if self.scissor_enabled {
+                self.scissor_rect
+            } else {
+                self.viewport.rect
+            };
+            self.command_buffer.set_scissors(0, &[scissor_rect]);
         }
         self.inside_render_pass = true;
-        self.render_pass_depth_state = match self.depth_available {
-            true => RenderPassDepthState::Enabled,
-            false => RenderPassDepthState::Disabled,
-        }
     }
 
     pub fn end_render_pass(&mut self) {
         if self.inside_render_pass {
             unsafe { self.command_buffer.end_render_pass() };
             self.inside_render_pass = false;
-        } else if let Some(ClearValues { color, depth }) = self.clear_values.remove(&self.bound_draw_fbo) {
-            unsafe {
-                self.clear_target_image(Some(color.color.float32), depth.map(|d| d.depth_stencil.depth));
-            }
         }
     }
 
-    fn clear_target_rect(
+    pub fn clear_target_rects(
         &mut self,
-        rect: FramebufferIntRect,
         color: Option<[f32; 4]>,
         depth: Option<f32>,
+        rects: impl IntoIterator<Item = FramebufferIntRect>,
     ) {
-        if !self.inside_render_pass {
-            self.begin_render_pass_impl(self.last_main_fbo_pass);
-        }
-        if color.is_none() && depth.is_none() {
-            return;
-        }
+        assert!(self.inside_render_pass);
 
-        let rect = hal::pso::ClearRect {
-            rect: hal::pso::Rect {
-                x: rect.origin.x as i16,
-                y: rect.origin.y as i16,
-                w: rect.size.width as i16,
-                h: rect.size.height as i16,
-            },
-            layers: 0..1,
-        };
+        let rects = rects.into_iter().map(|rect| {
+            hal::pso::ClearRect {
+                rect: hal::pso::Rect {
+                    x: rect.origin.x as i16,
+                    y: rect.origin.y as i16,
+                    w: rect.size.width as i16,
+                    h: rect.size.height as i16,
+                },
+                layers: 0..1,
+            }
+        });
 
         let color_clear = color.map(|c| hal::command::AttachmentClear::Color {
             index: 0,
@@ -3215,7 +3294,7 @@ impl<B: hal::Backend> Device<B> {
 
         unsafe {
             self.command_buffer
-                .clear_attachments(color_clear.into_iter().chain(depth_clear), Some(rect));
+                .clear_attachments(color_clear.into_iter().chain(depth_clear), rects);
         }
     }
 
@@ -3281,6 +3360,7 @@ impl<B: hal::Backend> Device<B> {
             }
 
             if let (Some(depth), Some(dimg)) = (depth, dimg) {
+                assert_ne!(self.current_depth_test, None);
                 let prev_dimg_state = dimg.state.get();
                 if let Some((barrier, pipeline_stages)) = dimg.transit(
                     (
@@ -3326,30 +3406,8 @@ impl<B: hal::Backend> Device<B> {
         if color.is_none() && depth.is_none() {
             return;
         }
-        if let Some(mut rect) = rect {
-            let target_rect = if self.bound_draw_fbo != DEFAULT_DRAW_FBO {
-                let extent = &self.images[&self.fbos[&self.bound_draw_fbo].texture_id]
-                    .kind
-                    .extent();
-                FramebufferIntRect::new(
-                    FramebufferIntPoint::zero(),
-                    FramebufferIntSize::new(extent.width as _, extent.height as _),
-                )
-            } else {
-                FramebufferIntRect::new(
-                    FramebufferIntPoint::zero(),
-                    FramebufferIntSize::new(self.viewport.rect.w as _, self.viewport.rect.h as _),
-                )
-            };
-            rect.size.width = rect.size.width.min(target_rect.size.width);
-            rect.size.height = rect.size.height.min(target_rect.size.height);
-            if !self.inside_render_pass {
-                self.begin_render_pass(false);
-                self.clear_target_rect(rect, color, depth);
-                self.end_render_pass();
-            } else {
-                self.clear_target_rect(rect, color, depth);
-            }
+        if rect.is_some() {
+            self.clear_target_rects(color, depth, rect);
         } else if can_use_load_op {
             let color = color.map(|c| ClearValue {
                 color: ClearColor { float32: c },
@@ -3388,6 +3446,13 @@ impl<B: hal::Backend> Device<B> {
         }
     }
 
+    pub fn clear_rt_if_needed(&mut self) {
+        assert!(!self.inside_render_pass);
+        if let Some(ClearValues { color, depth }) = self.clear_values.remove(&self.bound_draw_fbo) {
+            unsafe { self.clear_target_image(Some(color.color.float32), depth.map(|d| d.depth_stencil.depth)) };
+        };
+    }
+
     pub fn enable_depth(&mut self) {
         assert!(
             self.depth_available,
@@ -3424,86 +3489,99 @@ impl<B: hal::Backend> Device<B> {
     }
 
     pub fn set_scissor_rect(&mut self, rect: FramebufferIntRect) {
-        self.scissor_rect = Some(rect);
+        self.scissor_rect = hal::pso::Rect {
+            x: rect.origin.x as _,
+            y: rect.origin.y as _,
+            w: rect.size.width as _,
+            h: rect.size.height as _,
+        };
     }
 
-    pub fn enable_scissor(&self) {}
+    pub fn enable_scissor(&mut self) {
+        self.scissor_enabled = true;
+    }
 
     pub fn disable_scissor(&mut self) {
-        self.scissor_rect = None;
+        self.scissor_enabled = false;
     }
 
-    pub fn set_blend(&self, enable: bool) {
+    pub fn set_blend(&mut self, enable: bool) {
         if !enable {
-            self.current_blend_state.set(None)
+            self.current_blend_state = None;
+        }
+        #[cfg(debug_assertions)]
+        {
+            self.shader_is_ready = false;
         }
     }
 
-    pub fn set_blend_mode_alpha(&self) {
-        self.current_blend_state.set(Some(ALPHA));
+    fn set_blend_state(&mut self, blend_state: Option<BlendState>) {
+        self.current_blend_state = blend_state;
+        #[cfg(debug_assertions)]
+        {
+            self.shader_is_ready = false;
+        }
     }
 
-    pub fn set_blend_mode_premultiplied_alpha(&self) {
-        self.current_blend_state
-            .set(Some(BlendState::PREMULTIPLIED_ALPHA));
+    pub fn set_blend_mode_alpha(&mut self) {
+        self.set_blend_state(Some(ALPHA));
     }
 
-    pub fn set_blend_mode_premultiplied_dest_out(&self) {
-        self.current_blend_state.set(Some(PREMULTIPLIED_DEST_OUT));
+    pub fn set_blend_mode_premultiplied_alpha(&mut self) {
+        self.set_blend_state(Some(BlendState::PREMULTIPLIED_ALPHA));
     }
 
-    pub fn set_blend_mode_multiply(&self) {
-        self.current_blend_state.set(Some(BlendState::MULTIPLY));
+    pub fn set_blend_mode_premultiplied_dest_out(&mut self) {
+        self.set_blend_state(Some(PREMULTIPLIED_DEST_OUT));
     }
 
-    pub fn set_blend_mode_max(&self) {
-        self.current_blend_state.set(Some(MAX));
+    pub fn set_blend_mode_multiply(&mut self) {
+        self.set_blend_state(Some(BlendState::MULTIPLY));
     }
 
-    pub fn set_blend_mode_min(&self) {
-        self.current_blend_state.set(Some(MIN));
+    pub fn set_blend_mode_max(&mut self) {
+        self.set_blend_state(Some(MAX));
     }
 
-    pub fn set_blend_mode_subpixel_pass0(&self) {
-        self.current_blend_state.set(Some(SUBPIXEL_PASS0));
+    pub fn set_blend_mode_min(&mut self) {
+        self.set_blend_state(Some(MIN));
     }
 
-    pub fn set_blend_mode_subpixel_pass1(&self) {
-        self.current_blend_state.set(Some(SUBPIXEL_PASS1));
+    pub fn set_blend_mode_subpixel_pass0(&mut self) {
+        self.set_blend_state(Some(SUBPIXEL_PASS0));
     }
 
-    pub fn set_blend_mode_subpixel_with_bg_color_pass0(&self) {
-        self.current_blend_state
-            .set(Some(SUBPIXEL_WITH_BG_COLOR_PASS0));
+    pub fn set_blend_mode_subpixel_pass1(&mut self) {
+        self.set_blend_state(Some(SUBPIXEL_PASS1));
     }
 
-    pub fn set_blend_mode_subpixel_with_bg_color_pass1(&self) {
-        self.current_blend_state
-            .set(Some(SUBPIXEL_WITH_BG_COLOR_PASS1));
+    pub fn set_blend_mode_subpixel_with_bg_color_pass0(&mut self) {
+        self.set_blend_state(Some(SUBPIXEL_WITH_BG_COLOR_PASS0));
     }
 
-    pub fn set_blend_mode_subpixel_with_bg_color_pass2(&self) {
-        self.current_blend_state
-            .set(Some(SUBPIXEL_WITH_BG_COLOR_PASS2));
+    pub fn set_blend_mode_subpixel_with_bg_color_pass1(&mut self) {
+        self.set_blend_state(Some(SUBPIXEL_WITH_BG_COLOR_PASS1));
     }
 
-    pub fn set_blend_mode_subpixel_constant_text_color(&self, color: ColorF) {
-        self.current_blend_state
-            .set(Some(SUBPIXEL_CONSTANT_TEXT_COLOR));
+    pub fn set_blend_mode_subpixel_with_bg_color_pass2(&mut self) {
+        self.set_blend_state(Some(SUBPIXEL_WITH_BG_COLOR_PASS2));
+    }
+
+    pub fn set_blend_mode_subpixel_constant_text_color(&mut self, color: ColorF) {
+        self.set_blend_state(Some(SUBPIXEL_CONSTANT_TEXT_COLOR));
         // color is an unpremultiplied color.
-        self.blend_color
-            .set(ColorF::new(color.r, color.g, color.b, 1.0));
+        self.blend_color = ColorF::new(color.r, color.g, color.b, 1.0);
     }
 
-    pub fn set_blend_mode_subpixel_dual_source(&self) {
-        self.current_blend_state.set(Some(SUBPIXEL_DUAL_SOURCE));
+    pub fn set_blend_mode_subpixel_dual_source(&mut self) {
+        self.set_blend_state(Some(SUBPIXEL_DUAL_SOURCE));
     }
 
-    pub fn set_blend_mode_show_overdraw(&self) {
-        self.current_blend_state.set(Some(OVERDRAW));
+    pub fn set_blend_mode_show_overdraw(&mut self) {
+        self.set_blend_state(Some(OVERDRAW));
     }
 
-    pub fn set_blend_mode_advanced(&self, _mode: MixBlendMode) {
+    pub fn set_blend_mode_advanced(&mut self, _mode: MixBlendMode) {
         unimplemented!("set_blend_mode_advanced is unimplemented");
     }
 
@@ -3641,10 +3719,10 @@ impl<B: hal::Backend> Device<B> {
     pub fn deinit(mut self) {
         self.device.wait_idle().unwrap();
         for texture in self.retained_textures.drain(..).collect::<Vec<_>>() {
-            self.free_texture(texture);
+            self.free_texture_unconditionaly(texture);
         }
-        for texture in self.readback_textures.drain(..).collect::<Vec<_>>() {
-            self.free_texture(texture);
+        if let Some(texture) = self.readback_texture.take() {
+            self.free_texture_unconditionaly(texture);
         }
         unsafe {
             if self.save_cache && self.cache_path.is_some() {
@@ -3685,6 +3763,30 @@ impl<B: hal::Backend> Device<B> {
                     self.device.destroy_pipeline_cache(cache);
                 }
             }
+
+            Self::replace_active_descriptor_set(
+                &mut self.bound_per_draw_descriptor,
+                None,
+                &self.bound_per_draw_textures,
+                &mut self.per_draw_descriptors,
+            );
+
+            Self::replace_active_descriptor_set(
+                &mut self.bound_per_pass_descriptor,
+                None,
+                &self.bound_per_pass_textures,
+                &mut self.per_pass_descriptors,
+            );
+
+            for descriptor_group in [DescriptorGroup::Default, DescriptorGroup::Clip, DescriptorGroup::Primitive].iter() {
+                Self::replace_active_descriptor_set(
+                    &mut self.bound_per_group_descriptors[*descriptor_group as usize],
+                    None,
+                    &(*descriptor_group, self.bound_per_group_textures),
+                    &mut self.per_group_descriptors,
+                );
+            }
+
             let mut heaps = Arc::try_unwrap(self.heaps).unwrap().into_inner().unwrap();
 
             self.command_pools[self.next_id].return_cmd_buffer(self.command_buffer);
@@ -3736,14 +3838,13 @@ impl<B: hal::Backend> Device<B> {
             self.per_draw_descriptors.free(&mut self.desc_allocator);
             self.per_group_descriptors.free(&mut self.desc_allocator);
             self.per_pass_descriptors.free(&mut self.desc_allocator);
-            self.locals_descriptors.free(&mut self.desc_allocator);
 
+            self.uniform_buffer_handler.deinit(self.device.as_ref(), &mut heaps, &mut self.desc_allocator);
             self.desc_allocator.dispose(self.device.as_ref());
-            self.locals_buffer.deinit(self.device.as_ref(), &mut heaps);
             for (_, program) in self.programs {
                 program.deinit(self.device.as_ref(), &mut heaps)
             }
-            for (_, program) in self.blit_programs {
+            for (_, (_, program)) in self.blit_programs {
                 program.deinit(self.device.as_ref(), &mut heaps)
             }
             heaps.dispose(self.device.as_ref());

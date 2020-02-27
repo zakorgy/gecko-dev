@@ -7,23 +7,20 @@ use hal::device::Device;
 use hal::pso::{DescriptorSetLayoutBinding, DescriptorType as DT, ShaderStageFlags as SSF};
 use crate::internal_types::FastHashMap;
 use rendy_descriptor::{DescriptorAllocator, DescriptorRanges, DescriptorSet};
-use rendy_memory::Heaps;
 use smallvec::SmallVec;
 use std::clone::Clone;
 use std::cmp::Eq;
-use std::collections::hash_map::Entry;
 use std::fmt::Debug;
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 use std::marker::Copy;
-use super::buffer::UniformBufferHandler;
 use super::image::Image;
 use super::TextureId;
 use super::super::{ShaderKind, TextureFilter, VertexArrayKind};
 
 pub(super) const DESCRIPTOR_SET_PER_PASS: usize = 0;
 pub(super) const DESCRIPTOR_SET_PER_GROUP: usize = 1;
-pub(super) const DESCRIPTOR_SET_PER_DRAW: usize = 2;
-pub(super) const DESCRIPTOR_SET_LOCALS: usize = 3;
+pub(super) const DESCRIPTOR_SET_PER_TARGET: usize = 2;
+pub(super) const DESCRIPTOR_SET_PER_DRAW: usize = 3;
 
 pub(super) const DESCRIPTOR_COUNT: u32 = 96;
 pub(super) const PER_DRAW_TEXTURE_COUNT: usize = 3; // Color0, Color1, Color2
@@ -58,17 +55,17 @@ pub(super) const DEFAULT_SET_1: &'static [DescriptorSetLayoutBinding] = &[
 ];
 
 pub(super) const COMMON_SET_2: &'static [DescriptorSetLayoutBinding] = &[
+    // Projection matrix
+    descriptor_set_layout_binding(0, DT::UniformBufferDynamic, SSF::VERTEX, false),
+];
+
+pub(super) const COMMON_SET_3: &'static [DescriptorSetLayoutBinding] = &[
     // Color0
     descriptor_set_layout_binding(0, DT::CombinedImageSampler, SSF::ALL, false),
     // Color1
     descriptor_set_layout_binding(1, DT::CombinedImageSampler, SSF::ALL, false),
     // Color2
     descriptor_set_layout_binding(2, DT::CombinedImageSampler, SSF::ALL, false),
-];
-
-pub(super) const COMMON_SET_3: &'static [DescriptorSetLayoutBinding] = &[
-    // Locals
-    descriptor_set_layout_binding(0, DT::UniformBuffer, SSF::VERTEX, false),
 ];
 
 pub(super) const CLIP_SET_1: &'static [DescriptorSetLayoutBinding] = &[
@@ -111,6 +108,7 @@ pub(super) enum DescriptorGroup {
     Default,
     Clip,
     Primitive,
+    Invalid,
 }
 
 impl From<ShaderKind> for DescriptorGroup {
@@ -137,38 +135,10 @@ impl From<ShaderKind> for DescriptorGroup {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
-#[allow(non_snake_case)]
-pub(super) struct Locals {
-    pub(super) uTransform: [[f32; 4]; 4],
-    pub(super) uMode: i32,
-}
-
-impl Locals {
-    fn transform_as_u32_slice(&self) -> &[u32; 16] {
-        unsafe { std::mem::transmute::<&[[f32; 4]; 4], &[u32; 16]>(&self.uTransform) }
-    }
-}
-
-impl Hash for Locals {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.transform_as_u32_slice().hash(state);
-        self.uMode.hash(state);
-    }
-}
-
-impl PartialEq for Locals {
-    fn eq(&self, other: &Locals) -> bool {
-        self.uTransform == other.uTransform && self.uMode == other.uMode
-    }
-}
-
-impl Eq for Locals {}
-
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Debug, Default)]
 pub(super) struct PerDrawBindings(
     pub [TextureId; PER_DRAW_TEXTURE_COUNT],
-    pub [TextureFilter; PER_DRAW_TEXTURE_COUNT],
+    pub TextureFilter,
 );
 
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Debug, Default)]
@@ -188,7 +158,7 @@ pub(super) struct DescriptorData<B: hal::Backend>(
 );
 
 impl<B: hal::Backend> DescriptorData<B> {
-    fn descriptor_layout(
+    pub(super) fn descriptor_layout(
         &self,
         group: &DescriptorGroup,
         group_idx: usize,
@@ -196,7 +166,7 @@ impl<B: hal::Backend> DescriptorData<B> {
         &self.0[group].set_layouts[group_idx]
     }
 
-    fn ranges(&self, group: &DescriptorGroup, group_idx: usize) -> DescriptorRanges {
+    pub(super) fn ranges(&self, group: &DescriptorGroup, group_idx: usize) -> DescriptorRanges {
         self.0[group].ranges[group_idx]
     }
 
@@ -282,8 +252,6 @@ impl DescGroupKey for PerPassBindings {
     }
 }
 
-impl DescGroupKey for Locals {}
-
 pub(super) struct DescriptorSetHandler<K, B: hal::Backend, F> {
     free_sets: F,
     descriptor_bindings: FastHashMap<K, DescriptorSet<B>>,
@@ -337,11 +305,8 @@ where
         }
     }
 
-    pub(super) fn descriptor_set(&self, key: &K) -> &B::DescriptorSet {
-        self.descriptor_bindings
-            .get(&key)
-            .expect(&format!("Descriptor set not found for key {:?}", key))
-            .raw()
+    pub(super) fn push_back_descriptor_set(&mut self, key: K, rendy_descriptor: DescriptorSet<B>) {
+        assert!(self.descriptor_bindings.insert(key, rendy_descriptor).is_none())
     }
 
     pub(super) fn retain(&mut self, id: &TextureId) {
@@ -377,10 +342,10 @@ where
         range: std::ops::Range<usize>,
         sampler_linear: &B::Sampler,
         sampler_nearest: &B::Sampler,
-    ) {
-        let new_set = match self.descriptor_bindings.entry(bindings) {
-            Entry::Occupied(_) => return,
-            Entry::Vacant(v) => {
+    ) -> DescriptorSet<B> {
+        let new_set = match self.descriptor_bindings.remove(&bindings) {
+            Some(set) => return set,
+            None => {
                 let free_sets = self.free_sets.get_mut(group);
                 let desc_set = match free_sets.pop() {
                     Some(ds) => ds,
@@ -398,7 +363,7 @@ where
                         free_sets.pop().unwrap()
                     }
                 };
-                v.insert(desc_set)
+                desc_set
             }
         };
         let mut descriptor_writes: SmallVec<
@@ -437,51 +402,6 @@ where
             });
         }
         unsafe { device.write_descriptor_sets(descriptor_writes) };
-    }
-
-    pub(super) fn bind_locals(
-        &mut self,
-        bindings: K,
-        device: &B::Device,
-        desc_allocator: &mut DescriptorAllocator<B>,
-        group_data: &DescriptorData<B>,
-        locals_buffer: &mut UniformBufferHandler<B>,
-        heaps: &mut Heaps<B>,
-    ) {
-        if let Entry::Vacant(v) = self.descriptor_bindings.entry(bindings) {
-            locals_buffer.add(&device, &[bindings], heaps);
-            let free_sets = self.free_sets.get_mut(&DescriptorGroup::Default);
-            let desc_set = match free_sets.pop() {
-                Some(ds) => ds,
-                None => {
-                    unsafe {
-                        desc_allocator.allocate(
-                            device,
-                            group_data.descriptor_layout(
-                                &DescriptorGroup::Default,
-                                DESCRIPTOR_SET_LOCALS,
-                            ),
-                            group_data.ranges(&DescriptorGroup::Default, DESCRIPTOR_SET_LOCALS),
-                            DESCRIPTOR_COUNT,
-                            free_sets,
-                        )
-                    }
-                    .expect("Allocate descriptor sets failed");
-                    free_sets.pop().unwrap()
-                }
-            };
-            let desc_set = v.insert(desc_set);
-            unsafe {
-                device.write_descriptor_sets(Some(hal::pso::DescriptorSetWrite {
-                    set: desc_set.raw(),
-                    binding: 0,
-                    array_offset: 0,
-                    descriptors: Some(hal::pso::Descriptor::Buffer(
-                        &locals_buffer.buffer().buffer,
-                        Some(0)..None,
-                    )),
-                }));
-            }
-        }
+        new_set
     }
 }

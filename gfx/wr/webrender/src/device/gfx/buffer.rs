@@ -2,15 +2,24 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use arrayvec::ArrayVec;
 use hal;
 use hal::device::Device as BackendDevice;
+use rendy_descriptor::{DescriptorAllocator, DescriptorSet};
 use rendy_memory::{Block, Heaps, Kind, MappedRange, MemoryBlock, MemoryUsage, MemoryUsageValue, Write};
 
 use std::cell::Cell;
 use std::sync::Arc;
 use std::mem;
 
+use super::{MAX_FRAME_COUNT};
+use super::descriptor::{DescriptorData, DescriptorGroup};
+
 pub const DOWNLOAD_BUFFER_SIZE: usize = 10 << 20; // 10MB
+// Maximum number of bound projections per frame.
+// Projections are bound on a per render target basis, so those should fit in the 96 limit.
+// We need this limit to define a fixed size for our uniform buffers.
+pub const PROJECTION_PER_FRAME: usize = 96;
 
 #[derive(MallocSizeOf)]
 pub struct BufferMemorySlice {
@@ -325,6 +334,7 @@ impl<B: hal::Backend> Buffer<B> {
         let size = (data.len() * self.stride) as u64;
         let range =
             offset..((offset + size + non_coherent_atom_size_mask) & !non_coherent_atom_size_mask);
+
         unsafe {
             let mut mapped = self
                 .memory_block
@@ -333,7 +343,7 @@ impl<B: hal::Backend> Buffer<B> {
             mapped
                 .write(device, 0..size)
                 .expect("Writer creation failed")
-                .write(&data);
+                .write(data);
         }
         self.memory_block.unmap(device);
         size as usize
@@ -703,56 +713,142 @@ impl<B: hal::Backend> VertexBufferHandler<B> {
     }
 }
 
+struct DynamicBufferBundle<B: hal::Backend> {
+    buffer: Buffer<B>,
+    buffer_offset: u32,
+    descriptor_set: DescriptorSet<B>,
+}
+
+impl<B: hal::Backend> DynamicBufferBundle<B> {
+    unsafe fn new(
+        buffer_usage: hal::buffer::Usage,
+        data_stride: usize,
+        min_uniform_buffer_offset_alignment_mask: usize,
+        device: &B::Device,
+        heaps: &mut Heaps<B>,
+        descriptor_set: DescriptorSet<B>
+    ) -> Self {
+        debug_assert!(data_stride.is_power_of_two());
+        let data_stride = ((data_stride - 1) | min_uniform_buffer_offset_alignment_mask) + 1;
+        let buffer = Buffer::new(
+            device,
+            heaps,
+            MemoryUsageValue::Dynamic,
+            buffer_usage,
+            min_uniform_buffer_offset_alignment_mask,
+            PROJECTION_PER_FRAME,
+            data_stride,
+        );
+        device.write_descriptor_sets(Some(hal::pso::DescriptorSetWrite {
+            set: descriptor_set.raw(),
+            binding: 0,
+            array_offset: 0,
+            descriptors: Some(hal::pso::Descriptor::Buffer(
+                &buffer.buffer,
+                Some(0)..None,
+            )),
+        }));
+        DynamicBufferBundle {
+            buffer,
+            buffer_offset: 0,
+            descriptor_set,
+        }
+
+    }
+
+    fn add<T: Copy>(
+        &mut self,
+        device: &B::Device,
+        data: &[T],
+        non_coherent_atom_size_mask: u64,
+    ) {
+        debug_assert!(self.buffer_offset < PROJECTION_PER_FRAME as _);
+        let _ = self.buffer.update(device, data, self.buffer_offset as usize, non_coherent_atom_size_mask);
+        self.buffer_offset += 1;
+    }
+
+    fn last_update_start_offset(&self) -> u32 {
+        // buffer_offset points to the end of the last update, but we need the starting offset
+        (self.buffer_offset - 1) * self.buffer.stride as u32
+    }
+
+    fn reset(&mut self) {
+        self.buffer_offset = 0;
+    }
+
+    unsafe fn deinit(self, device: &B::Device, heaps: &mut Heaps<B>, allocator: &mut DescriptorAllocator<B>) {
+        self.buffer.deinit(device, heaps);
+        allocator.free(std::iter::once(self.descriptor_set));
+    }
+}
+
 pub(super) struct UniformBufferHandler<B: hal::Backend> {
-    buffers: Vec<Buffer<B>>,
-    offset: usize,
-    buffer_usage: hal::buffer::Usage,
-    data_stride: usize,
-    pitch_alignment_mask: usize,
+    buffer_bundles: ArrayVec<[DynamicBufferBundle<B>; MAX_FRAME_COUNT]>,
+    min_uniform_buffer_offset_alignment_mask: usize,
 }
 
 impl<B: hal::Backend> UniformBufferHandler<B> {
     pub(super) fn new(
-        buffer_usage: hal::buffer::Usage,
         data_stride: usize,
-        pitch_alignment_mask: usize,
+        min_uniform_buffer_offset_alignment_mask: usize,
+        frame_count: usize,
+        device: &B::Device,
+        heaps: &mut Heaps<B>,
+        descriptor_allocator: &mut DescriptorAllocator<B>,
+        group_data: &DescriptorData<B>,
+        group: &DescriptorGroup,
+        set_index: usize,
     ) -> Self {
-        UniformBufferHandler {
-            buffers: vec![],
-            offset: 0,
-            buffer_usage,
-            data_stride,
-            pitch_alignment_mask,
-        }
-    }
-
-    pub(super) fn add<T: Copy>(&mut self, device: &B::Device, data: &[T], heaps: &mut Heaps<B>) {
-        if self.buffers.len() == self.offset {
-            self.buffers.push(Buffer::new(
+        debug_assert!(frame_count <= MAX_FRAME_COUNT);
+        let mut descriptors = Vec::new();
+        let mut buffer_bundles = ArrayVec::new();
+        unsafe {
+            descriptor_allocator.allocate(
                 device,
-                heaps,
-                MemoryUsageValue::Dynamic,
-                self.buffer_usage,
-                self.pitch_alignment_mask,
-                data.len(),
-                self.data_stride,
-            ));
+                group_data.descriptor_layout(group, set_index),
+                group_data.ranges(group, set_index),
+                frame_count as u32,
+                &mut descriptors,
+            ).expect("Allocate descriptor sets failed");
+            for _ in 0..frame_count {
+                buffer_bundles.push(DynamicBufferBundle::new(
+                    hal::buffer::Usage::UNIFORM,
+                    data_stride,
+                    min_uniform_buffer_offset_alignment_mask,
+                    device,
+                    heaps,
+                    descriptors.pop().unwrap(),
+                ));
+            }
         }
-        self.buffers[self.offset].update_all(device, data, self.pitch_alignment_mask as u64);
-        self.offset += 1;
+
+        UniformBufferHandler {
+            buffer_bundles,
+            min_uniform_buffer_offset_alignment_mask,
+        }
     }
 
-    pub(super) fn buffer(&self) -> &Buffer<B> {
-        &self.buffers[self.offset - 1]
+    pub(super) fn add<T: Copy>(
+        &mut self,
+        device: &B::Device,
+        data: &[T],
+        next_id: usize,
+    ) {
+        self.buffer_bundles[next_id].add(device, data, self.min_uniform_buffer_offset_alignment_mask as u64);
     }
 
-    pub(super) fn reset(&mut self) {
-        self.offset = 0;
+    pub(super) fn buffer_info(&self, next_id: usize) -> (&B::DescriptorSet, u32) {
+        let ref buffer = self.buffer_bundles[next_id];
+        (buffer.descriptor_set.raw(), buffer.last_update_start_offset())
     }
 
-    pub(super) fn deinit(self, device: &B::Device, heaps: &mut Heaps<B>) {
-        for buffer in self.buffers {
-            buffer.deinit(device, heaps);
+    pub(super) fn reset(&mut self, next_id: usize) {
+        self.buffer_bundles[next_id].reset()
+    }
+
+    pub(super) unsafe fn deinit(self, device: &B::Device, heaps: &mut Heaps<B>, allocator: &mut DescriptorAllocator<B>) {
+        for bundle in self.buffer_bundles {
+            bundle.deinit(device, heaps, allocator);
         }
     }
 }
